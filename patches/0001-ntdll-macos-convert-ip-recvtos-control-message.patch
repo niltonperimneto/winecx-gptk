@@ -1,0 +1,37 @@
+From: Whisky Runtime CI <runtime@whisky.local>
+Subject: [PATCH] ntdll: Convert Darwin IP_RECVTOS control messages
+
+Darwin enables reception with IP_RECVTOS and returns the ancillary message
+with that same type. Wine only recognized IP_TOS, silently dropping the
+control message SteamNetworkingSockets requested through WSARecvMsg.
+
+---
+ dlls/ntdll/unix/socket.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/dlls/ntdll/unix/socket.c b/dlls/ntdll/unix/socket.c
+index 00000000000..11111111111 100644
+--- a/dlls/ntdll/unix/socket.c
++++ b/dlls/ntdll/unix/socket.c
+@@ -429,6 +429,19 @@ static int convert_control_headers(struct msghdr *hdr, WSABUF *control)
+                         break;
+                     }
+ #endif /* IP_TOS */
++
++/* Darwin reports received TOS data with cmsg_type IP_RECVTOS rather than
++ * IP_TOS.  The payload is one byte, while Windows exposes an INT. */
++#if defined(IP_RECVTOS) && (!defined(IP_TOS) || IP_RECVTOS != IP_TOS)
++                    case IP_RECVTOS:
++                    {
++                        INT tos = *(unsigned char *)CMSG_DATA(cmsg_unix);
++                        ptr = fill_control_message( WS_IPPROTO_IP, WS_IP_TOS, ptr, &ctlsize,
++                                                    &tos, sizeof(INT) );
++                        if (!ptr) goto error;
++                        break;
++                    }
++#endif
+ 
+ #if defined(IP_TTL)
+                     case IP_TTL:
+-- 
+2.51.0
