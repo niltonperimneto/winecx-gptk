@@ -2,11 +2,11 @@
   "catalogVersion": 1,
   "runtimes": [
     {
-      "identifier": "winecx-gptk-canary-4.6.8",
-      "version": "4.6.8",
+      "identifier": "winecx-gptk-canary-4.6.14",
+      "version": "4.6.14",
       "channel": "canary",
-      "archiveURL": "https://github.com/niltonperimneto/winecx-gptk/releases/download/runtime-canary-v4.6.8/Libraries.tar.gz",
-      "sha256": "e4c965fff36412a77e58108799af93df658767ad511bbddb30c8cd127d315e08",
+      "archiveURL": "https://github.com/niltonperimneto/winecx-gptk/releases/download/runtime-canary-v4.6.14/Libraries.tar.gz",
+      "sha256": "b11c4ec1b19e0a91751c453d0500729f154f4d8baa7bd46625b5edd4707ff01a",
       "minimumMacOS": "26.0",
       "wineVersion": "11.16",
       "capabilities": {
@@ -23,7 +23,7 @@
         "wined3d": true,
         "wow64": true
       },
-      "publishedAt": "2026-09-06T05:54:20Z"
+      "publishedAt": "2026-09-06T08:41:18Z"
     }
   ]
 }
