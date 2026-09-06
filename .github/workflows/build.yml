@@ -13,11 +13,6 @@ on:
         type: string
         # deliberately no default: a default here wins over the shell fallback
         # below, so the version would go stale in two places instead of one
-      runner:
-        description: "where to build: self-hosted is ~10x faster, hosted is the clean-room check"
-        type: choice
-        default: self-hosted
-        options: [self-hosted, hosted]
   push:
     branches: [main]
     # a push to main publishes, so a readme edit would cut a release whose bits
@@ -27,6 +22,7 @@ on:
     paths-ignore:
       - '**.md'
       - 'LICENSE'
+      - 'runtime-catalog.json'
 
 # pinned by hand. an unpinned clone makes two builds of the same tree
 # incomparable, which is how a deployment mistake got misread for days as the
@@ -91,7 +87,7 @@ jobs:
     outputs:
       runtime_version: ${{ steps.install.outputs.runtime_version }}
       shippable: ${{ steps.make.outputs.shippable }}
-    runs-on: ${{ inputs.runner == 'hosted' && fromJSON('["macos-26"]') || fromJSON('["self-hosted","macOS","ARM64"]') }}
+    runs-on: macos-26
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
@@ -143,7 +139,6 @@ jobs:
       # save, against a make of 71s. a hosted runner is a fresh vm and does
       # need it.
       - name: restore compiler cache
-        if: inputs.runner == 'hosted'
         uses: actions/cache@v4
         with:
           path: ~/.ccache
@@ -156,7 +151,6 @@ jobs:
       # extra-platforms = x86_64-darwin; installing over it would clobber a
       # real machine's daemon and store
       - name: install nix
-        if: inputs.runner == 'hosted'
         uses: DeterminateSystems/nix-installer-action@v14
         with:
           extra-conf: |
@@ -865,6 +859,36 @@ jobs:
           <dict>
             <key>gptkCapable</key>
             <true/>
+            <key>manifestVersion</key>
+            <integer>2</integer>
+            <key>releaseChannel</key>
+            <string>canary</string>
+            <key>name</key>
+            <string>winecx-gptk-canary</string>
+            <key>wineVersion</key>
+            <string>11.16</string>
+            <key>wineSourceRevision</key>
+            <string>WINE_SOURCE_REV</string>
+            <key>patchset</key>
+            <string>whisky-steam-networking</string>
+            <key>patchsetRevision</key>
+            <string>PATCHSET_REV</string>
+            <key>buildArchitecture</key>
+            <string>x86_64+i386-wow64</string>
+            <key>minimumMacOS</key>
+            <string>26.0</string>
+            <key>capabilities</key>
+            <dict>
+              <key>wsarecvmsg</key><true/>
+              <key>ipv4ReceiveTOS</key><true/>
+              <key>ipv6ReceiveTrafficClass</key><true/>
+              <key>overlappedReceiveMessage</key><true/>
+              <key>dxvk</key><true/>
+              <key>dxmt</key><true/>
+              <key>wined3d</key><true/>
+              <key>wow64</key><true/>
+              <key>gptkMajorVersions</key><array><integer>4</integer></array>
+            </dict>
             <key>dxvkVersion</key>
             <string>DXVK_VER</string>
             <key>dxmtVersion</key>
@@ -893,6 +917,7 @@ jobs:
             *) echo "::error::runtime_version '$rv' is not major.minor.patch"; exit 1;;
           esac
           sed -i '' "s/DXVK_VER/$DXVK_VERSION/; s/DXMT_VER/$DXMT_VERSION/" Libraries/WhiskyWineVersion.plist
+          sed -i '' "s/WINE_SOURCE_REV/$WINECX_COMMIT/; s/PATCHSET_REV/${GITHUB_SHA}/" Libraries/WhiskyWineVersion.plist
           sed -i '' "s/VER_MAJOR/${rv%%.*}/; s/VER_MINOR/$(echo "$rv" | cut -d. -f2)/; s/VER_PATCH/${rv##*.}/" \
             Libraries/WhiskyWineVersion.plist
           grep -q VER_ Libraries/WhiskyWineVersion.plist && { echo "::error::version not substituted"; exit 1; }
@@ -1177,12 +1202,51 @@ jobs:
             exit 1
           }
 
+      - name: verify Steam and EOS receive-message control data
+        run: |
+          set -euo pipefail
+          x86_64-w64-mingw32-gcc -O2 -Wall -Werror -o wsarecvmsg.exe tests/wsarecvmsg.c -lws2_32
+          WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wsarecvmsg.exe | tee wsarecvmsg.log
+          grep -q '^RESULT: WSARecvMsg IPv4 TOS, IPv6 traffic class, and overlapped receive verified$' wsarecvmsg.log
+          cp wsarecvmsg.log Libraries/RuntimeNetworkVerification.txt
+
       - name: package
         run: |
+          # Metadata is excluded because the verifier treats these two files as
+          # the signed envelope. Every other regular file must be declared.
+          python3 - <<'PY'
+          import hashlib, json, os
+
+          root = "Libraries"
+          metadata = {"WhiskyWineVersion.plist", "RuntimeManifest.json"}
+          files = []
+          for directory, _, names in os.walk(root):
+              for name in names:
+                  path = os.path.join(directory, name)
+                  relative = os.path.relpath(path, root)
+                  if relative in metadata or os.path.islink(path) or not os.path.isfile(path):
+                      continue
+                  digest = hashlib.sha256()
+                  with open(path, "rb") as stream:
+                      for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                          digest.update(chunk)
+                  files.append({
+                      "path": relative,
+                      "size": os.path.getsize(path),
+                      "sha256": digest.hexdigest()
+                  })
+          manifest = {"formatVersion": 1, "files": sorted(files, key=lambda item: item["path"])}
+          with open(os.path.join(root, "RuntimeManifest.json"), "w") as stream:
+              json.dump(manifest, stream, indent=2, sort_keys=True)
+              stream.write("\n")
+          PY
+
           # the plist rides alongside the tarball so the publish job, and then
           # the mirror in dappermint/Whisky, can read the version without
           # decompressing 434MB to reach one file
           cp Libraries/WhiskyWineVersion.plist .
+          cp Libraries/RuntimeManifest.json .
+          cp Libraries/RuntimeNetworkVerification.txt .
           tar -czf Libraries.tar.gz Libraries
           shasum -a 256 Libraries.tar.gz | tee Libraries.tar.gz.sha256
           # the stock whisky engine v3.1.1 tarball is 332,438,526 bytes and
@@ -1199,6 +1263,8 @@ jobs:
             Libraries.tar.gz
             Libraries.tar.gz.sha256
             WhiskyWineVersion.plist
+            RuntimeManifest.json
+            RuntimeNetworkVerification.txt
           retention-days: 14
           # left at the default 6. tried 0 on the theory that re-deflating an
           # already-gzipped payload is wasted work, and it went the wrong way:
@@ -1223,6 +1289,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: whiskywine-gptk-libraries
@@ -1237,7 +1305,7 @@ jobs:
           [ -n "$RUNTIME_VERSION" ] || { echo "::error::build did not report a version"; exit 1; }
 
           sha256sum -c Libraries.tar.gz.sha256
-          tag="runtime-v$RUNTIME_VERSION"
+          tag="runtime-canary-v$RUNTIME_VERSION"
           sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
 
           {
@@ -1249,9 +1317,8 @@ jobs:
             echo "| moltenvk | $MOLTENVK_VERSION |"
             echo "| sha256 | \`$sha\` |"
             echo
-            echo "Built from ${{ github.sha }}. The app reads WhiskyWineVersion.plist,"
-            echo "not this tag, so nothing ships until PublishRuntime.yml in"
-            echo "dappermint/Whisky mirrors it."
+            echo "Built from ${{ github.sha }}. This prerelease is exposed only through"
+            echo "the opt-in canary catalog; stable remains on dappermint's runtime lane."
           } > notes.md
 
           # re-running a build of the same tree stamps the same version, so
@@ -1259,10 +1326,66 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "$tag exists, replacing its assets"
             gh release upload "$tag" Libraries.tar.gz Libraries.tar.gz.sha256 \
-              WhiskyWineVersion.plist --clobber
+              WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt --clobber
             gh release edit "$tag" --notes-file notes.md
           else
             gh release create "$tag" Libraries.tar.gz Libraries.tar.gz.sha256 \
-              WhiskyWineVersion.plist --title "runtime $RUNTIME_VERSION" --notes-file notes.md
+              WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt \
+              --prerelease --title "canary runtime $RUNTIME_VERSION" --notes-file notes.md
           fi
           echo "published $tag" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: publish the opt-in canary catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUNTIME_VERSION: ${{ needs.build.outputs.runtime_version }}
+        run: |
+          set -euo pipefail
+          tag="runtime-canary-v$RUNTIME_VERSION"
+          sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
+          published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          python3 - "$RUNTIME_VERSION" "$tag" "$sha" "$published_at" <<'PY'
+          import json, os, sys
+
+          version, tag, digest, published_at = sys.argv[1:]
+          repository = os.environ["GH_REPO"]
+          catalog = {
+              "catalogVersion": 1,
+              "runtimes": [{
+                  "identifier": f"winecx-gptk-canary-{version}",
+                  "version": version,
+                  "channel": "canary",
+                  "archiveURL": f"https://github.com/{repository}/releases/download/{tag}/Libraries.tar.gz",
+                  "sha256": digest,
+                  "minimumMacOS": "26.0",
+                  "wineVersion": "11.16",
+                  "capabilities": {
+                      "gptkMajorVersions": [3, 4],
+                      "wsarecvmsg": True,
+                      "ipv4ReceiveTOS": True,
+                      "ipv6ReceiveTrafficClass": True,
+                      "overlappedReceiveMessage": True,
+                      "dxvk": True,
+                      "dxmt": True,
+                      "wined3d": True,
+                      "wow64": True
+                  },
+                  "publishedAt": published_at
+              }]
+          }
+          with open("runtime-catalog.json", "w") as stream:
+              json.dump(catalog, stream, indent=2)
+              stream.write("\n")
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add runtime-catalog.json
+          if git diff --cached --quiet; then
+            echo "catalog already current"
+            exit 0
+          fi
+          git commit -m "chore(runtime): publish canary $RUNTIME_VERSION [skip ci]"
+          git push origin HEAD:main
