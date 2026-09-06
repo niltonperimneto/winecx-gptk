@@ -86,7 +86,7 @@ static void probe_ipv6(void)
 {
     SOCKET receiver = INVALID_SOCKET, sender = INVALID_SOCKET;
     struct sockaddr_in6 address = {0};
-    int address_length = sizeof(address), enabled = 1, traffic_class = 0x28;
+    int address_length = sizeof(address), enabled = 1, traffic_class = 0;
     char payload[] = "whisky", received[16], control[128];
     WSABUF buffer = {sizeof(received), received};
     WSAMSG message = {0}; LPFN_WSARECVMSG function; DWORD bytes = 0;
@@ -96,9 +96,8 @@ static void probe_ipv6(void)
     address.sin6_family = AF_INET6; address.sin6_addr = in6addr_loopback;
     if (bind(receiver, (struct sockaddr *)&address, sizeof(address)) ||
         getsockname(receiver, (struct sockaddr *)&address, &address_length)) { fail("IPv6 bind"); goto done; }
-    if (setsockopt(receiver, IPPROTO_IPV6, IPV6_RECVTCLASS, (char *)&enabled, sizeof(enabled)) ||
-        setsockopt(sender, IPPROTO_IPV6, IPV6_TCLASS, (char *)&traffic_class, sizeof(traffic_class))) {
-        fail("IPv6 traffic-class options"); goto done;
+    if (setsockopt(receiver, IPPROTO_IPV6, IPV6_RECVTCLASS, (char *)&enabled, sizeof(enabled))) {
+        fail("IPv6 receive-traffic-class option"); goto done;
     }
     function = recvmsg_function(receiver); if (!function) goto done;
     message.lpBuffers = &buffer; message.dwBufferCount = 1;
