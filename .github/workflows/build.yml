@@ -1206,7 +1206,36 @@ jobs:
         run: |
           set -euo pipefail
           x86_64-w64-mingw32-gcc -O2 -Wall -Werror -o wsarecvmsg.exe tests/wsarecvmsg.c -lws2_32
+
+          # Keep this probe out of the window/media smoke prefix and always stop
+          # its wineserver.  On a freshly-created prefix wine64 can report 1
+          # after the child has returned 0 (during background prefix teardown),
+          # so the probe's explicit RESULT line is the authoritative verdict.
+          export WINEPREFIX="$PWD/network-smoke-prefix"
+          export DYLD_FALLBACK_LIBRARY_PATH="$PWD/Libraries/Wine/lib"
+          export WINEDLLOVERRIDES="mscoree=d;mshtml=d"
+          cleanup_network_prefix() {
+            WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wineboot -k >/dev/null 2>&1 || true
+          }
+          trap cleanup_network_prefix EXIT
+          WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wineboot -u >/dev/null 2>&1 || true
+
+          set +e
           WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wsarecvmsg.exe | tee wsarecvmsg.log
+          pipeline_status=("${PIPESTATUS[@]}")
+          set -e
+          [ "${pipeline_status[1]}" -eq 0 ] || {
+            echo "::error::tee could not write the network verification log"
+            exit "${pipeline_status[1]}"
+          }
+          if [ "${pipeline_status[0]}" -ne 0 ]; then
+            echo "::warning::wine64 returned ${pipeline_status[0]} after the network probe; validating the probe result"
+          fi
+
+          # MinGW programs may emit CRLF even when Wine forwards stdout to a
+          # Unix pipe. Store a deterministic receipt and match it exactly.
+          tr -d '\r' < wsarecvmsg.log > wsarecvmsg.normalized.log
+          mv wsarecvmsg.normalized.log wsarecvmsg.log
           grep -q '^RESULT: WSARecvMsg IPv4 TOS, IPv6 traffic class, and overlapped receive verified$' wsarecvmsg.log
           cp wsarecvmsg.log Libraries/RuntimeNetworkVerification.txt
 
