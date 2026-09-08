@@ -1,0 +1,9 @@
+In file included from tests/d3d11ddilayout.c:31:
+tests/padding_test_helper.h: In function ‘check_uninitialized_padding’:
+tests/padding_test_helper.h:30:78: error: unknown conversion type character ‘z’ in format [-Werror=format=]
+   30 |             printf("[fail] Uninitialized padding byte found in %s at offset %zu\n", name, i);
+      |                                                                              ^
+tests/padding_test_helper.h:30:20: error: too many arguments for format [-Werror=format-extra-args]
+   30 |             printf("[fail] Uninitialized padding byte found in %s at offset %zu\n", name, i);
+      |                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cc1: all warnings being treated as errors

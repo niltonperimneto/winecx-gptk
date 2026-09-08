@@ -1,0 +1,22 @@
+[ ok ] the highest advertised word is selected
+[ ok ] the highest word is selected first or last
+[ ok ] a buffer smaller than the driver's count is refused
+[ ok ] counting the advertised versions
+[ ok ] a count that grew after the caller sized its buffer is refused
+[ ok ] a driver advertising no versions is unsupported
+[ ok ] a failed probe is propagated
+[ ok ] a failed fill is propagated
+[ ok ] a driver whose two answers disagree is refused
+[ ok ] a single advertised version is selected
+[ ok ] duplicate advertised versions are selected once
+[ ok ] a driver advertising no D3D11 version is unsupported
+[ ok ] a numerically higher word for another major version does not win
+[ ok ] selection rejects a null entry point
+[ ok ] selection rejects a null buffer
+[ ok ] selection rejects a zero capacity
+[ ok ] selection rejects a null selected word
+[ ok ] selection rejects a null interface version
+[ ok ] counting rejects a null count
+[ ok ] counting rejects a null entry point
+[ ok ] counting propagates a failed probe
+RESULT: DDI version negotiation holds, including the buffer contract

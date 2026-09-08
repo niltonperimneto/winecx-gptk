@@ -1,0 +1,195 @@
+[ ok ] D3D10DDIARG_CREATEDEVICE (zeroed) has no uninitialized padding bytes
+[fail] Uninitialized padding byte found in struct layout_probe (un-zeroed) at offset 28
+[fail] Uninitialized padding byte found in struct layout_probe (un-zeroed) at offset 29
+[fail] Uninitialized padding byte found in struct layout_probe (un-zeroed) at offset 30
+[fail] Uninitialized padding byte found in struct layout_probe (un-zeroed) at offset 31
+[ ok ] padding trap correctly identified implicit gaps
+[ ok ] struct layout_probe.first at offset 0
+[ ok ] struct layout_probe.second at offset 4
+[ ok ] struct layout_probe.third at offset 8
+[ ok ] struct layout_probe.fourth at offset 16
+[ ok ] struct layout_probe.fifth at offset 24
+[ ok ] D3D10DDI_HADAPTER.pDrvPrivate at offset 0
+[ ok ] D3D10DDI_HRTADAPTER.handle at offset 0
+[ ok ] D3D10DDI_HRESOURCE.pDrvPrivate at offset 0
+[ ok ] D3D10DDI_HRTRESOURCE.handle at offset 0
+[ ok ] D3D10DDI_HADAPTER occupies 8 bytes
+[ ok ] D3D10DDI_HRTADAPTER occupies 8 bytes
+[ ok ] D3D10DDI_HRESOURCE occupies 8 bytes
+[ ok ] D3D10DDI_HRTRESOURCE occupies 8 bytes
+[ ok ] D3D10DDI_ADAPTERFUNCS.pfnCalcPrivateDeviceSize at offset 0
+[ ok ] D3D10DDI_ADAPTERFUNCS.pfnCreateDevice at offset 8
+[ ok ] D3D10DDI_ADAPTERFUNCS.pfnCloseAdapter at offset 16
+[ ok ] D3D10DDI_ADAPTERFUNCS occupies 24 bytes
+[ ok ] D3D10_2DDI_ADAPTERFUNCS.pfnCalcPrivateDeviceSize at offset 0
+[ ok ] D3D10_2DDI_ADAPTERFUNCS.pfnCreateDevice at offset 8
+[ ok ] D3D10_2DDI_ADAPTERFUNCS.pfnCloseAdapter at offset 16
+[ ok ] D3D10_2DDI_ADAPTERFUNCS.pfnGetSupportedVersions at offset 24
+[ ok ] D3D10_2DDI_ADAPTERFUNCS.pfnGetCaps at offset 32
+[ ok ] D3D10_2DDI_ADAPTERFUNCS occupies 40 bytes
+[ ok ] D3D10DDIARG_OPENADAPTER.hRTAdapter at offset 0
+[ ok ] D3D10DDIARG_OPENADAPTER.hAdapter at offset 8
+[ ok ] D3D10DDIARG_OPENADAPTER.Interface at offset 16
+[ ok ] D3D10DDIARG_OPENADAPTER.Version at offset 20
+[ ok ] D3D10DDIARG_OPENADAPTER.pAdapterCallbacks at offset 24
+[ ok ] D3D10DDIARG_OPENADAPTER.pAdapterFuncs at offset 32
+[ ok ] D3D10DDIARG_OPENADAPTER.pAdapterFuncs_2 at offset 32
+[ ok ] D3D10DDIARG_OPENADAPTER occupies 40 bytes
+[ ok ] the adapter function table arms alias
+[ ok ] D3D10DDI_HDEVICE.pDrvPrivate at offset 0
+[ ok ] D3D10DDI_HRTDEVICE.handle at offset 0
+[ ok ] D3D10DDI_HRTCORELAYER.handle at offset 0
+[ ok ] D3D10DDI_HDEVICE occupies 8 bytes
+[ ok ] D3D10DDI_HRTDEVICE occupies 8 bytes
+[ ok ] D3D10DDI_HRTCORELAYER occupies 8 bytes
+[ ok ] D3D10DDIARG_CREATEDEVICE.hRTDevice at offset 0
+[ ok ] D3D10DDIARG_CREATEDEVICE.Interface at offset 8
+[ ok ] D3D10DDIARG_CREATEDEVICE.Version at offset 12
+[ ok ] D3D10DDIARG_CREATEDEVICE.pKTCallbacks at offset 16
+[ ok ] D3D10DDIARG_CREATEDEVICE.pWDDM2_6DeviceFuncs at offset 24
+[ ok ] D3D10DDIARG_CREATEDEVICE.hDrvDevice at offset 32
+[ ok ] D3D10DDIARG_CREATEDEVICE.DXGIBaseDDI at offset 40
+[ ok ] D3D10DDIARG_CREATEDEVICE.hRTCoreLayer at offset 56
+[ ok ] D3D10DDIARG_CREATEDEVICE.pWDDM2_6UMCallbacks at offset 64
+[ ok ] D3D10DDIARG_CREATEDEVICE.Flags at offset 72
+[ ok ] D3D10DDIARG_CREATEDEVICE.ppfnRetrieveSubObject at offset 80
+[ ok ] D3D10DDIARG_CREATEDEVICE occupies 88 bytes
+[ ok ] DXGI_DDI_BASE_ARGS occupies 16 bytes
+[ ok ] D3D10DDIARG_CREATEDEVICE.DXGIBaseDDI.pDXGIBaseCallbacks at offset 40
+[ ok ] D3D10DDIARG_CREATEDEVICE.DXGIBaseDDI.pDXGIDDIBaseFunctions6_1 at offset 48
+[ ok ] the driver's RetrieveSubObject lands in host storage
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnSetErrorCb at offset 0
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateVsConstBufCb at offset 8
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStatePsSrvCb at offset 16
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStatePsShaderCb at offset 24
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStatePsSamplerCb at offset 32
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateVsShaderCb at offset 40
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStatePsConstBufCb at offset 48
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateIaInputLayoutCb at offset 56
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateIaVertexBufCb at offset 64
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateIaIndexBufCb at offset 72
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateGsConstBufCb at offset 80
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateGsShaderCb at offset 88
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateIaPrimitiveTopologyCb at offset 96
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateVsSrvCb at offset 104
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateVsSamplerCb at offset 112
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateGsSrvCb at offset 120
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateGsSamplerCb at offset 128
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateOmRenderTargetsCb at offset 136
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateOmBlendStateCb at offset 144
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateOmDepthStateCb at offset 152
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateRsRastStateCb at offset 160
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateSoTargetsCb at offset 168
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateRsViewportsCb at offset 176
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateRsScissorCb at offset 184
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnDisableDeferredStagingResourceDestruction at offset 192
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateTextFilterSizeCb at offset 200
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateHsSrvCb at offset 208
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateHsShaderCb at offset 216
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateHsSamplerCb at offset 224
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateHsConstBufCb at offset 232
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateDsSrvCb at offset 240
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateDsShaderCb at offset 248
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateDsSamplerCb at offset 256
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateDsConstBufCb at offset 264
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnPerformAmortizedProcessingCb at offset 272
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateCsSrvCb at offset 280
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateCsUavCb at offset 288
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateCsShaderCb at offset 296
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateCsSamplerCb at offset 304
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnStateCsConstBufCb at offset 312
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnCreateContextCb at offset 320
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnCreateContextVirtualCb at offset 328
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnShaderCacheGetValueCb at offset 336
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnShaderCacheStoreValueCb at offset 344
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnShaderCacheAddRefCb at offset 352
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnShaderCacheReleaseCb at offset 360
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS.pfnQueryScanoutCapsCb at offset 368
+[ ok ] D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS occupies 376 bytes
+[ ok ] the core-layer callback slots are callable as declared
+[ ok ] the shader cache addref and release slots share a type
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnAllocateCb at offset 0
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnDeallocateCb at offset 8
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSetPriorityCb at offset 16
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnQueryResidencyCb at offset 24
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSetDisplayModeCb at offset 32
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnPresentCb at offset 40
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnRenderCb at offset 48
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnLockCb at offset 56
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnUnlockCb at offset 64
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnEscapeCb at offset 72
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnCreateOverlayCb at offset 80
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnUpdateOverlayCb at offset 88
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnFlipOverlayCb at offset 96
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnDestroyOverlayCb at offset 104
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnCreateContextCb at offset 112
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnDestroyContextCb at offset 120
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnCreateSynchronizationObjectCb at offset 128
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnDestroySynchronizationObjectCb at offset 136
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnWaitForSynchronizationObjectCb at offset 144
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSignalSynchronizationObjectCb at offset 152
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSetAsyncCallbacksCb at offset 160
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSetDisplayPrivateDriverFormatCb at offset 168
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnOfferAllocationsCb at offset 176
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnReclaimAllocationsCb at offset 184
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnCreateSynchronizationObject2Cb at offset 192
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnWaitForSynchronizationObject2Cb at offset 200
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSignalSynchronizationObject2Cb at offset 208
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnPresentMultiPlaneOverlayCb at offset 216
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnLogUMDMarkerCb at offset 224
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnMakeResidentCb at offset 232
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnEvictCb at offset 240
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnWaitForSynchronizationObjectFromCpuCb at offset 248
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSignalSynchronizationObjectFromCpuCb at offset 256
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnWaitForSynchronizationObjectFromGpuCb at offset 264
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSignalSynchronizationObjectFromGpuCb at offset 272
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnCreatePagingQueueCb at offset 280
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnDestroyPagingQueueCb at offset 288
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnLock2Cb at offset 296
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnUnlock2Cb at offset 304
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnInvalidateCacheCb at offset 312
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnReserveGpuVirtualAddressCb at offset 320
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnMapGpuVirtualAddressCb at offset 328
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnFreeGpuVirtualAddressCb at offset 336
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnUpdateGpuVirtualAddressCb at offset 344
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnCreateContextVirtualCb at offset 352
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSubmitCommandCb at offset 360
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnDeallocate2Cb at offset 368
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSignalSynchronizationObjectFromGpu2Cb at offset 376
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnReclaimAllocations2Cb at offset 384
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnGetResourcePresentPrivateDriverDataCb at offset 392
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnUpdateAllocationPropertyCb at offset 400
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnOfferAllocations2Cb at offset 408
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnReclaimAllocations3Cb at offset 416
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnAcquireResourceCb at offset 424
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnReleaseResourceCb at offset 432
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnCreateHwContextCb at offset 440
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnDestroyHwContextCb at offset 448
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnCreateHwQueueCb at offset 456
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnDestroyHwQueueCb at offset 464
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSubmitCommandToHwQueueCb at offset 472
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSubmitWaitForSyncObjectsToHwQueueCb at offset 480
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSubmitSignalSyncObjectsToHwQueueCb at offset 488
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSubmitPresentBltToHwQueueCb at offset 496
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSubmitPresentToHwQueueCb at offset 504
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnSubmitHistorySequenceCb at offset 512
+[ ok ] D3DDDI_DEVICECALLBACKS.pfnCreateNativeFenceCb at offset 520
+[ ok ] D3DDDI_DEVICECALLBACKS occupies 528 bytes
+[ ok ] D3DDDICB_ESCAPE.hDevice at offset 0
+[ ok ] D3DDDICB_ESCAPE.Flags at offset 8
+[ ok ] D3DDDICB_ESCAPE.pPrivateDriverData at offset 16
+[ ok ] D3DDDICB_ESCAPE.PrivateDriverDataSize at offset 24
+[ ok ] D3DDDICB_ESCAPE.hContext at offset 32
+[ ok ] D3DDDICB_ESCAPE occupies 40 bytes
+[ ok ] D3DDDICB_SYNCTOKEN.hSyncToken at offset 0
+[ ok ] D3DDDICB_SYNCTOKEN.BroadcastContextCount at offset 8
+[ ok ] D3DDDICB_SYNCTOKEN.BroadcastContextArray at offset 16
+[ ok ] D3DDDICB_SYNCTOKEN occupies 24 bytes
+[ ok ] DeviceStatusQuery is bit 1
+[ ok ] HardwareAccess is bit 0
+[ ok ] WINE_D3D11DDI_ESCAPEFLAGS occupies 4 bytes
+[ ok ] the promoted kernel callback slots are callable as declared
+[ ok ] one pointer-to-member binds both sync-token slots
+[ ok ] the interface version occupies the high 32 bits
+[ ok ] the build version occupies bits 16 through 31
+RESULT: the DDI declarations agree with the compiled ABI
