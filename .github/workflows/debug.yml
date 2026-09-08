@@ -11,27 +11,22 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get -y install g++-mingw-w64-x86-64
-      - name: Compile d3d11on12core
+      - name: Compile and Output
         run: |
           x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -o d3d11on12core.dll relay12-d3d11/d3d11on12core.cpp relay12-d3d11/wine_d3d11_diag.cpp relay12-d3d11/d3d11on12core.def -ld3d12 -ldxgi -luuid > build_log1.txt 2>&1 || true
-          curl -s --data-binary @build_log1.txt https://paste.rs/ > paste_url.txt
-          echo "build1 $(cat paste_url.txt)"
           x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -o d3d11shim.dll relay12-d3d11/d3d11shim.cpp relay12-d3d11/wine_d3d11_diag.cpp relay12-d3d11/d3d11shim.def -ld3d11 -ldxgi > build_log2.txt 2>&1 || true
-          curl -s --data-binary @build_log2.txt https://paste.rs/ > paste_url2.txt
-          echo "build2 $(cat paste_url2.txt)"
-      - name: Objdump
+          core_exports="$(x86_64-w64-mingw32-objdump -p d3d11on12core.dll)" || echo "failed objdump core" > objdump.txt
+          echo "$core_exports" >> objdump.txt
+      - name: Push to Branch
         run: |
-          core_exports="$(x86_64-w64-mingw32-objdump -p d3d11on12core.dll)" || echo "failed objdump core"
-          echo "$core_exports" > objdump.txt
-          curl -s --data-binary @objdump.txt https://paste.rs/ > paste_url3.txt
-          echo "objdump $(cat paste_url3.txt)"
-      - name: Results
-        run: |
-          cat paste_url.txt
-          cat paste_url2.txt
-          cat paste_url3.txt
+          git config --global user.name "Bot"
+          git config --global user.email "bot@example.com"
+          git add build_log1.txt build_log2.txt objdump.txt
+          git commit -m "Add logs" || true
+          git push origin HEAD:feat/debug-actions || echo "Push failed"
