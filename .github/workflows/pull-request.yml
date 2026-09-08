@@ -1,0 +1,326 @@
+name: pull request validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-d3d11on12:
+    runs-on: ubuntu-26.04
+    env:
+      WINEDEBUG: -all
+      # The tests are console programs; never wait on a mono or gecko install.
+      WINEDLLOVERRIDES: mscoree,mshtml=
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Verify dependency licenses and revisions
+        run: |
+          set -euo pipefail
+          test -f LICENSE
+          test -f THIRD_PARTY_NOTICES.md
+          test -f third_party/D3D11On12/LICENSE
+          test -f third_party/D3D12TranslationLayer/LICENSE
+          test -f third_party/DirectX-Headers/LICENSE
+          test "$(git -C third_party/D3D11On12 rev-parse HEAD)" = \
+            5d8898b43d817e0fd0f58ed87ef645c0cf6fac27
+          test "$(git -C third_party/D3D12TranslationLayer rev-parse HEAD)" = \
+            b68ebbc6dab4195f7d4819ea78f2a60c985b853a
+          test "$(git -C third_party/DirectX-Headers rev-parse HEAD)" = \
+            9e393d6d8a3b30dcc6f2806ef604ec16a27b0d7e
+          if git ls-files | grep -Eiq '(^|/)(d3d10umddi|d3d11umddi)\.h$'; then
+            echo 'proprietary WDK headers must not be committed' >&2
+            exit 1
+          fi
+
+      - name: Install MinGW-w64 GCC and Wine
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+            wine
+          # Wine refuses to create a prefix under a directory it does not own,
+          # and the prefix stays out of the workspace so it is never packaged
+          # or uploaded.
+          echo "WINEPREFIX=$HOME/.wine-d3d11on12" >> "$GITHUB_ENV"
+          WINEPREFIX="$HOME/.wine-d3d11on12" wineboot --init
+
+      - name: Verify Wine patches
+        env:
+          WINECX_REPO: https://github.com/dappermint/winecx.git
+          WINECX_COMMIT: 7dbc5b5322a6ef3fb04bdc643c64b188fd641149
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none "$WINECX_REPO" winecx
+          git -C winecx checkout --detach "$WINECX_COMMIT"
+          for patch in "$PWD"/patches/*.patch; do
+            [ -e "$patch" ] || break
+            git -C winecx apply --check "$patch"
+            git -C winecx apply "$patch"
+          done
+          # The diagnostics resolve __wine_dbg_output at run time so the router
+          # and the core keep importing only kernel32 and msvcrt.  It is a
+          # Wine-internal, unversioned export, so a Wine bump that drops it
+          # must fail here rather than silently losing every deployment
+          # diagnostic to an application that handles DBG_PRINTEXCEPTION_C.
+          if ! grep -q '__wine_dbg_output' winecx/dlls/ntdll/ntdll.spec; then
+            echo 'the pinned Wine no longer exports __wine_dbg_output' >&2
+            exit 1
+          fi
+
+      - name: Compile D3D11-on-12 conformance probe
+        run: |
+          set -euo pipefail
+          x86_64-w64-mingw32-gcc -O2 -Wall -Wextra -Werror \
+            -o d3d11on12probe.exe tests/d3d11on12probe.c \
+            -ld3d11 -ld3d12 -ldxgi -ldxguid -luuid
+          x86_64-w64-mingw32-objdump -p d3d11on12probe.exe \
+            | grep -q D3D11On12CreateDevice
+
+      - name: Compile and audit D3D11 router
+        run: |
+          set -euo pipefail
+          x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 \
+            -Wall -Wextra -Werror -fno-exceptions -fno-rtti \
+            -fno-threadsafe-statics -fno-use-cxa-atexit \
+            -o d3d11on12core.dll relay12-d3d11/d3d11on12core.cpp \
+            relay12-d3d11/wine_d3d11_diag.cpp \
+            relay12-d3d11/d3d11on12core.def -ld3d12 -ldxgi -luuid
+          x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 \
+            -Wall -Wextra -Werror -fno-exceptions -fno-rtti \
+            -fno-threadsafe-statics -fno-use-cxa-atexit \
+            -o d3d11shim.dll relay12-d3d11/d3d11shim.cpp \
+            relay12-d3d11/wine_d3d11_diag.cpp \
+            relay12-d3d11/d3d11shim.def -ld3d11 -ldxgi
+          core_exports="$(x86_64-w64-mingw32-objdump -p d3d11on12core.dll)"
+          grep -q 'WineD3D11On12GetABIVersion' <<<"$core_exports"
+          grep -q 'WineD3D11On12CreateDeviceV1' <<<"$core_exports"
+          grep -q 'WineD3D11On12GetInterface' <<<"$core_exports"
+          exports="$(x86_64-w64-mingw32-objdump -p d3d11shim.dll)"
+          grep -q 'D3D11CreateDevice' <<<"$exports"
+          grep -q 'D3D11CreateDeviceAndSwapChain' <<<"$exports"
+          grep -q 'D3D11On12CreateDevice' <<<"$exports"
+          grep -q 'WineD3D11ShimGetStatus' <<<"$exports"
+          python3 - <<'PY'
+          import re
+          import subprocess
+
+          expected = {
+              # Ordinals 1 to 3 are Apple's exact export table.  Ordinal 4 is
+              # the Wine-private status entry point deployment gates on,
+              # because DXGI_ERROR_UNSUPPORTED cannot distinguish "unsupported
+              # here" from "installed wrong".
+              "d3d11shim.dll": {
+                  1: "D3D11CreateDevice",
+                  2: "D3D11CreateDeviceAndSwapChain",
+                  3: "D3D11On12CreateDevice",
+                  4: "WineD3D11ShimGetStatus",
+              },
+              "d3d11on12core.dll": {
+                  1: "WineD3D11On12GetABIVersion",
+                  2: "WineD3D11On12CreateDeviceV1",
+                  3: "WineD3D11On12GetInterface",
+              },
+          }
+          for path, wanted in expected.items():
+              output = subprocess.check_output(
+                  ["x86_64-w64-mingw32-objdump", "-p", path], text=True)
+              base = int(re.search(r"Ordinal Base\s+(\d+)", output).group(1))
+              names = output.split("[Ordinal/Name Pointer] Table", 1)[1]
+              names = names.split("\n\n", 1)[0]
+              actual = {
+                  base + int(index): name
+                  for index, name in re.findall(r"\[\s*(\d+)\](?:.*\s+)?([a-zA-Z_]\w*)", names)
+              }
+              if actual != wanted:
+                  raise SystemExit(f"{path}: exports {actual}, expected {wanted}")
+          PY
+          if x86_64-w64-mingw32-objdump -p \
+              d3d11shim.dll d3d11on12core.dll \
+              | grep -Eiq 'libstdc\+\+|libgcc_s'; then
+            echo 'unexpected C++ runtime dependency' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import re
+          import subprocess
+
+          allowed = {
+              "d3d11shim.dll": {"kernel32.dll", "msvcrt.dll"},
+              "d3d11on12core.dll": {"kernel32.dll", "msvcrt.dll"},
+          }
+          for path, wanted in allowed.items():
+              output = subprocess.check_output(
+                  ["x86_64-w64-mingw32-objdump", "-p", path], text=True)
+              actual = {
+                  name.lower()
+                  for name in re.findall(r"DLL Name:\s+(\S+)", output)
+              }
+              if actual != wanted:
+                  raise SystemExit(f"{path}: imports {actual}, expected {wanted}")
+          PY
+
+      - name: Audit interface acquisition
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          # A QueryInterface or GetDevice that reports S_OK with a null
+          # out-pointer breaks the COM contract, and the D3DMetal payload does
+          # it.  strictResult is the single place that rule lives; a call that
+          # checks only the HRESULT is how a queue belonging to another device
+          # got accepted.  Keep the funnel mandatory rather than remembered.
+          acquisition = re.compile(r"->(QueryInterface|GetDevice)\s*\(")
+          errors = []
+          for path in sorted(pathlib.Path("relay12-d3d11").rglob("*.cpp")):
+              for number, line in enumerate(path.read_text().splitlines(), 1):
+                  if not acquisition.search(line):
+                      continue
+                  if "strictResult(" in line:
+                      continue
+                  errors.append(f"{path}:{number}: an interface acquisition "
+                                "must pass its holder through strictResult()")
+          if errors:
+              raise SystemExit("\n".join(errors))
+          print("interface acquisition audit: ok")
+          PY
+          # The WDK DDI structures are not packed.  pack(1) would break every
+          # asserted offset and pack(8) would be a no-op that hides the real
+          # alignment from WINE_DDI_ASSERT_ALIGN.
+          # Anchored at the start of the line: the header states this rule in
+          # a comment, and stating it must not trip it.
+          if grep -rEn '^[[:space:]]*#[[:space:]]*pragma[[:space:]]+pack' \
+              relay12-d3d11/ddi; then
+            echo 'pragma pack is prohibited in the DDI declarations' >&2
+            exit 1
+          fi
+
+      - name: Run D3D11-on-12 core validation tests
+        run: |
+          set -euo pipefail
+          for source in d3d11on12core wine_d3d11_diag; do
+            x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Werror \
+              -fno-exceptions -fno-rtti -fno-threadsafe-statics \
+              -fno-use-cxa-atexit \
+              -c -o "$source.o" "relay12-d3d11/$source.cpp"
+          done
+          x86_64-w64-mingw32-gcc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Irelay12-d3d11 -c -o d3d11on12coretest.o tests/d3d11on12coretest.c
+          # Linking with the C driver keeps the no-C++-runtime rule honest: if
+          # the core ever needs libstdc++, this link fails.
+          x86_64-w64-mingw32-gcc -o d3d11on12coretest.exe \
+            d3d11on12coretest.o d3d11on12core.o wine_d3d11_diag.o \
+            -ld3d12 -ldxgi -ldxguid -luuid
+          if x86_64-w64-mingw32-objdump -p d3d11on12coretest.exe \
+              | grep -Eiq 'libstdc\+\+|libgcc_s'; then
+            echo 'unexpected C++ runtime dependency' >&2
+            exit 1
+          fi
+          wine d3d11on12coretest.exe
+
+      - name: Run the D3D11 router fail-closed tests
+        run: |
+          set -euo pipefail
+          x86_64-w64-mingw32-gcc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Irelay12-d3d11 -o d3d11shimstatus.exe tests/d3d11shimstatus.c
+          # Its own directory, holding the router and nothing else: no
+          # d3d11mt.dll and no d3d11on12core.dll, which is the broken
+          # deployment the router has to survive with documented return codes.
+          # The application directory is searched first, so this is the router
+          # built in this job.
+          mkdir -p shim-fail-closed
+          cp d3d11shim.dll d3d11shimstatus.exe shim-fail-closed/
+          test ! -e shim-fail-closed/d3d11mt.dll
+          test ! -e shim-fail-closed/d3d11on12core.dll
+          cd shim-fail-closed
+          wine d3d11shimstatus.exe
+
+      - name: Validate the clean-room DDI declarations and negotiation
+        run: |
+          set -euo pipefail
+          # The Wine D3D11 frontend is C and the host will be C++, so the DDI
+          # declarations must be valid and identical in both languages.
+          # -static so both binaries run in a bare prefix with no toolchain
+          # DLLs beside them.
+          x86_64-w64-mingw32-gcc -std=gnu11 -O2 -Wall -Wextra -Werror -static \
+            -Irelay12-d3d11/ddi -o d3d11ddilayout.exe tests/d3d11ddilayout.c
+          x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Werror -static \
+            -fno-exceptions -fno-rtti -Irelay12-d3d11/ddi -x c++ \
+            -o d3d11ddilayoutxx.exe tests/d3d11ddilayout.c
+          wine d3d11ddilayout.exe
+          wine d3d11ddilayoutxx.exe
+          # GetSupportedVersions writes its own count of words whenever the
+          # buffer pointer is non-null, so the count it takes is not a
+          # capacity.  These cases are what stands between that and a buffer
+          # overrun in the host, and they run in both languages for the same
+          # reason the layout harness does.
+          x86_64-w64-mingw32-gcc -std=gnu11 -O2 -Wall -Wextra -Werror -static \
+            -Irelay12-d3d11 -Irelay12-d3d11/ddi -o d3d11ddinegotiate.exe \
+            tests/d3d11ddinegotiate.c
+          x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Werror -static \
+            -fno-exceptions -fno-rtti -Irelay12-d3d11 -Irelay12-d3d11/ddi -x c++ \
+            -o d3d11ddinegotiatexx.exe tests/d3d11ddinegotiate.c
+          wine d3d11ddinegotiate.exe
+          wine d3d11ddinegotiatexx.exe
+          # A second opinion about the same offsets.  The compiled assertions
+          # only prove the header is self-consistent: transcribe a member list
+          # wrongly, assert the offsets that follow from it, and both agree.
+          # This model derives them by walking member lists instead, so it
+          # catches a hand-edited offset, an unasserted field, and an
+          # assertion for a field nothing derives from the specification.
+          python3 scripts/gen_ddi_layout.py --check
+          python3 - <<'PY'
+          import pathlib
+
+          errors = []
+          for path in sorted(pathlib.Path("relay12-d3d11/ddi").rglob("*.h")):
+              lines = path.read_text().splitlines()
+              for number, line in enumerate(lines, start=1):
+                  if "* Group:" not in line:
+                      continue
+                  block = "\n".join(lines[number - 1:number + 3])
+                  if "* Specification:" in block and "* Retrieved:" in block:
+                      continue
+                  errors.append(f"{path}:{number}: a DDI declaration group "
+                                "needs Specification and Retrieved provenance")
+          if errors:
+              raise SystemExit("\n".join(errors))
+          print("ddi provenance gate: ok")
+          PY
+
+      - name: Verify reproducible source package
+        run: |
+          set -euo pipefail
+          sh scripts/package-d3d11on12-source.sh source-one.tar.gz
+          sh scripts/package-d3d11on12-source.sh source-two.tar.gz
+          cmp source-one.tar.gz source-two.tar.gz
+          mv source-one.tar.gz d3d11on12-source.tar.gz
+          tar -tzf d3d11on12-source.tar.gz > source-files.txt
+          grep -q '^relay12/third_party/D3D11On12/LICENSE$' source-files.txt
+          grep -q '^relay12/third_party/D3D12TranslationLayer/LICENSE$' \
+            source-files.txt
+          grep -q '^relay12/third_party/DirectX-Headers/LICENSE$' \
+            source-files.txt
+
+      - name: Upload D3D11-on-12 development artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: d3d11on12probe-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            d3d11on12probe.exe
+            d3d11on12coretest.exe
+            d3d11shimstatus.exe
+            d3d11ddilayout.exe
+            d3d11ddinegotiate.exe
+            d3d11shim.dll
+            d3d11on12core.dll
+            d3d11on12-source.tar.gz
+          if-no-files-found: error
+          retention-days: 14

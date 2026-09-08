@@ -1,0 +1,8 @@
+; Preserve the exact name/ordinal ABI of Apple's d3d11.dll at 1 to 3.
+; Ordinal 4 is Wine-private: deployment needs the cause behind a documented
+; DXGI failure code, and the name cannot collide with a future Apple export.
+EXPORTS
+D3D11CreateDevice = shimD3D11CreateDevice @1
+D3D11CreateDeviceAndSwapChain = shimD3D11CreateDeviceAndSwapChain @2
+D3D11On12CreateDevice = shimD3D11On12CreateDevice @3
+WineD3D11ShimGetStatus @4

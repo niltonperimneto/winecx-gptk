@@ -829,6 +829,47 @@ jobs:
           EOF
           phase "gptk-video: dxgi driver version interposer"
 
+          # d3dmetal currently exports D3D11On12CreateDevice as a hardcoded
+          # DXGI_ERROR_UNSUPPORTED stub. This router preserves Apple's normal
+          # D3D11 entry points and reserves only the On12 entry point for the
+          # separately versioned implementation. Until that implementation is
+          # installed it fails honestly, with initialized outputs.
+          mkdir -p Libraries/Wine/lib/relay12-d3d11
+          x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 \
+            -Wall -Wextra -Werror -fno-exceptions -fno-rtti \
+            -fno-threadsafe-statics -fno-use-cxa-atexit \
+            -o Libraries/Wine/lib/relay12-d3d11/d3d11on12core.dll \
+            "$GITHUB_WORKSPACE/relay12-d3d11/d3d11on12core.cpp" \
+            "$GITHUB_WORKSPACE/relay12-d3d11/d3d11on12core.def" \
+            -I"$GITHUB_WORKSPACE/relay12-d3d11" -ld3d12 -ldxgi -luuid
+          x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 \
+            -Wall -Wextra -Werror -fno-exceptions -fno-rtti \
+            -fno-threadsafe-statics -fno-use-cxa-atexit \
+            -o Libraries/Wine/lib/relay12-d3d11/d3d11shim.dll \
+            "$GITHUB_WORKSPACE/relay12-d3d11/d3d11shim.cpp" \
+            "$GITHUB_WORKSPACE/relay12-d3d11/d3d11shim.def" \
+            -ld3d11 -ldxgi
+
+          python3 - Libraries/Wine/lib/relay12-d3d11/d3d11shim.dll \
+              Libraries/Wine/lib/relay12-d3d11/d3d11on12core.dll <<'EOF'
+          import struct, sys
+          for p in sys.argv[1:]:
+              d = bytearray(open(p, 'rb').read())
+              if struct.unpack_from('<I', d, 0x3c)[0] < 0x60:
+                  raise SystemExit('pe header overlaps the builtin marker')
+              d[0x40:0x60] = b'Wine builtin DLL' + b'\0' * 16
+              open(p, 'wb').write(bytes(d))
+          EOF
+
+          if x86_64-w64-mingw32-objdump -p \
+              Libraries/Wine/lib/relay12-d3d11/d3d11shim.dll \
+              Libraries/Wine/lib/relay12-d3d11/d3d11on12core.dll \
+              | grep -Eiq 'libstdc\+\+|libgcc_s'; then
+            echo 'd3d11 shim acquired a C++ runtime dependency' >&2
+            exit 1
+          fi
+          phase "relay12-d3d11: D3D11On12 router"
+
           # whisky's GPTKImporter deploys apple's payload into this directory
           # and symlinks lib/wine/x86_64-unix/{d3d10,d3d11,d3d12,dxgi}.so at
           # libd3dshared.dylib. it must exist in the tarball or the importer
@@ -864,7 +905,7 @@ jobs:
             <key>releaseChannel</key>
             <string>canary</string>
             <key>name</key>
-            <string>winecx-gptk-canary</string>
+            <string>relay12-canary</string>
             <key>wineVersion</key>
             <string>11.16</string>
             <key>wineSourceRevision</key>
@@ -1121,6 +1162,15 @@ jobs:
             exit 1
           fi
           echo "graphics payloads: ok"
+
+          # D3DMetal itself is user-supplied and cannot run in CI, but ship a
+          # strict probe with the runtime so an imported payload can be tested
+          # against the D3D11-on-12 contract on the target Mac.
+          mkdir -p Libraries/Tests
+          x86_64-w64-mingw32-gcc -O2 -Wall -Werror \
+            -o Libraries/Tests/d3d11on12probe.exe tests/d3d11on12probe.c \
+            -ld3d11 -ld3d12 -ldxgi -ldxguid -luuid
+          echo "d3d11-on-12 conformance probe: built"
 
           # and the media half: winedmo builds whether or not ffmpeg was there,
           # it just does nothing without it
@@ -1383,7 +1433,7 @@ jobs:
           catalog = {
               "catalogVersion": 1,
               "runtimes": [{
-                  "identifier": f"winecx-gptk-canary-{version}",
+                  "identifier": f"relay12-canary-{version}",
                   "version": version,
                   "channel": "canary",
                   "archiveURL": f"https://github.com/{repository}/releases/download/{tag}/Libraries.tar.gz",

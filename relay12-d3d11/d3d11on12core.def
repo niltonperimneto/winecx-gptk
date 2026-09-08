@@ -1,0 +1,4 @@
+EXPORTS
+WineD3D11On12GetABIVersion @1
+WineD3D11On12CreateDeviceV1 @2
+WineD3D11On12GetInterface @3

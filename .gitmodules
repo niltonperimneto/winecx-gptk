@@ -1,0 +1,9 @@
+[submodule "third_party/D3D11On12"]
+	path = third_party/D3D11On12
+	url = https://github.com/microsoft/D3D11On12.git
+[submodule "third_party/D3D12TranslationLayer"]
+	path = third_party/D3D12TranslationLayer
+	url = https://github.com/microsoft/D3D12TranslationLayer.git
+[submodule "third_party/DirectX-Headers"]
+	path = third_party/DirectX-Headers
+	url = https://github.com/microsoft/DirectX-Headers.git

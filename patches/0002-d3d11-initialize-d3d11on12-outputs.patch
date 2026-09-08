@@ -1,0 +1,34 @@
+From: Whisky Runtime CI <runtime@whisky.local>
+Subject: [PATCH] d3d11: Initialize D3D11On12CreateDevice outputs
+
+D3D11On12CreateDevice is not implemented by Wine or D3DMetal. Keep the
+failure explicit instead of returning an unrelated D3D11 device, but honor
+the COM output contract by clearing every caller-provided output before
+returning E_NOTIMPL.
+
+This prevents callers that inspect or clean up outputs after failure from
+using stale pointers or a stale feature level.
+
+---
+ dlls/d3d11/d3d11_main.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/dlls/d3d11/d3d11_main.c b/dlls/d3d11/d3d11_main.c
+index 75986318..989c023e 100644
+--- a/dlls/d3d11/d3d11_main.c
++++ b/dlls/d3d11/d3d11_main.c
+@@ -390,5 +390,12 @@ HRESULT WINAPI D3D11On12CreateDevice(IUnknown *device, UINT flags,
+             device, flags, feature_levels, feature_level_count, queues, queue_count,
+             node_mask, d3d11_device, d3d11_immediate_context, obtained_feature_level);
+ 
++    if (d3d11_device)
++        *d3d11_device = NULL;
++    if (d3d11_immediate_context)
++        *d3d11_immediate_context = NULL;
++    if (obtained_feature_level)
++        *obtained_feature_level = 0;
++
+     return E_NOTIMPL;
+ }
+-- 
+2.51.0

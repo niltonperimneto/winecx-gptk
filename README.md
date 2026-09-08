@@ -1,72 +1,136 @@
-# winecx-gptk
+# D3D11On12: Direct3D 11 on Direct3D 12 Translation Layer
 
-ci build of a gptk-capable wine runtime for the [frankea/Whisky](https://github.com/frankea/Whisky) fork: codeweavers' crossover 26.3 wine changes, rebased onto upstream wine 11.16.
+> A translation layer and clean-room driver interface host that enables Direct3D 11 applications to execute on top of Direct3D 12 runtimes.
 
-why: apple's game porting toolkit / d3dmetal payload only executes on crossover-derived wine builds, it patches their unixcall internals at load time. details in [frankea/Whisky#163](https://github.com/frankea/Whisky/issues/163), importer app-side in [frankea/Whisky#164](https://github.com/frankea/Whisky/pull/164).
+---
 
-the source tree is the [`wine1116` branch of dappermint/winecx](https://github.com/dappermint/winecx/tree/wine1116): crossover 26.3's diff (221 files against its wine 11.0 base) merged onto wine 11.15 via a synthetic three-way, then carried to 11.16 the same way, with every local patch committed in the tree itself. `patches/` in this repo is empty on purpose; the apply step is a guarded no-op. the crossover diff turned out compact enough that tracking upstream wine releases is sustainable, most of the rebase churn was mechanical.
+## Introduction: What is D3D11On12?
 
-what runs on it, measured on an m5: steam's ui end to end, d3d12 through d3dmetal at feature level 12_2 (binding tier 3, sm 6.6), dxvk d3d11, msync, and the media stack.
+Direct3D (often called DirectX) is the graphics library used by many Windows applications and games to render 3D scenes. Over time, Microsoft released different major versions:
+- **Direct3D 11 (D3D11):** A high-level graphics programming model where the graphics driver manages memory, resource synchronization, and command scheduling behind the scenes.
+- **Direct3D 12 (D3D12):** A low-level graphics model where the application explicitly controls memory allocation, synchronization fences, and GPU command queues.
 
-what the workflow does:
+On platforms where Direct3D 12 is the primary or best-supported graphics pathway, applications that were written for Direct3D 11 cannot run directly without a translation mechanism.
 
-- clones winecx at the pinned commit, builds the unix half for x86_64 under rosetta
-- PE half via mingw-w64 gcc (not llvm-mingw: an llvm-built `kernelbase.dll` stalls steam's CM login, found by module bisection), `--enable-archs=i386,x86_64`
-- freetype, gnutls, gstreamer and friends come from pinned nixpkgs x86_64-darwin and are bundled flat into `Wine/lib` with `@loader_path` rewrites, so the tree relocates; moltenvk from khronos' own release
-- wine-mono and wine-gecko go in extracted, the same form and the same place the stock whisky engine puts them
-- packages a whisky `Libraries.tar.gz` with `gptkCapable` set in the version plist
+**D3D11On12** provides this translation mechanism. It exposes the standard Direct3D 11 programming interfaces to the application, while internally converting all state changes, draw calls, and resource management into Direct3D 12 commands.
 
-gates that refuse to ship a bad tree, each one added after that exact thing shipped silently:
+```text
+ ┌──────────────────────────────────────────────────────────────┐
+ │                Direct3D 11 Application / Game                │
+ └──────────────────────────────┬───────────────────────────────┘
+                                │ Calls D3D11CreateDevice /
+                                │ D3D11On12CreateDevice
+                                ▼
+ ┌──────────────────────────────────────────────────────────────┐
+ │            Router: d3d11shim.dll (d3d11.dll)                 │
+ │   Routes standard D3D11 to native driver or D3D11On12 core   │
+ └──────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+ ┌──────────────────────────────────────────────────────────────┐
+ │          Core Validation Boundary: d3d11on12core.dll         │
+ │   Validates D3D12 devices, command queues, and COM identity  │
+ └──────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+ ┌──────────────────────────────────────────────────────────────┐
+ │          Clean-Room DDI Host (wine_d3d11ddi.h)               │
+ │   Provides standard WDDM 2.6 / 2.7 driver callback interface │
+ └──────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+ ┌──────────────────────────────────────────────────────────────┐
+ │           Microsoft D3D11On12 User-Mode Driver &             │
+ │                   D3D12TranslationLayer                      │
+ └──────────────────────────────┬───────────────────────────────┘
+                                │ Submits commands
+                                ▼
+ ┌──────────────────────────────────────────────────────────────┐
+ │                 Direct3D 12 Hardware / Driver                │
+ └──────────────────────────────────────────────────────────────┘
+```
 
-- **relocatability.** every Mach-O file is swept for absolute non-system references. a dylib whose own id is a `/nix/store` path cannot be dlopened off the builder, which cost fonts, vulkan and tls for seven builds without a single error message.
-- **every bundled library dlopens.** the closure is loaded file by file on the builder with the store paths masked; this caught the libiconv split (`_iconv` vs `_libiconv`) that had silently killed the whole media stack.
-- **the runtime opens a window and media foundation has decoders.** `wine --version` passes on runtimes that cannot create a window.
-- **the i386 half is non-empty.** a 64-bit-only tree cannot load `syswow64\ntdll.dll`, so every 32-bit program dies with `c0000135`.
-- **the PE half is stripped.** gcc emits DWARF and nothing removes it; `ntdll.dll` is 3.0MB unstripped against the stock engine's 0.7MB, and everything still runs.
+---
 
-## reproducibility
+## Purpose of this Project
 
-everything the build consumes is pinned in-tree:
+This project implements the host environment and driver infrastructure required to run Microsoft's open-source D3D11On12 user-mode driver in Wine-based and compatible environments:
 
-| input | pinned by |
-|---|---|
-| winecx sources | `WINECX_COMMIT` in the workflow env |
-| nixpkgs | `NIXPKGS_REV` in the workflow env, a rev not a branch |
-| moltenvk, dxvk, dxmt | version + sha256 in the workflow |
-| wine-mono, wine-gecko | sha256 table in the workflow, checked after download; the versions are read out of winecx's `dlls/appwiz.cpl/addons.c` and the build stops if an unpinned version appears |
+1. **PE Router (`d3d11shim.dll`):** A replacement for `d3d11.dll` that exports standard entry points (`D3D11CreateDevice`, `D3D11CreateDeviceAndSwapChain`, and `D3D11On12CreateDevice`). It forwards standard creation calls to native implementations (such as `d3d11mt.dll`) and routes `D3D11On12CreateDevice` to the core boundary.
+2. **Core Validation Boundary (`d3d11on12core.dll`):** Validates caller-supplied `ID3D12Device` and `ID3D12CommandQueue` pointers, confirms command queue types, enforces two-tier COM identity checks, and initializes the DDI host.
+3. **Clean-Room WDDM DDI Host (`relay12-d3d11/ddi/wine_d3d11ddi.h`):** Reconstructs the necessary Windows Driver Model (WDDM 2.6 and 2.7) structures and function tables from public specifications without copying proprietary Windows Driver Kit headers.
+4. **Verification Framework:** Provides automated layout checks, mock-object unit tests, and static code audits to prevent interface mismatches and ABI drift.
 
-builds run on a self-hosted runner by default (warm ccache, ~15 min); the `hosted` dispatch input is the clean-room check and what releases should come from when provenance matters more than turnaround.
+---
 
-## notable changes carried in the tree
+## Architecture and Components
 
-**ntdll: don't call a foreign personality routine as an SEH handler.** `virtual_unwind()` leaves `LDR_DATA_TABLE_ENTRY *module` uninitialised and `LdrFindEntryForAddress` does not touch it on failure, so for a fault in Mach-O code the "personality routine in system library" guard reads garbage and never fires; wine then calls a libunwind personality routine as a windows exception handler and recurses to stack death. still present upstream as of wine 11.16, applied at the moved location there.
+### 1. The PE Router (`relay12-d3d11/d3d11shim.cpp`)
 
-**winemac: host cross-process metal layers over CAContext.** wine 11.x grew CALayerHost cross-process swapchains upstream; what it still lacks is child windows and win32 state mirroring for hosted layers, which is what steam's chromium needs. the gpu process renders into another process's child windows; the owner hosts the published tree and re-derives hidden state and z-order from the win32 windows on every WindowPosChanged. without the mirroring, chromium's hidden standby surface covers the live one with one stale black frame, which shows up as a fully rendered steam library under a black layer.
+Applications link against `d3d11.dll` to access Direct3D 11 functionality. The router fulfills this role while maintaining exact export compatibility:
 
-**d3dkmt: adapter identity and segment sizes.** five more KMTQAITYPEs answered honestly from vulkan (adapter type, physical adapter count, pci address, adapter guid, segment sizes), placed above crossover's WDDM 2.7 hack so its fallthrough keeps reaching `default` for non-d3dmetal backends.
+| Export Ordinal | Function Name | Routing Behavior |
+| ---: | :--- | :--- |
+| 1 | `D3D11CreateDevice` | Forwards to `d3d11mt.dll` |
+| 2 | `D3D11CreateDeviceAndSwapChain` | Forwards to `d3d11mt.dll` |
+| 3 | `D3D11On12CreateDevice` | Validates inputs and routes to `d3d11on12core.dll` |
+| 4 | `WineD3D11ShimGetStatus` | Reports component readiness and initialization state |
 
-**upstream fixes taken ahead of their release.** the 11.15 lane carried eight commits from wine master as cherry-picks; all eight landed in 11.16 and were dropped at that rebase. the one currently carried is the winegstreamer non-fixed-caps video pool fix, which is not in 11.16.
+If dependencies (`d3d11mt.dll` or `d3d11on12core.dll`) are unavailable, the router returns `DXGI_ERROR_UNSUPPORTED` (`0x887a0004`) and clears all output pointers. This ensures calling applications can detect unsupported configurations and select alternative rendering paths.
 
-## what happens when rosetta goes
+### 2. The Core Boundary (`relay12-d3d11/d3d11on12core.cpp`)
 
-this runtime is x86_64. it runs on apple silicon through rosetta 2, which apple
-has said is largely discontinued in macOS 28. everything here has that shelf
-life, and so does the apple payload it exists to host: d3dmetal ships x86_64
-only, so the d3d12 work, the video interposers and the metalfx bridges cannot
-follow the runtime to arm64 unless apple builds them for it.
+The core module receives Direct3D 12 device pointers and configuration flags from the caller. Before initializing the translation driver, it applies several safety verifications:
 
-the successor is an arm64 runtime running x86 games under FEX, and it already
-works: our own FEX build executes both 64-bit and 32-bit x86 windows code on an
-arm64 mac. what it cannot do is host that process by itself. wine needs the low
-4GB of address space, arm64 reserves all of it as a mandatory pagezero, and the
-only way out is `com.apple.developer.cross-architecture-support`, an entitlement
-apple grants at its own discretion. crossover's arm64 build carries it. a
-self-signed binary carrying the same string is refused at exec.
+- **Command Queue Verification:** Inspects the caller-supplied `ID3D12CommandQueue` description to confirm it is a direct queue (`D3D12_COMMAND_LIST_TYPE_DIRECT`). Compute or copy queues cannot serve as primary queues for Direct3D 11 presentation.
+- **Two-Tier COM Identity:** Verifies that the command queue was created by the supplied device. It compares typed `ID3D12Device` pointers first, only querying `IUnknown` identity if the typed pointers differ.
+- **Strict Acquisition Funnel:** All interface queries funnel through `strictResult()`. If a query returns `S_OK` but leaves the output pointer null, the call is treated as a failure to avoid subsequent null pointer dereferences.
 
-so the ceiling on this project is not engineering. anyone can write the code and
-we have. whether it reaches users is apple's decision, and worth knowing before
-you build a library around any of this.
+### 3. The Clean-Room DDI Interface (`relay12-d3d11/ddi/wine_d3d11ddi.h`)
 
-## history
+Microsoft's D3D11On12 driver communicates with the host through the user-mode driver interface (DDI). Because proprietary driver development headers cannot be used, all structures are clean-room declared from public documentation:
 
-the wine 10 line (crossover 25.1, series 4.3) proved d3dmetal executes on a self-built runtime and carried the first version of the cross-process bridge as four patches; the wine 11.0 line (crossover 26.3) collapsed them to one. both era tips are tagged, [`lane/wine10-cx25`](../../tree/lane/wine10-cx25) and [`lane/wine11.0-cx26`](../../tree/lane/wine11.0-cx26), and the old `patches/` files are browsable in those trees.
+- **Version Negotiation:** The driver negotiates WDDM 2.7 while utilizing `D3DWDDM2_6DDI_DEVICEFUNCS` (178 function slots) and `D3DWDDM2_6DDI_CORELAYER_DEVICECALLBACKS` (47 callback slots).
+- **Dual-Source Cross-Validation:** Every structure is verified against Microsoft Learn documentation pages and corresponding GitHub markdown documentation mirrors to confirm field order, type sizes, and member counts.
+- **Layout Model Verification:** Structure layouts are checked against an independent Python layout generator ([`scripts/gen_ddi_layout.py`](file:///Users/niltonperimneto/Whisky/relay12/scripts/gen_ddi_layout.py)) to ensure offsets and alignments match 64-bit Windows natural alignment rules (`/Zp8`).
+
+---
+
+## Directory Structure
+
+| Path | Purpose |
+| :--- | :--- |
+| [`relay12-d3d11/`](file:///Users/niltonperimneto/Whisky/relay12/relay12-d3d11) | Implementation of the router (`d3d11shim.cpp`), core boundary (`d3d11on12core.cpp`), ABI header (`wine_d3d11on12.h`), diagnostic logging (`wine_d3d11_diag.h`), and clean-room DDI headers (`ddi/wine_d3d11ddi.h`). |
+| [`scripts/`](file:///Users/niltonperimneto/Whisky/relay12/scripts) | Static verification tools and compliance gates: `check_ddi_header.py`, `gen_ddi_layout.py`, `check_pe_audit.py`, `check_interface_acquisition.py`. |
+| [`tests/`](file:///Users/niltonperimneto/Whisky/relay12/tests) | Test suite: Python CI gate tests (`test_ci_gates.py`), mock core unit tests (`d3d11on12coretest.c`), DDI layout validation (`d3d11ddilayout.c`), and router status checks (`d3d11shimstatus.c`). |
+| [`docs/`](file:///Users/niltonperimneto/Whisky/relay12/docs) | Technical specifications: [`D3D11ON12.md`](file:///Users/niltonperimneto/Whisky/relay12/docs/D3D11ON12.md) (system architecture and roadmap) and [`CLEANROOM-DDI.md`](file:///Users/niltonperimneto/Whisky/relay12/docs/CLEANROOM-DDI.md) (DDI authoring method and worklist). |
+| [`third_party/`](file:///Users/niltonperimneto/Whisky/relay12/third_party) | Pinned submodules: `D3D11On12`, `D3D12TranslationLayer`, and `DirectX-Headers`. |
+
+---
+
+## Verification and Safety Gates
+
+To maintain stability and prevent regression across compiler toolchains, four static audits and unit test harnesses are executed:
+
+| Gate Command | Purpose |
+| :--- | :--- |
+| `python3 -m unittest discover -s tests -p "test_*.py"` | Verifies that all CI static gate scripts and verification rules function as expected. |
+| `python3 scripts/gen_ddi_layout.py --check` | Compares clean-room DDI header field offsets against an independent layout calculation model. |
+| `python3 scripts/check_ddi_header.py` | Validates documentation provenance blocks (URLs and retrieval dates) and verifies that `#pragma pack` is not used. |
+| `python3 scripts/check_interface_acquisition.py relay12-d3d11` | Confirms that every `QueryInterface` and `GetDevice` call routes through `strictResult()`. |
+
+---
+
+## Further Reading
+
+- **[docs/D3D11ON12.md](file:///Users/niltonperimneto/Whisky/relay12/docs/D3D11ON12.md):** Complete architectural design, component boundaries, failure modes, and rollout checklist.
+- **[docs/CLEANROOM-DDI.md](file:///Users/niltonperimneto/Whisky/relay12/docs/CLEANROOM-DDI.md):** Clean-room WDDM DDI authoring guidelines, version negotiation proof, and implementation worklist.
+- **[AGENTS.md](file:///Users/niltonperimneto/Whisky/relay12/AGENTS.md):** Architecture invariants, safety rules, and guidelines for automated coding agents.
+- **[SKILLS.md](file:///Users/niltonperimneto/Whisky/relay12/SKILLS.md):** Step-by-step procedures for layout generation, compilation checks, and test execution.
+
+---
+
+## Licensing
+
+- **Router, Core, Tests, and Tools:** Licensed under the [GNU General Public License v3.0](file:///Users/niltonperimneto/Whisky/relay12/LICENSE) (`GPL-3.0-only`).
+- **Submodules (`D3D11On12`, `D3D12TranslationLayer`, `DirectX-Headers`):** Licensed under the [MIT License](file:///Users/niltonperimneto/Whisky/relay12/THIRD_PARTY_NOTICES.md).
