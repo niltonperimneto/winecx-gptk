@@ -18,33 +18,30 @@ jobs:
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
-          sudo apt-get -y install g++-mingw-w64-x86-64
-      - name: Compile and audit D3D11 router
+          sudo apt-get -y install wine64 g++-mingw-w64-x86-64 wine32:i386 g++-mingw-w64-i686
+      - name: Validate the clean-room DDI declarations and negotiation
         run: |
-          set -x
-          x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 \
-            -Wall -Wextra -Werror -fno-exceptions -fno-rtti \
-            -fno-threadsafe-statics -fno-use-cxa-atexit \
-            -o d3d11on12core.dll relay12-d3d11/d3d11on12core.cpp \
-            relay12-d3d11/wine_d3d11_diag.cpp \
-            relay12-d3d11/d3d11on12core.def -ld3d12 -ldxgi -luuid > log.txt 2>&1
-          x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 \
-            -Wall -Wextra -Werror -fno-exceptions -fno-rtti \
-            -fno-threadsafe-statics -fno-use-cxa-atexit \
-            -o d3d11shim.dll relay12-d3d11/d3d11shim.cpp \
-            relay12-d3d11/wine_d3d11_diag.cpp \
-            relay12-d3d11/d3d11shim.def -ld3d11 -ldxgi >> log.txt 2>&1
-          core_exports="$(x86_64-w64-mingw32-objdump -p d3d11on12core.dll)"
-          echo "$core_exports" > objdump_core.txt
-          grep -q 'WineD3D11On12GetABIVersion' <<<"$core_exports" || echo "fail1" >> fails.txt
-          grep -q 'WineD3D11On12CreateDeviceV1' <<<"$core_exports" || echo "fail2" >> fails.txt
-          grep -q 'WineD3D11On12GetInterface' <<<"$core_exports" || echo "fail3" >> fails.txt
-          exports="$(x86_64-w64-mingw32-objdump -p d3d11shim.dll)"
-          echo "$exports" > objdump_shim.txt
-          grep -q 'D3D11CreateDevice' <<<"$exports" || echo "fail4" >> fails.txt
+          x86_64-w64-mingw32-gcc -std=gnu11 -O2 -Wall -Wextra -Werror -static \
+            -Irelay12-d3d11/ddi -o d3d11ddilayout.exe tests/d3d11ddilayout.c > step11_c.txt 2>&1 || true
+          x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Werror -static \
+            -fno-exceptions -fno-rtti -Irelay12-d3d11/ddi -x c++ \
+            -o d3d11ddilayoutxx.exe tests/d3d11ddilayout.c > step11_cxx.txt 2>&1 || true
+          wine d3d11ddilayout.exe > wine1.txt 2>&1 || true
+          wine d3d11ddilayoutxx.exe > wine2.txt 2>&1 || true
           
+          x86_64-w64-mingw32-gcc -std=gnu11 -O2 -Wall -Wextra -Werror -static \
+            -Irelay12-d3d11 -Irelay12-d3d11/ddi -o d3d11ddinegotiate.exe \
+            tests/d3d11ddinegotiate.c > step11_neg_c.txt 2>&1 || true
+          x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Werror -static \
+            -fno-exceptions -fno-rtti -Irelay12-d3d11 -Irelay12-d3d11/ddi -x c++ \
+            -o d3d11ddinegotiatexx.exe tests/d3d11ddinegotiate.c > step11_neg_cxx.txt 2>&1 || true
+          wine d3d11ddinegotiate.exe > wine3.txt 2>&1 || true
+          wine d3d11ddinegotiatexx.exe > wine4.txt 2>&1 || true
+
+      - name: Push to Branch
+        run: |
           git config --global user.name "Bot"
           git config --global user.email "bot@example.com"
-          git add log.txt objdump_core.txt objdump_shim.txt fails.txt || true
-          git commit -m "Results" || true
+          git add *.txt || true
+          git commit -m "Step 11 logs" || true
           git push origin HEAD:feat/debug-actions || echo "Push failed"
