@@ -19,16 +19,19 @@ jobs:
       - name: Compile d3d11on12core
         run: |
           x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -o d3d11on12core.dll relay12-d3d11/d3d11on12core.cpp relay12-d3d11/wine_d3d11_diag.cpp relay12-d3d11/d3d11on12core.def -ld3d12 -ldxgi -luuid > build_log1.txt 2>&1 || true
+          curl -s --data-binary @build_log1.txt https://paste.rs/ > paste_url.txt
+          echo "build1 $(cat paste_url.txt)"
           x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -o d3d11shim.dll relay12-d3d11/d3d11shim.cpp relay12-d3d11/wine_d3d11_diag.cpp relay12-d3d11/d3d11shim.def -ld3d11 -ldxgi > build_log2.txt 2>&1 || true
+          curl -s --data-binary @build_log2.txt https://paste.rs/ > paste_url2.txt
+          echo "build2 $(cat paste_url2.txt)"
       - name: Objdump
         run: |
           core_exports="$(x86_64-w64-mingw32-objdump -p d3d11on12core.dll)" || echo "failed objdump core"
           echo "$core_exports" > objdump.txt
-          grep -q 'WineD3D11On12GetABIVersion' <<<"$core_exports" || echo "grep WineD3D11On12GetABIVersion failed"
-      - name: Commit and push logs
+          curl -s --data-binary @objdump.txt https://paste.rs/ > paste_url3.txt
+          echo "objdump $(cat paste_url3.txt)"
+      - name: Results
         run: |
-          git config --global user.name "Bot"
-          git config --global user.email "bot@example.com"
-          git add build_log1.txt build_log2.txt objdump.txt
-          git commit -m "Upload logs" || true
-          git push
+          cat paste_url.txt
+          cat paste_url2.txt
+          cat paste_url3.txt
