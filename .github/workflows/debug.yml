@@ -4,6 +4,9 @@ on:
     branches:
       - feat/debug-actions
 
+permissions:
+  contents: write
+
 jobs:
   debug-job:
     runs-on: ubuntu-26.04
@@ -11,7 +14,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install
         run: |
           sudo dpkg --add-architecture i386
