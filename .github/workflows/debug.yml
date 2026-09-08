@@ -1,0 +1,29 @@
+name: Debug Router Build
+on:
+  push:
+    branches:
+      - feat/debug-actions
+
+jobs:
+  debug-job:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Install
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get -y install g++-mingw-w64-x86-64
+      - name: Compile d3d11on12core
+        run: |
+          x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -o d3d11on12core.dll relay12-d3d11/d3d11on12core.cpp relay12-d3d11/wine_d3d11_diag.cpp relay12-d3d11/d3d11on12core.def -ld3d12 -ldxgi -luuid > build_log1.txt 2>&1 || true
+          cat build_log1.txt
+          x86_64-w64-mingw32-g++ -shared -std=c++17 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit -o d3d11shim.dll relay12-d3d11/d3d11shim.cpp relay12-d3d11/wine_d3d11_diag.cpp relay12-d3d11/d3d11shim.def -ld3d11 -ldxgi > build_log2.txt 2>&1 || true
+          cat build_log2.txt
+      - name: Objdump
+        run: |
+          core_exports="$(x86_64-w64-mingw32-objdump -p d3d11on12core.dll)" || echo "failed objdump core"
+          echo "$core_exports" > objdump.txt
+          grep -q 'WineD3D11On12GetABIVersion' <<<"$core_exports" || echo "grep WineD3D11On12GetABIVersion failed"
