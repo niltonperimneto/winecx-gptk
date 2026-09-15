@@ -43,15 +43,14 @@ on:
 # of 2026, which is this project's deadline for finding another source of
 # x86_64 macOS libraries.
 env:
-  # the wine1116 branch of our winecx import: crossover 26.3's diff merged
-  # onto wine 11.16 with every patch committed in-tree, so patches/ is empty
-  # on this branch and the apply loop is a no-op. the eight post-11.15
-  # cherry-picks the previous lane carried landed in 11.16 and are gone.
+  # Whisky's CrossOver-derived winecx main line, pinned to the feature commit
+  # under test. Keep the source revision immutable so a successful artifact is
+  # reproducible even when the source branch advances.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
   WINECX_COMMIT: 0de5791f84877a6b5b5b7363f9eb01bd831b21cc
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
-  FAUDIO_VERSION: "26.08"
+  FAUDIO_VERSION: "25.12"
   DXVK_VERSION: "1.10.3"
   DXMT_VERSION: "0.80"
   # the runtime stream this build publishes into. lived inline in the stamping
@@ -166,9 +165,9 @@ jobs:
 
       - name: verify vendored faudio
         run: |
-          # this branch commits FAudio 26.08 and its portability fixes in the
-          # winecx tree itself; overlaying upstream sources here would wipe
-          # them. only verify the version matches the pin.
+          # CrossOver vendors its compatible FAudio revision in the winecx
+          # tree. Overlaying a newer upstream release can break that source
+          # combination, so verify the vendored version instead.
           ver() { grep -oE "FAUDIO_${1}_VERSION[[:space:]]+[0-9]+" \
                     winecx/libs/faudio/include/FAudio.h | grep -oE '[0-9]+$'; }
           got="$(ver MAJOR).$(ver MINOR)"
@@ -868,11 +867,11 @@ jobs:
             <key>name</key>
             <string>winecx-gptk</string>
             <key>wineVersion</key>
-            <string>11.16</string>
+            <string>11.0</string>
             <key>wineSourceRevision</key>
             <string>WINE_SOURCE_REV</string>
             <key>patchset</key>
-            <string>whisky-wine1116-stable</string>
+            <string>whisky-winecx-crossover-stable</string>
             <key>patchsetRevision</key>
             <string>PATCHSET_REV</string>
             <key>buildArchitecture</key>
@@ -1349,7 +1348,7 @@ jobs:
             echo "| sha256 | \`$sha\` |"
             echo
             echo "Built from ${{ github.sha }}. This is the default stable Whisky runtime,"
-            echo "built from niltonperimneto/winecx's pinned Wine 11.16 branch."
+            echo "built from niltonperimneto/winecx's pinned CrossOver source line."
           } > notes.md
 
           # re-running a build of the same tree stamps the same version, so
@@ -1391,7 +1390,7 @@ jobs:
                   "archiveURL": f"https://github.com/{repository}/releases/download/{tag}/Libraries.tar.gz",
                   "sha256": digest,
                   "minimumMacOS": "26.0",
-                  "wineVersion": "11.16",
+                  "wineVersion": "11.0",
                   "capabilities": {
                       "gptkMajorVersions": [3, 4],
                       "wsarecvmsg": True,
