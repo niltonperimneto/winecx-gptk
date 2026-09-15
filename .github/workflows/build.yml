@@ -47,7 +47,7 @@ env:
   # onto wine 11.16 with every patch committed in-tree, so patches/ is empty
   # on this branch and the apply loop is a no-op. the eight post-11.15
   # cherry-picks the previous lane carried landed in 11.16 and are gone.
-  WINECX_REPO: https://github.com/dappermint/winecx.git
+  WINECX_REPO: https://github.com/niltonperimneto/winecx.git
   WINECX_COMMIT: e1b410a5fdd96a32722a5f2617b5068bd385b7db
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
@@ -62,7 +62,7 @@ env:
   # last changed, so it moves on its own, resets to 0 at a series bump, and two
   # builds of the same tree still stamp the same version. any commit that edits
   # this assignment line resets the count, so touch it only to bump the series.
-  RUNTIME_SERIES: "4.6"
+  RUNTIME_SERIES: "4.7"
   # Without this every binary carries the minos of whatever built it, so the
   # self-hosted runner stamped macOS 27 onto a runtime dyld then refuses to load
   # anywhere older. Whisky's own floor has to match this number.
@@ -862,15 +862,15 @@ jobs:
             <key>manifestVersion</key>
             <integer>2</integer>
             <key>releaseChannel</key>
-            <string>canary</string>
+            <string>stable</string>
             <key>name</key>
-            <string>winecx-gptk-canary</string>
+            <string>winecx-gptk</string>
             <key>wineVersion</key>
             <string>11.16</string>
             <key>wineSourceRevision</key>
             <string>WINE_SOURCE_REV</string>
             <key>patchset</key>
-            <string>whisky-steam-networking</string>
+            <string>whisky-wine1116-stable</string>
             <key>patchsetRevision</key>
             <string>PATCHSET_REV</string>
             <key>buildArchitecture</key>
@@ -1334,7 +1334,7 @@ jobs:
           [ -n "$RUNTIME_VERSION" ] || { echo "::error::build did not report a version"; exit 1; }
 
           sha256sum -c Libraries.tar.gz.sha256
-          tag="runtime-canary-v$RUNTIME_VERSION"
+          tag="runtime-stable-v$RUNTIME_VERSION"
           sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
 
           {
@@ -1346,8 +1346,8 @@ jobs:
             echo "| moltenvk | $MOLTENVK_VERSION |"
             echo "| sha256 | \`$sha\` |"
             echo
-            echo "Built from ${{ github.sha }}. This prerelease is exposed only through"
-            echo "the opt-in canary catalog; stable remains on dappermint's runtime lane."
+            echo "Built from ${{ github.sha }}. This is the default stable Whisky runtime,"
+            echo "built from niltonperimneto/winecx's pinned Wine 11.16 branch."
           } > notes.md
 
           # re-running a build of the same tree stamps the same version, so
@@ -1360,18 +1360,18 @@ jobs:
           else
             gh release create "$tag" Libraries.tar.gz Libraries.tar.gz.sha256 \
               WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt \
-              --prerelease --title "canary runtime $RUNTIME_VERSION" --notes-file notes.md
+              --title "stable runtime $RUNTIME_VERSION" --notes-file notes.md
           fi
           echo "published $tag" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: publish the opt-in canary catalog
+      - name: publish the stable runtime catalog
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUNTIME_VERSION: ${{ needs.build.outputs.runtime_version }}
         run: |
           set -euo pipefail
-          tag="runtime-canary-v$RUNTIME_VERSION"
+          tag="runtime-stable-v$RUNTIME_VERSION"
           sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
           published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -1383,9 +1383,9 @@ jobs:
           catalog = {
               "catalogVersion": 1,
               "runtimes": [{
-                  "identifier": f"winecx-gptk-canary-{version}",
+                  "identifier": f"winecx-gptk-{version}",
                   "version": version,
-                  "channel": "canary",
+                  "channel": "stable",
                   "archiveURL": f"https://github.com/{repository}/releases/download/{tag}/Libraries.tar.gz",
                   "sha256": digest,
                   "minimumMacOS": "26.0",
@@ -1416,5 +1416,5 @@ jobs:
             echo "catalog already current"
             exit 0
           fi
-          git commit -m "chore(runtime): publish canary $RUNTIME_VERSION [skip ci]"
+          git commit -m "chore(runtime): publish stable $RUNTIME_VERSION [skip ci]"
           git push origin HEAD:main
