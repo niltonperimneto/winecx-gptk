@@ -52,7 +52,11 @@ env:
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "25.12"
   DXVK_VERSION: "1.10.3"
-  DXMT_VERSION: "0.80"
+  # Canary DXMT payload built by upstream CI from an immutable main commit.
+  DXMT_VERSION: "main-ef11653"
+  DXMT_COMMIT: ef116534b2af7037c670ede3297e3ee74b45058d
+  DXMT_RUN_ID: "34816077654"
+  DXMT_ARTIFACT_SHA256: 2d910d8cb654283b1fb50266c59ce6f9efc132eea6c3d44b961cc5bd1ffb2cd2
   # the runtime stream this build publishes into. lived inline in the stamping
   # step as a default and went stale there: v4.2.0 shipped while the workflow
   # still said 4.1.0, so every dispatch without an explicit input mislabelled
@@ -503,10 +507,11 @@ jobs:
           mkdir -p payload
           fetch "https://github.com/Gcenx/DXVK-macOS/releases/download/v$DXVK_VERSION-20230507-repack/dxvk-macOS-async-v$DXVK_VERSION-20230507-repack.tar.gz" \
                 dxvk.tar.gz acd1520ad105d8ef124a09c8e11a259a5dc8bdc565ad18e0e52693f9807b2477
-          fetch "https://github.com/3Shain/dxmt/releases/download/v$DXMT_VERSION/dxmt-v$DXMT_VERSION-builtin.tar.gz" \
-                dxmt.tar.gz 8f260e36b5739e68f3bad613381441385c4dc7b85b78ba8de653d5a6a264529d
+          fetch "https://nightly.link/3Shain/dxmt/actions/runs/$DXMT_RUN_ID/dxmt-$DXMT_COMMIT.zip" \
+                dxmt.zip "$DXMT_ARTIFACT_SHA256"
           tar -xzf dxvk.tar.gz -C payload
-          tar -xzf dxmt.tar.gz -C payload
+          unzip -q dxmt.zip
+          tar -xzf "dxmt-$DXMT_COMMIT.tar.gz" -C payload
 
           # khronos' own build, not nixpkgs': see the note by MOLTENVK_VERSION.
           # the plain macos tar, not -privateapi -- that variant's extra
@@ -571,7 +576,7 @@ jobs:
           # visible to the webhelper: chromium probes for an nvidia gpu, loads
           # d3dmetal, and takes the helper down with it. the d3d frontends stay
           # per-bottle in Libraries/DXMT, deployed by whisky's backend picker.
-          dxmt=payload/v$DXMT_VERSION
+          dxmt=payload/$DXMT_COMMIT
           cp -R "$dxmt/x86_64-unix/." Libraries/Wine/lib/wine/x86_64-unix/
           cp "$dxmt/x86_64-windows/winemetal.dll" Libraries/Wine/lib/wine/x86_64-windows/
           if [ -f "$dxmt/i386-windows/winemetal.dll" ]; then
@@ -1335,7 +1340,7 @@ jobs:
           [ -n "$RUNTIME_VERSION" ] || { echo "::error::build did not report a version"; exit 1; }
 
           sha256sum -c Libraries.tar.gz.sha256
-          tag="runtime-stable-v$RUNTIME_VERSION"
+          tag="runtime-canary-v$RUNTIME_VERSION"
           sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
 
           {
@@ -1347,8 +1352,8 @@ jobs:
             echo "| moltenvk | $MOLTENVK_VERSION |"
             echo "| sha256 | \`$sha\` |"
             echo
-            echo "Built from ${{ github.sha }}. This is the default stable Whisky runtime,"
-            echo "built from niltonperimneto/winecx's pinned CrossOver source line."
+            echo "Built from ${{ github.sha }} with DXMT main at \`$DXMT_COMMIT\`."
+            echo "This prerelease is exposed only through the opt-in canary catalog."
           } > notes.md
 
           # re-running a build of the same tree stamps the same version, so
@@ -1361,18 +1366,18 @@ jobs:
           else
             gh release create "$tag" Libraries.tar.gz Libraries.tar.gz.sha256 \
               WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt \
-              --title "stable runtime $RUNTIME_VERSION" --notes-file notes.md
+              --prerelease --title "canary runtime $RUNTIME_VERSION" --notes-file notes.md
           fi
           echo "published $tag" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: publish the stable runtime catalog
+      - name: publish the opt-in canary catalog
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUNTIME_VERSION: ${{ needs.build.outputs.runtime_version }}
         run: |
           set -euo pipefail
-          tag="runtime-stable-v$RUNTIME_VERSION"
+          tag="runtime-canary-v$RUNTIME_VERSION"
           sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
           published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -1384,9 +1389,9 @@ jobs:
           catalog = {
               "catalogVersion": 1,
               "runtimes": [{
-                  "identifier": f"winecx-gptk-{version}",
+                  "identifier": f"winecx-gptk-canary-{version}",
                   "version": version,
-                  "channel": "stable",
+                  "channel": "canary",
                   "archiveURL": f"https://github.com/{repository}/releases/download/{tag}/Libraries.tar.gz",
                   "sha256": digest,
                   "minimumMacOS": "26.0",
@@ -1417,5 +1422,5 @@ jobs:
             echo "catalog already current"
             exit 0
           fi
-          git commit -m "chore(runtime): publish stable $RUNTIME_VERSION [skip ci]"
+          git commit -m "chore(runtime): publish canary $RUNTIME_VERSION [skip ci]"
           git push origin HEAD:main
