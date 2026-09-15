@@ -48,7 +48,7 @@ env:
   # on this branch and the apply loop is a no-op. the eight post-11.15
   # cherry-picks the previous lane carried landed in 11.16 and are gone.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: e1b410a5fdd96a32722a5f2617b5068bd385b7db
+  WINECX_COMMIT: 0de5791f84877a6b5b5b7363f9eb01bd831b21cc
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "26.08"
@@ -157,10 +157,12 @@ jobs:
             extra-platforms = x86_64-darwin
 
       - name: clone winecx
-        run: |
-          git clone "$WINECX_REPO" winecx
-          git -C winecx checkout --detach "$WINECX_COMMIT"
-          git -C winecx --no-pager log -1 --oneline
+        uses: actions/checkout@v4
+        with:
+          repository: niltonperimneto/winecx
+          ref: ${{ env.WINECX_COMMIT }}
+          path: winecx
+          ssh-key: ${{ secrets.WINECX_DEPLOY_KEY }}
 
       - name: verify vendored faudio
         run: |
