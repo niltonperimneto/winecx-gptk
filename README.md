@@ -32,7 +32,8 @@ everything the build consumes is pinned in-tree:
 |---|---|
 | winecx sources | `WINECX_COMMIT` in the workflow env |
 | nixpkgs | `NIXPKGS_REV` in the workflow env, a rev not a branch |
-| moltenvk, dxvk, dxmt | version + sha256 in the workflow |
+| moltenvk, dxvk | version + sha256 in the workflow |
+| dxmt canary | upstream commit, successful workflow run, and artifact sha256 in the workflow |
 | wine-mono, wine-gecko | sha256 table in the workflow, checked after download; the versions are read out of winecx's `dlls/appwiz.cpl/addons.c` and the build stops if an unpinned version appears |
 
 builds run on a self-hosted runner by default (warm ccache, ~15 min); the `hosted` dispatch input is the clean-room check and what releases should come from when provenance matters more than turnaround.
