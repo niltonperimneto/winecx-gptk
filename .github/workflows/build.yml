@@ -47,10 +47,10 @@ env:
   # under test. Keep the source revision immutable so a successful artifact is
   # reproducible even when the source branch advances.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: 0de5791f84877a6b5b5b7363f9eb01bd831b21cc
+  WINECX_COMMIT: a47b8b4d8007714e89b3dacd4afd289e77726e23
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
-  FAUDIO_VERSION: "25.12"
+  FAUDIO_VERSION: "26.09"
   DXVK_VERSION: "1.10.3"
   DXMT_VERSION: "0.80"
   # the runtime stream this build publishes into. lived inline in the stamping
