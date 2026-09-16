@@ -27,6 +27,7 @@ int main(int argc, char **argv)
     unsetenv("WHISKY_GAME_MODE_REQUESTED");
     snprintf(original_pid, sizeof(original_pid), "%d", getpid());
     setenv("WHISKY_GAME_MODE_HOST_PID", original_pid, 1);
+    fprintf(stderr, "WHISKY_CHILD_POLICY result=host-entered native-pid=%s\n", original_pid);
     error = posix_spawnattr_init(&attributes);
     if (!error)
     {
