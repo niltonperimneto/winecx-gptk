@@ -29,7 +29,7 @@
  * than erroring. Worth it only for features Metal cannot express at all, where
  * the alternative is not running.
  *
- * build: x86_64-w64-mingw32-gcc -O2 -shared -o vulkan-1.dll vkshim.c vkshim.def
+ * build: x86_64-w64-mingw32-clang -O2 -shared -o vulkan-1.dll vkshim.c vkshim.def
  */
 #include <windows.h>
 #include <stdio.h>

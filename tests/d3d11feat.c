@@ -4,7 +4,7 @@
  * they require, which is what makes this the test for swapping d3d11 backends.
  * the adapter description says which implementation answered.
  *
- * build: x86_64-w64-mingw32-gcc -O2 -o d3d11feat.exe d3d11feat.c -ld3d11 -ldxgi -ldxguid -luuid
+ * build: x86_64-w64-mingw32-clang -O2 -o d3d11feat.exe d3d11feat.c -ld3d11 -ldxgi -ldxguid -luuid
  */
 #define COBJMACROS
 #include <windows.h>

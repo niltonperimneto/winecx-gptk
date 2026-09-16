@@ -8,7 +8,7 @@
  * the 2.7 interface is declared by hand: mingw's xaudio2.h is 2.8+, which
  * dropped GetDeviceDetails entirely.
  *
- * build: x86_64-w64-mingw32-gcc -O2 -o xa2dev.exe xa2dev.c -lole32
+ * build: x86_64-w64-mingw32-clang -O2 -o xa2dev.exe xa2dev.c -lole32
  */
 #include <windows.h>
 #include <mmreg.h>
