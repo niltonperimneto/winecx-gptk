@@ -9,7 +9,7 @@
  * "unsupported GPU" style message rather than a crash, which is why this needs
  * measuring before blaming the runtime.
  *
- * build: x86_64-w64-mingw32-gcc -O2 -o dx12feat.exe dx12feat.c -ld3d12 -ldxgi -ldxguid -luuid
+ * build: x86_64-w64-mingw32-clang -O2 -o dx12feat.exe dx12feat.c -ld3d12 -ldxgi -ldxguid -luuid
  */
 #define COBJMACROS
 #include <windows.h>

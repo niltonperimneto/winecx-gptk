@@ -9,7 +9,7 @@
  * mingw ships no d3dkmthk.h, so the types are declared here, matching
  * include/ddk/d3dkmthk.h in the tree.
  *
- * build: x86_64-w64-mingw32-gcc -O2 -o qaiprobe.exe qaiprobe.c -lgdi32
+ * build: x86_64-w64-mingw32-clang -O2 -o qaiprobe.exe qaiprobe.c -lgdi32
  */
 #include <windows.h>
 #include <stdio.h>

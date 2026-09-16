@@ -11,7 +11,7 @@
  * the struct is safe to restate. Only the fields we read are named; the rest of
  * VkPhysicalDeviceProperties is padding sized well past its real 824 bytes.
  *
- * build: x86_64-w64-mingw32-gcc -O2 -o vkfeat.exe vkfeat.c
+ * build: x86_64-w64-mingw32-clang -O2 -o vkfeat.exe vkfeat.c
  */
 #include <windows.h>
 #include <stdio.h>

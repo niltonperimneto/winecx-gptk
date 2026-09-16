@@ -4,7 +4,7 @@
  * runtime reporting 5.1 into stereo hardware loses every line spoken by an npc
  * the player is facing while off-axis lines still play through L/R.
  *
- * build: x86_64-w64-mingw32-gcc -O2 -o mixfmt.exe mixfmt.c -lole32
+ * build: x86_64-w64-mingw32-clang -O2 -o mixfmt.exe mixfmt.c -lole32
  */
 #define COBJMACROS
 #include <windows.h>

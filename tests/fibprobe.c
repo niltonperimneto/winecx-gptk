@@ -8,7 +8,7 @@
  * Writes to a file because a second wine attached to an existing wineserver has
  * nowhere to print.
  *
- * build: x86_64-w64-mingw32-gcc -O2 -o fibprobe.exe fibprobe.c
+ * build: x86_64-w64-mingw32-clang -O2 -o fibprobe.exe fibprobe.c
  */
 #include <windows.h>
 #include <stdio.h>
