@@ -47,7 +47,7 @@ env:
   # under test. Keep the source revision immutable so a successful artifact is
   # reproducible even when the source branch advances.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: a47b8b4d8007714e89b3dacd4afd289e77726e23
+  WINECX_COMMIT: 9f6fbdc430b726fc6793a379a5c3af919a6c8893
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "26.09"
@@ -884,6 +884,14 @@ jobs:
               <key>ipv4ReceiveTOS</key><true/>
               <key>ipv6ReceiveTrafficClass</key><true/>
               <key>overlappedReceiveMessage</key><true/>
+              <key>childLaunchPolicies</key><true/>
+              <key>childLaunchPolicySchema</key><integer>1</integer>
+              <key>gameModeProcessHost</key><false/>
+              <key>graphicsClassifiers</key>
+              <array>
+                <string>d3d11</string><string>dxgi</string><string>d3d12</string>
+                <string>d3d12core</string><string>vulkan</string>
+              </array>
               <key>dxvk</key><true/>
               <key>dxmt</key><true/>
               <key>wined3d</key><true/>
@@ -1397,6 +1405,10 @@ jobs:
                       "ipv4ReceiveTOS": True,
                       "ipv6ReceiveTrafficClass": True,
                       "overlappedReceiveMessage": True,
+                      "childLaunchPolicies": True,
+                      "childLaunchPolicySchema": 1,
+                      "gameModeProcessHost": False,
+                      "graphicsClassifiers": ["d3d11", "dxgi", "d3d12", "d3d12core", "vulkan"],
                       "dxvk": True,
                       "dxmt": True,
                       "wined3d": True,
