@@ -5,7 +5,7 @@
  * audio companion to mfprobe.c, but a diagnosis rather than a gate, so it
  * reports every format instead of failing on the first.
  *
- * build: x86_64-w64-mingw32-gcc -O2 -o wmaprobe.exe wmaprobe.c -lmfplat -lmfuuid -lole32
+ * build: x86_64-w64-mingw32-clang -O2 -o wmaprobe.exe wmaprobe.c -lmfplat -lmfuuid -lole32
  */
 #define COBJMACROS
 #include <windows.h>
