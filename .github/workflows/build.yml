@@ -43,14 +43,14 @@ on:
 # of 2026, which is this project's deadline for finding another source of
 # x86_64 macOS libraries.
 env:
-  # Whisky's CrossOver-derived winecx main line, pinned to the feature commit
-  # under test. Keep the source revision immutable so a successful artifact is
-  # reproducible even when the source branch advances.
+  # Wine 11.16 carries the CrossOver/D3DMetal and Steam integration patches.
+  # The pinned commit adds Whisky's child-launch policy on top without falling
+  # back to the raw CrossOver 26.3 / Wine 11.0 source line.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: 0de5791f84877a6b5b5b7363f9eb01bd831b21cc
+  WINECX_COMMIT: 905d881468fe96db8e3080a6ed61375821ffbbd6
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
-  FAUDIO_VERSION: "25.12"
+  FAUDIO_VERSION: "26.08"
   DXVK_VERSION: "1.10.3"
   # Canary DXMT payload built by upstream CI from an immutable main commit.
   DXMT_VERSION: "main-ef11653"
@@ -868,15 +868,15 @@ jobs:
             <key>manifestVersion</key>
             <integer>2</integer>
             <key>releaseChannel</key>
-            <string>stable</string>
+            <string>canary</string>
             <key>name</key>
             <string>winecx-gptk</string>
             <key>wineVersion</key>
-            <string>11.0</string>
+            <string>11.16</string>
             <key>wineSourceRevision</key>
             <string>WINE_SOURCE_REV</string>
             <key>patchset</key>
-            <string>whisky-winecx-crossover-stable</string>
+            <string>whisky-wine1116-canary</string>
             <key>patchsetRevision</key>
             <string>PATCHSET_REV</string>
             <key>buildArchitecture</key>
@@ -1395,7 +1395,7 @@ jobs:
                   "archiveURL": f"https://github.com/{repository}/releases/download/{tag}/Libraries.tar.gz",
                   "sha256": digest,
                   "minimumMacOS": "26.0",
-                  "wineVersion": "11.0",
+                  "wineVersion": "11.16",
                   "capabilities": {
                       "gptkMajorVersions": [3, 4],
                       "wsarecvmsg": True,
