@@ -564,9 +564,18 @@ jobs:
           mkdir -p "$host/Contents/MacOS"
           /usr/bin/clang -arch x86_64 -O2 -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" \
             runtime/GameModeProcessHost/main.c -o "$host/Contents/MacOS/GameModeProcessHost"
+          /usr/bin/clang -arch x86_64 -O2 -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" \
+            runtime/GameModeProcessHost/probe.c -o GameModeProcessHostProbe
           cp runtime/GameModeProcessHost/Info.plist "$host/Contents/Info.plist"
           codesign --force --sign - --timestamp=none "$host"
           codesign --verify --strict --verbose=2 "$host"
+          set +e
+          host_output=$("$host/Contents/MacOS/GameModeProcessHost" "$PWD/GameModeProcessHostProbe")
+          host_status=$?
+          set -e
+          [ "$host_status" -eq 37 ] || { echo "::error::Game Mode host lost exit status: $host_status"; exit 1; }
+          [ "$host_output" = "same-pid" ] || { echo "::error::Game Mode host changed PID"; exit 1; }
+          rm GameModeProcessHostProbe
           phase "copy staging into Libraries"
 
           # dxmt's wine-side half is ONLY the winemetal bridge. copying the

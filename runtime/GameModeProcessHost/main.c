@@ -15,6 +15,7 @@
 int main(int argc, char **argv)
 {
     posix_spawnattr_t attributes;
+    char original_pid[32];
     int error;
 
     if (argc < 2 || !argv[1] || !*argv[1])
@@ -24,6 +25,8 @@ int main(int argc, char **argv)
     }
 
     unsetenv("WHISKY_GAME_MODE_REQUESTED");
+    snprintf(original_pid, sizeof(original_pid), "%d", getpid());
+    setenv("WHISKY_GAME_MODE_HOST_PID", original_pid, 1);
     error = posix_spawnattr_init(&attributes);
     if (!error)
     {
