@@ -1217,7 +1217,12 @@ jobs:
           # while the shipped libglib could not load at all. load the bundled
           # files by path instead. x86_64 like the bundle, which is the same
           # rosetta exposure the smoke tests above already take.
-          clang -arch x86_64 -O2 -o dlopenall tests/dlopenall.c
+          /usr/bin/clang -arch x86_64 -O2 -o dlopenall tests/dlopenall.c
+          file ./dlopenall | grep -q 'Mach-O 64-bit executable x86_64' || {
+            echo "::error::dlopenall is not a native x86_64 Mach-O executable"
+            file ./dlopenall
+            exit 1
+          }
           find Libraries/Wine/lib -name '*.dylib*' -o -name '*.so' \
             | sort | tr '\n' '\0' | xargs -0 ./dlopenall > dlopen.log 2>&1 || true
           grep '^FAIL' dlopen.log | head -20
