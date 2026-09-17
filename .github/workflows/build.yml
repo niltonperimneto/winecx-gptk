@@ -799,7 +799,7 @@ jobs:
             -o Libraries/Wine/lib/gptk-video/d3d12shim.dll \
             "$GITHUB_WORKSPACE/gptk-video/d3d12shim.c" \
             "$GITHUB_WORKSPACE/gptk-video/d3d12shim.def" \
-            -I"$GITHUB_WORKSPACE/gptk-video" -luuid -ldxguid
+            -I"$GITHUB_WORKSPACE/gptk-video" -I"$GITHUB_WORKSPACE/build/include" -I"$GITHUB_WORKSPACE/winecx/include" -luuid -ldxguid
 
           # wineserver memcmps "Wine builtin DLL" plus its NUL, 17 bytes, at
           # file offset 0x40. without the stamp the loader finds it in
