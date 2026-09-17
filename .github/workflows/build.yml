@@ -43,11 +43,11 @@ on:
 # of 2026, which is this project's deadline for finding another source of
 # x86_64 macOS libraries.
 env:
-  # CrossOver 26.3's WineCX 11.0 source with Whisky's child-launch policy and
-  # the matching vendored FAudio update. Keep the revision immutable so the
-  # canary remains reproducible while the feature branch advances.
+  # WineCX 11.17 source with Whisky's platform fixes and the matching vendored
+  # FAudio update. Keep the revision immutable so the canary remains
+  # reproducible while the feature branch advances.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: a47b8b4d8007714e89b3dacd4afd289e77726e23
+  WINECX_COMMIT: e0aa380780b73e20fabcfe78fd42713b94929a53
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "26.09"
@@ -1217,7 +1217,12 @@ jobs:
           # while the shipped libglib could not load at all. load the bundled
           # files by path instead. x86_64 like the bundle, which is the same
           # rosetta exposure the smoke tests above already take.
-          clang -arch x86_64 -O2 -o dlopenall tests/dlopenall.c
+          /usr/bin/clang -arch x86_64 -O2 -o dlopenall tests/dlopenall.c
+          file ./dlopenall | grep -q 'Mach-O 64-bit executable x86_64' || {
+            echo "::error::dlopenall is not a native x86_64 Mach-O executable"
+            file ./dlopenall
+            exit 1
+          }
           find Libraries/Wine/lib -name '*.dylib*' -o -name '*.so' \
             | sort | tr '\n' '\0' | xargs -0 ./dlopenall > dlopen.log 2>&1 || true
           grep '^FAIL' dlopen.log | head -20
