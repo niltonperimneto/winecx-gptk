@@ -199,7 +199,12 @@ jobs:
       # this is what blocked this runtime for days.
       - name: mingw-w64 gcc for the PE half
         run: |
-          command -v x86_64-w64-mingw32-clang >/dev/null || brew install -q llvm-mingw
+          command -v x86_64-w64-mingw32-clang >/dev/null || {
+            curl -sSL -O https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-macos-universal.tar.xz
+            tar -xf llvm-mingw-20240619-ucrt-macos-universal.tar.xz
+            echo "$PWD/llvm-mingw-20240619-ucrt-macos-universal/bin" >> $GITHUB_PATH
+            export PATH="$PWD/llvm-mingw-20240619-ucrt-macos-universal/bin:$PATH"
+          }
           x86_64-w64-mingw32-clang --version | head -1
           i686-w64-mingw32-clang --version | head -1
           # wrappers so the PE half goes through ccache too; brew's gcc is not
@@ -326,7 +331,9 @@ jobs:
           export PATH="$PWD/ccache-bin:$NIX_TOOL_PATH$PATH"
           export SDKROOT="$(/usr/bin/xcrun --show-sdk-path)"
           export CC="ccache /usr/bin/clang -arch x86_64"
+          export CROSSCC="x86_64-w64-mingw32-clang"
           export CXX="ccache /usr/bin/clang++ -arch x86_64"
+          export CROSSCXX="x86_64-w64-mingw32-clang++"
           export PKG_CONFIG_PATH="$NIX_PKG_CONFIG_PATH"
           # -O2 unless asked otherwise: that is what wine itself ships and
           # where a push build should stay. -O3 is opt-in for the runtimes we
