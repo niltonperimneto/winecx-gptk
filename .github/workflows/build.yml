@@ -43,11 +43,11 @@ on:
 # of 2026, which is this project's deadline for finding another source of
 # x86_64 macOS libraries.
 env:
-  # CrossOver 26.3's WineCX 11.0 source with Whisky's child-launch policy and
-  # the matching vendored FAudio update. Keep the revision immutable so the
-  # canary remains reproducible while the feature branch advances.
+  # WineCX 11.17 source with Whisky's platform fixes and the matching vendored
+  # FAudio update. Keep the revision immutable so the canary remains
+  # reproducible while the feature branch advances.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: a47b8b4d8007714e89b3dacd4afd289e77726e23
+  WINECX_COMMIT: e0aa380780b73e20fabcfe78fd42713b94929a53
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "26.09"
