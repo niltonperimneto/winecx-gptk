@@ -189,28 +189,24 @@ jobs:
             git -C winecx apply --verbose "$p"
           done
 
-      # gcc, not llvm-mingw. measured 2026-08-04 by module bisection: with a
-      # kernelbase.dll built by llvm-mingw, steam never completes its CM login,
-      # it loops "EConnect called - scheduling connection for 50ms from now"
-      # forever and reports Schedule init returned 22 (k_EResultPending).
-      # swapping in a gcc-built kernelbase.dll and changing nothing else logs
-      # in within 30s, and swapping it back reproduces the stall. every other
-      # module of ours is fine, including ntdll and the whole i386 half.
-      # this is what blocked this runtime for days.
-      - name: mingw-w64 gcc for the PE half
+      # Pin the UCRT toolchain. Hosted runners can already contain llvm-mingw;
+      # accepting whatever happens to be on PATH made the selected CRT and the
+      # d3d12video header version depend on the runner image.
+      - name: pinned llvm-mingw UCRT toolchain for the PE half
         run: |
-          command -v x86_64-w64-mingw32-clang >/dev/null || {
-            curl -sSL -O https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-macos-universal.tar.xz
-            tar -xf llvm-mingw-20240619-ucrt-macos-universal.tar.xz
-            echo "$PWD/llvm-mingw-20240619-ucrt-macos-universal/bin" >> $GITHUB_PATH
-            export PATH="$PWD/llvm-mingw-20240619-ucrt-macos-universal/bin:$PATH"
-          }
+          curl --fail --location --silent --show-error -O \
+            https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-macos-universal.tar.xz
+          tar -xf llvm-mingw-20240619-ucrt-macos-universal.tar.xz
+          toolchain="$PWD/llvm-mingw-20240619-ucrt-macos-universal/bin"
+          echo "$toolchain" >> "$GITHUB_PATH"
+          export PATH="$toolchain:$PATH"
           x86_64-w64-mingw32-clang --version | head -1
           i686-w64-mingw32-clang --version | head -1
-          # wrappers so the PE half goes through ccache too; brew's gcc is not
-          # something ccache picks up by itself
+          # Wrappers keep both C and C++ PE compilation on this exact toolchain.
           mkdir -p ccache-bin
-          for t in x86_64-w64-mingw32-clang i686-w64-mingw32-clang; do
+          for t in \
+            x86_64-w64-mingw32-clang x86_64-w64-mingw32-clang++ \
+            i686-w64-mingw32-clang i686-w64-mingw32-clang++; do
             # resolve the real binary now and bake the absolute path in: doing
             # the lookup inside the wrapper recurses forever, because by then
             # ccache-bin is first on PATH and `command -v` finds the wrapper
@@ -799,7 +795,7 @@ jobs:
             -o Libraries/Wine/lib/gptk-video/d3d12shim.dll \
             "$GITHUB_WORKSPACE/gptk-video/d3d12shim.c" \
             "$GITHUB_WORKSPACE/gptk-video/d3d12shim.def" \
-            -I"$GITHUB_WORKSPACE/gptk-video" -I"$GITHUB_WORKSPACE/build/include" -I"$GITHUB_WORKSPACE/winecx/include" -luuid -ldxguid
+            -I"$GITHUB_WORKSPACE/gptk-video" -luuid -ldxguid
 
           # wineserver memcmps "Wine builtin DLL" plus its NUL, 17 bytes, at
           # file offset 0x40. without the stamp the loader finds it in
@@ -841,6 +837,22 @@ jobs:
           open(p, 'wb').write(bytes(d))
           EOF
           phase "gptk-video: dxgi driver version interposer"
+
+          # These shims are built outside Wine's makefiles, so they do not get
+          # Wine's normal CRT selection checks. Assert the contract on the PE
+          # import table before the artifacts can enter a runtime archive.
+          for shim in Libraries/Wine/lib/gptk-video/{d3d12shim,dxgishim}.dll; do
+            imports="$(x86_64-w64-mingw32-objdump -p "$shim")"
+            if grep -Eiq 'DLL Name: +msvcrt\.dll' <<<"$imports"; then
+              echo "::error::$shim imports legacy msvcrt.dll"
+              exit 1
+            fi
+            if ! grep -Eiq 'DLL Name: +api-ms-win-crt-' <<<"$imports"; then
+              echo "::error::$shim has no UCRT API-set import"
+              exit 1
+            fi
+          done
+          phase "gptk-video: verified UCRT imports"
 
           # whisky's GPTKImporter deploys apple's payload into this directory
           # and symlinks lib/wine/x86_64-unix/{d3d10,d3d11,d3d12,dxgi}.so at
