@@ -1,0 +1,146 @@
+From: Whisky Canary Runtime <noreply@example.invalid>
+Subject: [PATCH] d3d11: Track multithread protection state
+
+Port the existing Wine compatibility change that makes ID3D10Multithread
+and ID3D11Multithread report and exchange the shared device state instead
+of always returning TRUE from stubs.
+
+diff --git a/dlls/d3d10core/tests/d3d10core.c b/dlls/d3d10core/tests/d3d10core.c
+index 02cce064265..acfdb96c296 100644
+--- a/dlls/d3d10core/tests/d3d10core.c
++++ b/dlls/d3d10core/tests/d3d10core.c
+@@ -1755,6 +1755,14 @@ static void test_device_interfaces(void)
+     ok(enabled, "Multithread protection is %#x.\n", enabled);
+     enabled = ID3D11Multithread_GetMultithreadProtected(d3d11_multithread);
+     ok(enabled, "Multithread protection is %#x.\n", enabled);
++    enabled = ID3D10Multithread_SetMultithreadProtected(multithread, FALSE);
++    ok(enabled, "Previous multithread protection is %#x.\n", enabled);
++    enabled = ID3D11Multithread_GetMultithreadProtected(d3d11_multithread);
++    ok(!enabled, "Multithread protection is %#x.\n", enabled);
++    enabled = ID3D11Multithread_SetMultithreadProtected(d3d11_multithread, TRUE);
++    ok(!enabled, "Previous multithread protection is %#x.\n", enabled);
++    enabled = ID3D10Multithread_GetMultithreadProtected(multithread);
++    ok(enabled, "Multithread protection is %#x.\n", enabled);
+ 
+     ID3D11Device_Release(d3d11_device);
+     ID3D11DeviceContext_Release(immediate_context);
+diff --git a/dlls/d3d11/d3d11_main.c b/dlls/d3d11/d3d11_main.c
+index 75986318693..9149cdd2b5a 100644
+--- a/dlls/d3d11/d3d11_main.c
++++ b/dlls/d3d11/d3d11_main.c
+@@ -138,6 +138,7 @@ HRESULT WINAPI D3D11CoreCreateDevice(IDXGIFactory *factory, IDXGIAdapter *adapte
+         return E_FAIL;
+     }
+     d3d_device->d3d11_only = TRUE;
++    d3d_device->multithread_protected = FALSE;
+ 
+     return S_OK;
+ }
+diff --git a/dlls/d3d11/d3d11_private.h b/dlls/d3d11/d3d11_private.h
+index 76fe2f12fef..629389ece0c 100644
+--- a/dlls/d3d11/d3d11_private.h
++++ b/dlls/d3d11/d3d11_private.h
+@@ -577,6 +577,7 @@ struct d3d_device
+     LONG refcount;
+ 
+     BOOL d3d11_only;
++    LONG multithread_protected;
+ 
+     struct d3d_device_context_state *state;
+     struct d3d11_device_context immediate_context;
+diff --git a/dlls/d3d11/device.c b/dlls/d3d11/device.c
+index e1a846698e6..eef459ad215 100644
+--- a/dlls/d3d11/device.c
++++ b/dlls/d3d11/device.c
+@@ -3901,16 +3901,26 @@ static void STDMETHODCALLTYPE d3d11_multithread_Leave(ID3D11Multithread *iface)
+ static BOOL STDMETHODCALLTYPE d3d11_multithread_SetMultithreadProtected(
+         ID3D11Multithread *iface, BOOL enable)
+ {
+-    FIXME("iface %p, enable %#x stub!\n", iface, enable);
++    struct d3d11_device_context *context = impl_from_ID3D11Multithread(iface);
++    BOOL previous;
+ 
+-    return TRUE;
++    TRACE("iface %p, enable %#x.\n", iface, enable);
++
++    previous = InterlockedExchange(&context->device->multithread_protected, !!enable);
++
++    return previous;
+ }
+ 
+ static BOOL STDMETHODCALLTYPE d3d11_multithread_GetMultithreadProtected(ID3D11Multithread *iface)
+ {
+-    FIXME("iface %p stub!\n", iface);
++    struct d3d11_device_context *context = impl_from_ID3D11Multithread(iface);
++    BOOL protected;
+ 
+-    return TRUE;
++    TRACE("iface %p.\n", iface);
++
++    protected = InterlockedCompareExchange(&context->device->multithread_protected, 0, 0);
++
++    return protected;
+ }
+ 
+ static const struct ID3D11MultithreadVtbl d3d11_multithread_vtbl =
+@@ -7695,16 +7705,26 @@ static void STDMETHODCALLTYPE d3d10_multithread_Leave(ID3D10Multithread *iface)
+ 
+ static BOOL STDMETHODCALLTYPE d3d10_multithread_SetMultithreadProtected(ID3D10Multithread *iface, BOOL enable)
+ {
+-    FIXME("iface %p, enable %#x stub!\n", iface, enable);
++    struct d3d_device *device = impl_from_ID3D10Multithread(iface);
++    BOOL previous;
+ 
+-    return TRUE;
++    TRACE("iface %p, enable %#x.\n", iface, enable);
++
++    previous = InterlockedExchange(&device->multithread_protected, !!enable);
++
++    return previous;
+ }
+ 
+ static BOOL STDMETHODCALLTYPE d3d10_multithread_GetMultithreadProtected(ID3D10Multithread *iface)
+ {
+-    FIXME("iface %p stub!\n", iface);
++    struct d3d_device *device = impl_from_ID3D10Multithread(iface);
++    BOOL protected;
+ 
+-    return TRUE;
++    TRACE("iface %p.\n", iface);
++
++    protected = InterlockedCompareExchange(&device->multithread_protected, 0, 0);
++
++    return protected;
+ }
+ 
+ static const struct ID3D10MultithreadVtbl d3d10_multithread_vtbl =
+@@ -8167,6 +8187,7 @@ void d3d_device_init(struct d3d_device *device, void *outer_unknown)
+     /* COM aggregation always takes place */
+     device->outer_unk = outer_unknown;
+     device->d3d11_only = FALSE;
++    device->multithread_protected = TRUE;
+     device->state = NULL;
+ 
+     d3d11_device_context_init(&device->immediate_context, device, D3D11_DEVICE_CONTEXT_IMMEDIATE);
+diff --git a/dlls/d3d11/tests/d3d11.c b/dlls/d3d11/tests/d3d11.c
+index 69c1be0c2c2..3255793769f 100644
+--- a/dlls/d3d11/tests/d3d11.c
++++ b/dlls/d3d11/tests/d3d11.c
+@@ -2483,7 +2483,15 @@ static void test_immediate_context(void)
+     ok(refcount == expected_refcount, "Got refcount %lu, expected %lu.\n", refcount, expected_refcount);
+ 
+     enabled = ID3D11Multithread_GetMultithreadProtected(multithread);
+-    todo_wine ok(!enabled, "Multithread protection is %#x.\n", enabled);
++    ok(!enabled, "Multithread protection is %#x.\n", enabled);
++    enabled = ID3D11Multithread_SetMultithreadProtected(multithread, TRUE);
++    ok(!enabled, "Previous multithread protection is %#x.\n", enabled);
++    enabled = ID3D11Multithread_GetMultithreadProtected(multithread);
++    ok(enabled, "Multithread protection is %#x.\n", enabled);
++    enabled = ID3D11Multithread_SetMultithreadProtected(multithread, FALSE);
++    ok(enabled, "Previous multithread protection is %#x.\n", enabled);
++    enabled = ID3D11Multithread_GetMultithreadProtected(multithread);
++    ok(!enabled, "Multithread protection is %#x.\n", enabled);
+ 
+     ID3D11Multithread_Release(multithread);
+ 
+
