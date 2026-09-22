@@ -1461,4 +1461,13 @@ jobs:
             exit 0
           fi
           git commit -m "chore(runtime): publish canary $RUNTIME_VERSION [skip ci]"
-          git push origin HEAD:main
+          git fetch origin main
+          git rebase origin/main
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              break
+            fi
+            [ "$attempt" -lt 3 ] || exit 1
+            git fetch origin main
+            git rebase origin/main
+          done
