@@ -52,11 +52,14 @@ env:
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "26.09"
   DXVK_VERSION: "1.10.3"
-  # Canary DXMT payload built by upstream CI from an immutable main commit.
-  DXMT_VERSION: "main-ef11653"
-  DXMT_COMMIT: ef116534b2af7037c670ede3297e3ee74b45058d
-  DXMT_RUN_ID: "34816077654"
-  DXMT_ARTIFACT_SHA256: 2d910d8cb654283b1fb50266c59ce6f9efc132eea6c3d44b961cc5bd1ffb2cd2
+  # Canary DXMT payload built by upstream CI from an immutable main commit,
+  # then published unchanged on our fork so the runtime does not depend on a
+  # transient Actions artifact or nightly.link.
+  DXMT_REPO: niltonperimneto/dxmt
+  DXMT_VERSION: "main-7c8dee1"
+  DXMT_COMMIT: 7c8dee1c2d73415301ceb7d1fa810861cef4cd67
+  DXMT_RELEASE_TAG: v0.80-relay12.7c8dee1
+  DXMT_ARTIFACT_SHA256: 00a41fcffd0ab488926310a83a357ceada6bae42268d83f58d9c541fccebe3bb
   # the runtime stream this build publishes into. lived inline in the stamping
   # step as a default and went stale there: v4.2.0 shipped while the workflow
   # still said 4.1.0, so every dispatch without an explicit input mislabelled
@@ -510,11 +513,10 @@ jobs:
           mkdir -p payload
           fetch "https://github.com/Gcenx/DXVK-macOS/releases/download/v$DXVK_VERSION-20230507-repack/dxvk-macOS-async-v$DXVK_VERSION-20230507-repack.tar.gz" \
                 dxvk.tar.gz acd1520ad105d8ef124a09c8e11a259a5dc8bdc565ad18e0e52693f9807b2477
-          fetch "https://nightly.link/3Shain/dxmt/actions/runs/$DXMT_RUN_ID/dxmt-$DXMT_COMMIT.zip" \
-                dxmt.zip "$DXMT_ARTIFACT_SHA256"
+          fetch "https://github.com/$DXMT_REPO/releases/download/$DXMT_RELEASE_TAG/dxmt-7c8dee1c-builtin.tar.gz" \
+                dxmt.tar.gz "$DXMT_ARTIFACT_SHA256"
           tar -xzf dxvk.tar.gz -C payload
-          unzip -q dxmt.zip
-          tar -xzf "dxmt-$DXMT_COMMIT.tar.gz" -C payload
+          tar -xzf dxmt.tar.gz -C payload
 
           # khronos' own build, not nixpkgs': see the note by MOLTENVK_VERSION.
           # the plain macos tar, not -privateapi -- that variant's extra
@@ -1380,7 +1382,7 @@ jobs:
             echo "|---|---|"
             echo "| winecx | \`$WINECX_COMMIT\` |"
             echo "| dxvk | $DXVK_VERSION |"
-            echo "| dxmt | $DXMT_VERSION |"
+            echo "| dxmt | \`$DXMT_COMMIT\` |"
             echo "| moltenvk | $MOLTENVK_VERSION |"
             echo "| sha256 | \`$sha\` |"
             echo
