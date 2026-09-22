@@ -570,6 +570,25 @@ jobs:
           cp -R staging/opt/whiskywine/bin Libraries/Wine/bin
           cp -R staging/opt/whiskywine/lib Libraries/Wine/lib
           cp -R staging/opt/whiskywine/share Libraries/Wine/share
+          host="Libraries/Wine/libexec/GameModeProcessHost.app"
+          mkdir -p "$host/Contents/MacOS"
+          /usr/bin/clang -arch x86_64 -O2 -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" \
+            runtime/GameModeProcessHost/main.c -o "$host/Contents/MacOS/GameModeProcessHost"
+          /usr/bin/clang -arch x86_64 -O2 -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" \
+            runtime/GameModeProcessHost/probe.c -o GameModeProcessHostProbe
+          cp runtime/GameModeProcessHost/Info.plist "$host/Contents/Info.plist"
+          codesign --force --sign - --timestamp=none "$host"
+          codesign --verify --strict --verbose=2 "$host"
+          host_stderr=$(mktemp)
+          set +e
+          host_output=$("$host/Contents/MacOS/GameModeProcessHost" "$PWD/GameModeProcessHostProbe" 2>"$host_stderr")
+          host_status=$?
+          set -e
+          [ "$host_status" -eq 37 ] || { echo "::error::Game Mode host lost exit status: $host_status"; exit 1; }
+          [ "$host_output" = "same-pid" ] || { echo "::error::Game Mode host changed PID"; exit 1; }
+          grep -Eq '^WHISKY_CHILD_POLICY result=host-entered native-pid=[0-9]+$' "$host_stderr" \
+            || { echo "::error::Game Mode host did not report entry"; cat "$host_stderr"; exit 1; }
+          rm "$host_stderr" GameModeProcessHostProbe
           phase "copy staging into Libraries"
 
           # dxmt's wine-side half is ONLY the winemetal bridge. copying the
@@ -912,7 +931,7 @@ jobs:
               <key>overlappedReceiveMessage</key><true/>
               <key>childLaunchPolicies</key><true/>
               <key>childLaunchPolicySchema</key><integer>1</integer>
-              <key>gameModeProcessHost</key><false/>
+              <key>gameModeProcessHost</key><true/>
               <key>graphicsClassifiers</key>
               <array>
                 <string>d3d11</string><string>dxgi</string><string>d3d12</string>
@@ -1438,7 +1457,7 @@ jobs:
                       "overlappedReceiveMessage": True,
                       "childLaunchPolicies": True,
                       "childLaunchPolicySchema": 1,
-                      "gameModeProcessHost": False,
+                      "gameModeProcessHost": True,
                       "graphicsClassifiers": ["d3d11", "dxgi", "d3d12", "d3d12core", "vulkan"],
                       "dxvk": True,
                       "dxmt": True,
