@@ -93,7 +93,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 300
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # the patch number is the commit count, and a depth-1 checkout counts 1
           fetch-depth: 0
@@ -142,7 +142,7 @@ jobs:
       # save, against a make of 71s. a hosted runner is a fresh vm and does
       # need it.
       - name: restore compiler cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.ccache
           key: ccache-${{ env.WINECX_COMMIT }}-${{ github.run_id }}
@@ -154,13 +154,13 @@ jobs:
       # extra-platforms = x86_64-darwin; installing over it would clobber a
       # real machine's daemon and store
       - name: install nix
-        uses: DeterminateSystems/nix-installer-action@v14
+        uses: DeterminateSystems/nix-installer-action@v23
         with:
           extra-conf: |
             extra-platforms = x86_64-darwin
 
       - name: clone winecx
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: niltonperimneto/winecx
           ref: ${{ env.WINECX_COMMIT }}
@@ -1321,7 +1321,7 @@ jobs:
           echo "tarball bytes: $(wc -c < Libraries.tar.gz | tr -d ' ')" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: upload runtime
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           # a fast build says so in its own name, so an -O0 tree cannot be
           # mistaken for a release one three weeks from now
@@ -1356,9 +1356,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: whiskywine-gptk-libraries
 
