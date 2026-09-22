@@ -1378,6 +1378,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v8
         with:
@@ -1419,6 +1421,7 @@ jobs:
           else
             gh release create "$tag" Libraries.tar.gz Libraries.tar.gz.sha256 \
               WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt \
+              --target "${{ github.sha }}" \
               --prerelease --title "canary runtime $RUNTIME_VERSION" --notes-file notes.md
           fi
           echo "published $tag" >> "$GITHUB_STEP_SUMMARY"
@@ -1434,7 +1437,14 @@ jobs:
           sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
           published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-          python3 - "$RUNTIME_VERSION" "$tag" "$sha" "$published_at" <<'PY'
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -f -B main origin/main
+
+            python3 - "$RUNTIME_VERSION" "$tag" "$sha" "$published_at" <<'PY'
           import json, os, sys
 
           version, tag, digest, published_at = sys.argv[1:]
@@ -1472,21 +1482,15 @@ jobs:
               stream.write("\n")
           PY
 
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add runtime-catalog.json
-          if git diff --cached --quiet; then
-            echo "catalog already current"
-            exit 0
-          fi
-          git commit -m "chore(runtime): publish canary $RUNTIME_VERSION [skip ci]"
-          git fetch origin main
-          git rebase origin/main
-          for attempt in 1 2 3; do
+            git add runtime-catalog.json
+            if git diff --cached --quiet; then
+              echo "catalog already current"
+              exit 0
+            fi
+            git commit -m "chore(runtime): publish canary $RUNTIME_VERSION [skip ci]"
             if git push origin HEAD:main; then
               break
             fi
-            [ "$attempt" -lt 3 ] || exit 1
-            git fetch origin main
-            git rebase origin/main
+            [ "$attempt" -lt 5 ] || exit 1
+            sleep 2
           done
