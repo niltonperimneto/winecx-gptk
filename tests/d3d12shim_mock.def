@@ -1,0 +1,9 @@
+LIBRARY d3dmt.dll
+EXPORTS
+D3D12CreateDevice
+MockAnswerTightAlignment
+MockDeviceVtable
+MockListVtable
+MockUnexpectedCalls
+MockBarriers
+MockCopy
