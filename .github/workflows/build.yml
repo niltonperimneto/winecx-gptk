@@ -1298,6 +1298,39 @@ jobs:
           grep -q '^RESULT: WSARecvMsg IPv4 TOS, IPv6 traffic class, and overlapped receive verified$' wsarecvmsg.log
           cp wsarecvmsg.log Libraries/RuntimeNetworkVerification.txt
 
+      - name: verify the d3d12 interposer against a recording d3dmetal
+        run: |
+          set -euo pipefail
+          # The shipped, builtin-stamped shim runs against tests/d3d12shim_mock.c
+          # built as d3dmt.dll, the name the shim loads Apple's d3d12 under.
+          # That checks what reaches d3dmetal: the tight-alignment answer, the
+          # zero-copy barrier path, and that batches over 32 barriers are kept.
+          mkdir -p d3d12shim-test
+          cp Libraries/Wine/lib/gptk-video/d3d12shim.dll d3d12shim-test/
+          x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -o d3d12shim-test/d3dmt.dll \
+            tests/d3d12shim_mock.c tests/d3d12shim_mock.def -luuid
+          x86_64-w64-mingw32-clang -O2 -Wall -Werror -o d3d12shim-test/d3d12shim_test.exe \
+            tests/d3d12shim.c -luuid -ldxguid
+
+          export WINEPREFIX="$PWD/d3d12shim-prefix"
+          export DYLD_FALLBACK_LIBRARY_PATH="$PWD/Libraries/Wine/lib"
+          export WINEDLLOVERRIDES="mscoree=d;mshtml=d"
+          cleanup_shim_prefix() {
+            WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wineboot -k >/dev/null 2>&1 || true
+          }
+          trap cleanup_shim_prefix EXIT
+          WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wineboot -u >/dev/null 2>&1 || true
+
+          # As with the network probe, the RESULT line is the verdict, not
+          # wine64's exit status during prefix teardown.
+          (cd d3d12shim-test && WINEDEBUG=-all ../Libraries/Wine/bin/wine64 d3d12shim_test.exe) \
+            > d3d12shim.log 2>&1 || true
+          tr -d '\r' < d3d12shim.log | grep -E '^\[|^RESULT' | tee -a "$GITHUB_STEP_SUMMARY"
+          tr -d '\r' < d3d12shim.log | grep -q '^RESULT: d3d12shim ok$' || {
+            echo "::error::the d3d12 interposer forwarded something d3dmetal must not see"
+            exit 1
+          }
+
       - name: package
         run: |
           # Metadata is excluded because the verifier treats these two files as
