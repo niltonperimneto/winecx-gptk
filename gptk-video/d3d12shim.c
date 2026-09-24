@@ -16,9 +16,11 @@
 #include <d3d12.h>
 #include <d3d12video.h>
 #include <dxva.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* mingw's d3d12video.h stops short of the enumeration feature structs */
 typedef struct
@@ -1814,9 +1816,32 @@ static HRESULT WINAPI shim_QueryInterface(void *dev, REFIID riid, void **out)
     return hr;
 }
 
+/* D3D12_FEATURE_D3D12_TIGHT_ALIGNMENT and its data, from DirectX-Headers'
+ * d3d12.h; llvm-mingw 20240619 predates both. The tier enum is 4 bytes and
+ * D3D12_TIGHT_ALIGNMENT_TIER_NOT_SUPPORTED is 0. */
+#define SHIM_FEATURE_TIGHT_ALIGNMENT ((D3D12_FEATURE)54)
+typedef struct
+{
+    UINT SupportTier;
+} shim_TIGHT_ALIGNMENT;
+
 static HRESULT WINAPI shim_CheckFeatureSupport(void *dev, D3D12_FEATURE feature, void *data, UINT size)
 {
     HRESULT hr = ((pfn_cfs)dev_orig[13])(dev, feature, data, size);
+
+    /* D3DMetal does not know feature 54 and returns E_INVALIDARG. A runtime
+     * that knows the query never does that: it reports a tier. Unity 6.3's
+     * D3D12 renderer gives up on that failure, so PEAK falls back to D3D11
+     * right after its D3D11On12 device succeeds. Report the tier that is true
+     * of D3DMetal, not supported, and only when D3DMetal itself has refused,
+     * so a D3DMetal that learns the query answers it. */
+    if (feature == SHIM_FEATURE_TIGHT_ALIGNMENT && hr == E_INVALIDARG
+            && data && size == sizeof(shim_TIGHT_ALIGNMENT))
+    {
+        ((shim_TIGHT_ALIGNMENT *)data)->SupportTier = 0;
+        LOG("CheckFeatureSupport TIGHT_ALIGNMENT refused by d3dmetal -> tier not supported\n");
+        return S_OK;
+    }
 
     if (feature == D3D12_FEATURE_FORMAT_SUPPORT && size >= sizeof(D3D12_FEATURE_DATA_FORMAT_SUPPORT))
     {
@@ -2079,6 +2104,14 @@ static void WINAPI shim_CopyTextureRegion(void *list, const D3D12_TEXTURE_COPY_L
     D3D12_TEXTURE_COPY_LOCATION fixed;
     struct nv12 *pair;
 
+    /* With no NV12 pair, no watched video texture and logging off, nothing
+     * below can apply, so a game without video pays one branch per copy. */
+    if (!*(volatile unsigned int *)&npairs && !*(volatile unsigned int *)&nwatched && !want_log())
+    {
+        ((pfn_ctr)list_orig[16])(list, dst, x, y, z, src, box);
+        return;
+    }
+
     /* dump what the engine actually staged, once. rendered host side this says
      * whether the bytes match the pitch the footprint declares. */
     if (dst && find_watched(dst->pResource) && !dumped && want_dumps()
@@ -2143,13 +2176,55 @@ static void WINAPI shim_CopyTextureRegion(void *list, const D3D12_TEXTURE_COPY_L
     ((pfn_ctr)list_orig[16])(list, dst, x, y, z, src, box);
 }
 
+static BOOL barrier_needs_fix(const D3D12_RESOURCE_BARRIER *bar)
+{
+    return bar->Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION
+            && (fix_state(bar->Transition.StateBefore) != bar->Transition.StateBefore
+            || fix_state(bar->Transition.StateAfter) != bar->Transition.StateAfter);
+}
+
 static void WINAPI shim_ResourceBarrier(void *list, UINT count, const D3D12_RESOURCE_BARRIER *bars)
 {
-    D3D12_RESOURCE_BARRIER fixed[32];
-    UINT n = fix_barriers(bars, count, fixed, 32);
+    D3D12_RESOURCE_BARRIER stack[32], *fixed = stack;
+    UINT i, n, max = sizeof(stack) / sizeof(stack[0]);
 
+    if (!count)
+        return;
+
+    /* Games issue barriers many times a frame, from several threads. With no
+     * NV12 pair alive and no video-only state in the batch there is nothing to
+     * translate, so the app's own array goes straight through, with no copy and
+     * no lock. */
+    if (!*(volatile unsigned int *)&npairs)
+    {
+        for (i = 0; i < count; i++)
+            if (barrier_needs_fix(&bars[i]))
+                break;
+        if (i == count)
+        {
+            ((pfn_rb)list_orig[26])(list, count, bars);
+            return;
+        }
+    }
+
+    /* Each barrier can gain a chroma twin, so the copy needs twice the batch.
+     * A fixed 32 entries used to drop every barrier past it. */
+    if (count > max / 2)
+    {
+        if (count > UINT_MAX / 2 / sizeof(*fixed)
+                || !(fixed = malloc((size_t)count * 2 * sizeof(*fixed))))
+        {
+            LOG("ResourceBarrier: no room to translate %u barriers, passing them through\n", count);
+            ((pfn_rb)list_orig[26])(list, count, bars);
+            return;
+        }
+        max = count * 2;
+    }
+    n = fix_barriers(bars, count, fixed, max);
     if (n)
         ((pfn_rb)list_orig[26])(list, n, fixed);
+    if (fixed != stack)
+        free(fixed);
 }
 
 static void wrap_command_list(void *list)
