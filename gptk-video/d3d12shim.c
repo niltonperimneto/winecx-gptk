@@ -2280,6 +2280,87 @@ static void wrap_device(void *dev)
     LOG("device %p wrapped\n", dev);
 }
 
+/* ---- relay12: D3D11On12 ----
+ *
+ * Apple's d3d11.dll answers D3D11On12CreateDevice with a stub,
+ *     mov eax, 0x887a0004 (DXGI_ERROR_UNSUPPORTED) ; ret
+ * padded with int3 to its 16-byte slot, so Unity's D3D12 renderer, which
+ * needs a D3D11On12 device, gives up and falls back to D3D11. Relay12's
+ * d3d11on12core.dll implements the call, with the same signature, as
+ * WineD3D11On12CreateDeviceV1.
+ *
+ * Replacing Apple's d3d11.dll with Relay12's router is not an option here:
+ * its DllMain loads "d3d11.dll" and D3DMetal binds its dispatch to whichever
+ * module has that name, so renamed beside the router it forwards
+ * D3D11CreateDevice back to the router, and the two loop forever.
+ *
+ * So when RELAY12_EXPERIMENTAL_FRAME=1, the stub itself becomes an absolute
+ * jump to the core. Every D3D11On12 caller creates its D3D12 device first,
+ * through this shim, so this runs before the first call. Only a byte-exact
+ * stub is patched: a D3DMetal that implements D3D11On12 is left alone, and
+ * every other d3d11 entry point stays Apple's. Without the variable nothing
+ * here runs and d3d11.dll is not even loaded. */
+static const BYTE apple_on12_stub[16] =
+{
+    0xb8, 0x04, 0x00, 0x7a, 0x88, 0xc3, 0xcc, 0xcc,
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+};
+
+static BOOL relay12_requested(void)
+{
+    char flag[2];
+
+    return GetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME", flag, sizeof(flag)) == 1
+            && flag[0] == '1';
+}
+
+static void route_d3d11on12(void)
+{
+    static LONG attempted;
+    BYTE jump[16], *stub;
+    HMODULE d3d11, core;
+    void *target;
+    DWORD protect;
+
+    if (InterlockedExchange(&attempted, 1) || !relay12_requested())
+        return;
+    if (!(d3d11 = LoadLibraryA("d3d11.dll"))
+            || !(stub = (BYTE *)GetProcAddress(d3d11, "D3D11On12CreateDevice")))
+    {
+        LOG("relay12: d3d11.dll has no D3D11On12CreateDevice (err %lu), not routed\n", GetLastError());
+        return;
+    }
+    if (memcmp(stub, apple_on12_stub, sizeof(apple_on12_stub)))
+    {
+        LOG("relay12: D3D11On12CreateDevice is not Apple's unsupported stub, left alone\n");
+        return;
+    }
+    if (!(core = LoadLibraryA("d3d11on12core.dll"))
+            || !(target = (void *)GetProcAddress(core, "WineD3D11On12CreateDeviceV1")))
+    {
+        LOG("relay12: d3d11on12core.dll is missing (err %lu), not routed\n", GetLastError());
+        return;
+    }
+
+    /* movabs rax, target ; jmp rax ; int3 int3 */
+    jump[0] = 0x48;
+    jump[1] = 0xb8;
+    memcpy(jump + 2, &target, sizeof(target));
+    jump[10] = 0xff;
+    jump[11] = 0xe0;
+    jump[12] = jump[13] = jump[14] = jump[15] = 0xcc;
+
+    if (!VirtualProtect(stub, sizeof(jump), PAGE_EXECUTE_READWRITE, &protect))
+    {
+        LOG("relay12: cannot unprotect D3D11On12CreateDevice (err %lu), not routed\n", GetLastError());
+        return;
+    }
+    memcpy(stub, jump, sizeof(jump));
+    VirtualProtect(stub, sizeof(jump), protect, &protect);
+    FlushInstructionCache(GetCurrentProcess(), stub, sizeof(jump));
+    LOG("relay12: D3D11On12CreateDevice routed to d3d11on12core %p\n", target);
+}
+
 /* ---- exports ---- */
 
 HRESULT WINAPI shimD3D12CreateDevice(IUnknown *adapter, D3D_FEATURE_LEVEL fl, REFIID riid, void **dev)
@@ -2293,6 +2374,8 @@ HRESULT WINAPI shimD3D12CreateDevice(IUnknown *adapter, D3D_FEATURE_LEVEL fl, RE
     LOG("D3D12CreateDevice -> 0x%08lx\n", hr);
     if (SUCCEEDED(hr) && dev && *dev)
         wrap_device(*dev);
+    if (SUCCEEDED(hr))
+        route_d3d11on12();
     return hr;
 }
 

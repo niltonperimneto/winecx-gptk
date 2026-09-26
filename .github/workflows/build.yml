@@ -60,6 +60,15 @@ env:
   DXMT_COMMIT: 7c8dee1c2d73415301ceb7d1fa810861cef4cd67
   DXMT_RELEASE_TAG: v0.80-relay12.7c8dee1
   DXMT_ARTIFACT_SHA256: 00a41fcffd0ab488926310a83a357ceada6bae42268d83f58d9c541fccebe3bb
+  # Relay12's D3D11On12 modules, from a release of the relay12 repository built
+  # by its CI at RELAY12_COMMIT. The d3d12 interposer routes
+  # D3D11On12CreateDevice to them when RELAY12_EXPERIMENTAL_FRAME=1, which
+  # Whisky sets from its per-bottle and per-program toggle. SOURCE.txt in the
+  # archive names the source of each module and licenses/ carries every license.
+  RELAY12_REPO: niltonperimneto/relay12
+  RELAY12_COMMIT: 6373fdd439a4863cebed37e70c66806a456dac53
+  RELAY12_RELEASE_TAG: runtime-6373fdd
+  RELAY12_ARTIFACT_SHA256: c8475096fe664dbf501d52fc6a4401c0d8368782f408440b87f3772238e1798d
   # the runtime stream this build publishes into. lived inline in the stamping
   # step as a default and went stale there: v4.2.0 shipped while the workflow
   # still said 4.1.0, so every dispatch without an explicit input mislabelled
@@ -517,6 +526,10 @@ jobs:
                 dxmt.tar.gz "$DXMT_ARTIFACT_SHA256"
           tar -xzf dxvk.tar.gz -C payload
           tar -xzf dxmt.tar.gz -C payload
+          fetch "https://github.com/$RELAY12_REPO/releases/download/$RELAY12_RELEASE_TAG/relay12-$RELAY12_RELEASE_TAG.tar.gz" \
+                relay12.tar.gz "$RELAY12_ARTIFACT_SHA256"
+          tar -xzf relay12.tar.gz -C payload
+          [ -d "payload/relay12-$RELAY12_RELEASE_TAG/x86_64-windows" ] || { echo "relay12 archive layout changed"; exit 1; }
 
           # khronos' own build, not nixpkgs': see the note by MOLTENVK_VERSION.
           # the plain macos tar, not -privateapi -- that variant's extra
@@ -874,6 +887,38 @@ jobs:
             fi
           done
           phase "gptk-video: verified UCRT imports"
+
+          # Relay12's four modules live in the builtin directory itself: unlike
+          # the interposers they need nothing from apple's payload, so they ship
+          # in place. Whisky seeds their system32 placeholders per bottle. Each
+          # exports under its own file name, so Wine always loads this copy.
+          # d3d11on12host is built by Wine's own makefiles and is already a
+          # builtin; the other three are stamped the way the shims are.
+          relay12_src="payload/relay12-$RELAY12_RELEASE_TAG"
+          for module in d3d11on12core d3d11on12 d3d11on12host dxilconv; do
+            cp "$relay12_src/x86_64-windows/$module.dll" Libraries/Wine/lib/wine/x86_64-windows/
+          done
+          python3 - Libraries/Wine/lib/wine/x86_64-windows/{d3d11on12core,d3d11on12,dxilconv}.dll <<'EOF'
+          import struct, sys
+          for p in sys.argv[1:]:
+              d = bytearray(open(p, 'rb').read())
+              if struct.unpack_from('<I', d, 0x3c)[0] < 0x60:
+                  raise SystemExit(p + ': pe header overlaps the builtin marker')
+              d[0x40:0x60] = b'Wine builtin DLL' + b'\0' * 16
+              open(p, 'wb').write(bytes(d))
+          EOF
+          for module in d3d11on12core d3d11on12 d3d11on12host dxilconv; do
+            dll="Libraries/Wine/lib/wine/x86_64-windows/$module.dll"
+            [ "$(dd if="$dll" bs=1 skip=64 count=16 2>/dev/null)" = "Wine builtin DLL" ] \
+              || { echo "::error::$dll is not marked builtin"; exit 1; }
+            if grep -Eiq 'DLL Name: +(d3d11|d3d11mt)\.dll' <<<"$(x86_64-w64-mingw32-objdump -p "$dll")"; then
+              echo "::error::$dll imports d3d11: it would bind to apple's forwarder at load"
+              exit 1
+            fi
+          done
+          mkdir -p Libraries/Wine/share/relay12
+          cp -R "$relay12_src/licenses" "$relay12_src/SOURCE.txt" Libraries/Wine/share/relay12/
+          phase "relay12: D3D11On12 modules"
 
           # whisky's GPTKImporter deploys apple's payload into this directory
           # and symlinks lib/wine/x86_64-unix/{d3d10,d3d11,d3d12,dxgi}.so at
@@ -1311,6 +1356,12 @@ jobs:
             tests/d3d12shim_mock.c tests/d3d12shim_mock.def -luuid
           x86_64-w64-mingw32-clang -O2 -Wall -Werror -o d3d12shim-test/d3d12shim_test.exe \
             tests/d3d12shim.c -luuid -ldxguid
+          # For the Relay12 route: Apple's exact D3D11On12CreateDevice stub as
+          # d3d11.dll, and a d3d11on12core.dll that proves the call arrived.
+          x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -o d3d12shim-test/d3d11.dll \
+            tests/d3d11_on12stub_mock.c tests/d3d11_on12stub_mock.def
+          x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -o d3d12shim-test/d3d11on12core.dll \
+            tests/d3d11on12core_mock.c tests/d3d11on12core_mock.def
 
           export WINEPREFIX="$PWD/d3d12shim-prefix"
           export DYLD_FALLBACK_LIBRARY_PATH="$PWD/Libraries/Wine/lib"
@@ -1330,6 +1381,19 @@ jobs:
             echo "::error::the d3d12 interposer forwarded something d3dmetal must not see"
             exit 1
           }
+
+          # The Relay12 route decides once per process, so each case is its own
+          # run. Native d3d11 and d3d11on12core load the mocks beside the test.
+          for mode in on12-off on12-on on12-foreign; do
+            (cd d3d12shim-test && env -u RELAY12_EXPERIMENTAL_FRAME WINEDEBUG=-all \
+              WINEDLLOVERRIDES="d3d11,d3d11on12core=n;mscoree,mshtml=d" \
+              ../Libraries/Wine/bin/wine64 d3d12shim_test.exe "$mode") > "d3d12shim-$mode.log" 2>&1 || true
+            tr -d '\r' < "d3d12shim-$mode.log" | grep -E '^\[|^RESULT' | tee -a "$GITHUB_STEP_SUMMARY"
+            tr -d '\r' < "d3d12shim-$mode.log" | grep -q "^RESULT: d3d12shim $mode ok\$" || {
+              echo "::error::the d3d12 interposer's Relay12 route failed its $mode case"
+              exit 1
+            }
+          done
 
       - name: package
         run: |
