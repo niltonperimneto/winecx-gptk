@@ -11,6 +11,12 @@
  *    array: same pointer, same count, no copy.
  *  - A translated batch keeps every barrier. The shim used to copy into 32
  *    entries and drop the rest.
+ *  - While an NV12 pair is alive, a barrier on its luma gains a chroma twin; once
+ *    the texture is destroyed, plain batches are the app's own array again. The
+ *    shim used to test for "any pair ever registered", so one intro video cost
+ *    every later barrier a copy and a lock.
+ *  - Transitions that are no-ops once video states are fixed are dropped, and a
+ *    batch of nothing else never reaches D3DMetal.
  *  - CopyTextureRegion with no video texture forwards its arguments as given.
  *
  * With a mode argument it checks the Relay12 route instead, one case per
@@ -42,7 +48,12 @@ typedef UINT (WINAPI *barriers_fn)(UINT *, const D3D12_RESOURCE_BARRIER **, cons
 typedef UINT (WINAPI *copy_fn)(const D3D12_TEXTURE_COPY_LOCATION **, const D3D12_TEXTURE_COPY_LOCATION **,
         UINT *, const D3D12_BOX **);
 
+typedef void *(WINAPI *resource_fn)(UINT, LONG *, DXGI_FORMAT *);
+typedef void (WINAPI *destroy_fn)(void *);
+
 typedef HRESULT (WINAPI *cfs_fn)(void *, D3D12_FEATURE, void *, UINT);
+typedef HRESULT (WINAPI *ccr_fn)(void *, const D3D12_HEAP_PROPERTIES *, D3D12_HEAP_FLAGS,
+        const D3D12_RESOURCE_DESC *, D3D12_RESOURCE_STATES, const D3D12_CLEAR_VALUE *, REFIID, void **);
 typedef HRESULT (WINAPI *ccl_fn)(void *, UINT, D3D12_COMMAND_LIST_TYPE, void *, void *, REFIID, void **);
 typedef void (WINAPI *rb_fn)(void *, UINT, const D3D12_RESOURCE_BARRIER *);
 typedef void (WINAPI *ctr_fn)(void *, const D3D12_TEXTURE_COPY_LOCATION *, UINT, UINT, UINT,
@@ -177,6 +188,14 @@ int main(int argc, char **argv)
     unexpected_fn unexpected;
     barriers_fn barriers;
     copy_fn copies;
+    resource_fn mock_resource;
+    destroy_fn destroy_resource;
+    D3D12_HEAP_PROPERTIES heap = {D3D12_HEAP_TYPE_DEFAULT};
+    D3D12_RESOURCE_DESC nv12;
+    void *luma = NULL, *chroma = NULL;
+    DXGI_FORMAT luma_format, chroma_format;
+    LONG luma_ref, chroma_ref;
+    UINT copied;
     ID3D12Resource *resource = (ID3D12Resource *)(UINT_PTR)0x1000;
     void *device = NULL, *list = NULL;
     UINT tier, count, calls, xyz[3], i;
@@ -197,7 +216,10 @@ int main(int argc, char **argv)
     unexpected = (unexpected_fn)(void *)GetProcAddress(mock, "MockUnexpectedCalls");
     barriers = (barriers_fn)(void *)GetProcAddress(mock, "MockBarriers");
     copies = (copy_fn)(void *)GetProcAddress(mock, "MockCopy");
-    if (!create_device || !answer || !device_vtable || !list_vtable || !unexpected || !barriers || !copies)
+    mock_resource = (resource_fn)(void *)GetProcAddress(mock, "MockResource");
+    destroy_resource = (destroy_fn)(void *)GetProcAddress(mock, "MockDestroyResource");
+    if (!create_device || !answer || !device_vtable || !list_vtable || !unexpected || !barriers || !copies
+            || !mock_resource || !destroy_resource)
     {
         printf("RESULT: FAIL, an export is missing from the shim or the mock\n");
         return 1;
@@ -295,6 +317,74 @@ int main(int argc, char **argv)
         all = !memcmp(&seen_copy[i], &batch[i], sizeof(batch[i]));
     CHECK(all && seen_copy[63].Transition.StateAfter == D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             "a mixed 64-barrier batch keeps every plain barrier and fixes the video one");
+
+    /* ---- no-op transitions ---- */
+    calls = barriers(&count, &seen_array, &seen_copy);
+    batch[0] = transition(resource, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_VIDEO_PROCESS_READ);
+    batch[1] = transition(resource, D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_RENDER_TARGET);
+    ((rb_fn)slot(list, 26))(list, 2, batch);
+    CHECK(barriers(&count, &seen_array, &seen_copy) == calls,
+            "a batch of only no-op transitions never reaches D3DMetal");
+
+    batch[0] = transition(resource, D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    batch[1] = transition(resource, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_VIDEO_PROCESS_READ);
+    batch[2] = transition(resource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
+    ((rb_fn)slot(list, 26))(list, 3, batch);
+    barriers(&count, &seen_array, &seen_copy);
+    CHECK(count == 2 && !memcmp(&seen_copy[0], &batch[0], sizeof(batch[0]))
+            && !memcmp(&seen_copy[1], &batch[2], sizeof(batch[2])),
+            "a mixed batch forwards only its real transitions, in order");
+
+    /* ---- an NV12 pair, alive and then destroyed ---- */
+    memset(&nv12, 0, sizeof(nv12));
+    nv12.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    nv12.Width = 1920;
+    nv12.Height = 1080;
+    nv12.DepthOrArraySize = 1;
+    nv12.MipLevels = 1;
+    nv12.Format = DXGI_FORMAT_NV12;
+    nv12.SampleDesc.Count = 1;
+    hr = ((ccr_fn)slot(device, 27))(device, &heap, D3D12_HEAP_FLAG_NONE, &nv12,
+            D3D12_RESOURCE_STATE_COMMON, NULL, &IID_ID3D12Resource, &luma);
+    CHECK(hr == S_OK && luma == mock_resource(0, &luma_ref, &luma_format)
+            && (chroma = mock_resource(1, &chroma_ref, &chroma_format))
+            && luma_format == DXGI_FORMAT_R8_UNORM && chroma_format == DXGI_FORMAT_R8G8_UNORM,
+            "an NV12 texture is created as an R8 luma and an R8G8 chroma");
+
+    batch[0] = transition(luma, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    batch[1] = transition(luma, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_VIDEO_PROCESS_READ);
+    ((rb_fn)slot(list, 26))(list, 2, batch);
+    barriers(&count, &seen_array, &seen_copy);
+    CHECK(count == 2 && seen_copy[0].Transition.pResource == luma
+            && seen_copy[1].Transition.pResource == chroma
+            && seen_copy[1].Transition.StateAfter == D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            "a live pair's luma barrier gains a chroma twin, and its no-op gains none");
+
+    destroy_resource(luma);
+    mock_resource(1, &chroma_ref, &chroma_format);
+    CHECK(chroma_ref == 0, "destroying the luma texture releases the chroma texture");
+
+    for (i = 0; i < 3; i++)
+        batch[i] = transition(resource, D3D12_RESOURCE_STATE_RENDER_TARGET,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    for (copied = 0, i = 0; i < 100; i++)
+    {
+        ((rb_fn)slot(list, 26))(list, 3, batch);
+        barriers(&count, &seen_array, &seen_copy);
+        copied += seen_array != batch || count != 3;
+    }
+    CHECK(!copied, "after the last video texture dies, plain batches are the app's own array again");
+
+    batch[0] = transition(luma, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    ((rb_fn)slot(list, 26))(list, 1, batch);
+    barriers(&count, &seen_array, &seen_copy);
+    CHECK(count == 1 && seen_array == batch,
+            "a destroyed pair's old luma address gains no chroma twin");
 
     /* ---- copy ---- */
     memset(&dst, 0, sizeof(dst));
