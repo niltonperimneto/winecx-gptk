@@ -16,9 +16,11 @@
 #include <d3d12.h>
 #include <d3d12video.h>
 #include <dxva.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* mingw's d3d12video.h stops short of the enumeration feature structs */
 typedef struct
@@ -1814,9 +1816,32 @@ static HRESULT WINAPI shim_QueryInterface(void *dev, REFIID riid, void **out)
     return hr;
 }
 
+/* D3D12_FEATURE_D3D12_TIGHT_ALIGNMENT and its data, from DirectX-Headers'
+ * d3d12.h; llvm-mingw 20240619 predates both. The tier enum is 4 bytes and
+ * D3D12_TIGHT_ALIGNMENT_TIER_NOT_SUPPORTED is 0. */
+#define SHIM_FEATURE_TIGHT_ALIGNMENT ((D3D12_FEATURE)54)
+typedef struct
+{
+    UINT SupportTier;
+} shim_TIGHT_ALIGNMENT;
+
 static HRESULT WINAPI shim_CheckFeatureSupport(void *dev, D3D12_FEATURE feature, void *data, UINT size)
 {
     HRESULT hr = ((pfn_cfs)dev_orig[13])(dev, feature, data, size);
+
+    /* D3DMetal does not know feature 54 and returns E_INVALIDARG. A runtime
+     * that knows the query never does that: it reports a tier. Unity 6.3's
+     * D3D12 renderer gives up on that failure, so PEAK falls back to D3D11
+     * right after its D3D11On12 device succeeds. Report the tier that is true
+     * of D3DMetal, not supported, and only when D3DMetal itself has refused,
+     * so a D3DMetal that learns the query answers it. */
+    if (feature == SHIM_FEATURE_TIGHT_ALIGNMENT && hr == E_INVALIDARG
+            && data && size == sizeof(shim_TIGHT_ALIGNMENT))
+    {
+        ((shim_TIGHT_ALIGNMENT *)data)->SupportTier = 0;
+        LOG("CheckFeatureSupport TIGHT_ALIGNMENT refused by d3dmetal -> tier not supported\n");
+        return S_OK;
+    }
 
     if (feature == D3D12_FEATURE_FORMAT_SUPPORT && size >= sizeof(D3D12_FEATURE_DATA_FORMAT_SUPPORT))
     {
@@ -2079,6 +2104,14 @@ static void WINAPI shim_CopyTextureRegion(void *list, const D3D12_TEXTURE_COPY_L
     D3D12_TEXTURE_COPY_LOCATION fixed;
     struct nv12 *pair;
 
+    /* With no NV12 pair, no watched video texture and logging off, nothing
+     * below can apply, so a game without video pays one branch per copy. */
+    if (!*(volatile unsigned int *)&npairs && !*(volatile unsigned int *)&nwatched && !want_log())
+    {
+        ((pfn_ctr)list_orig[16])(list, dst, x, y, z, src, box);
+        return;
+    }
+
     /* dump what the engine actually staged, once. rendered host side this says
      * whether the bytes match the pitch the footprint declares. */
     if (dst && find_watched(dst->pResource) && !dumped && want_dumps()
@@ -2143,13 +2176,55 @@ static void WINAPI shim_CopyTextureRegion(void *list, const D3D12_TEXTURE_COPY_L
     ((pfn_ctr)list_orig[16])(list, dst, x, y, z, src, box);
 }
 
+static BOOL barrier_needs_fix(const D3D12_RESOURCE_BARRIER *bar)
+{
+    return bar->Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION
+            && (fix_state(bar->Transition.StateBefore) != bar->Transition.StateBefore
+            || fix_state(bar->Transition.StateAfter) != bar->Transition.StateAfter);
+}
+
 static void WINAPI shim_ResourceBarrier(void *list, UINT count, const D3D12_RESOURCE_BARRIER *bars)
 {
-    D3D12_RESOURCE_BARRIER fixed[32];
-    UINT n = fix_barriers(bars, count, fixed, 32);
+    D3D12_RESOURCE_BARRIER stack[32], *fixed = stack;
+    UINT i, n, max = sizeof(stack) / sizeof(stack[0]);
 
+    if (!count)
+        return;
+
+    /* Games issue barriers many times a frame, from several threads. With no
+     * NV12 pair alive and no video-only state in the batch there is nothing to
+     * translate, so the app's own array goes straight through, with no copy and
+     * no lock. */
+    if (!*(volatile unsigned int *)&npairs)
+    {
+        for (i = 0; i < count; i++)
+            if (barrier_needs_fix(&bars[i]))
+                break;
+        if (i == count)
+        {
+            ((pfn_rb)list_orig[26])(list, count, bars);
+            return;
+        }
+    }
+
+    /* Each barrier can gain a chroma twin, so the copy needs twice the batch.
+     * A fixed 32 entries used to drop every barrier past it. */
+    if (count > max / 2)
+    {
+        if (count > UINT_MAX / 2 / sizeof(*fixed)
+                || !(fixed = malloc((size_t)count * 2 * sizeof(*fixed))))
+        {
+            LOG("ResourceBarrier: no room to translate %u barriers, passing them through\n", count);
+            ((pfn_rb)list_orig[26])(list, count, bars);
+            return;
+        }
+        max = count * 2;
+    }
+    n = fix_barriers(bars, count, fixed, max);
     if (n)
         ((pfn_rb)list_orig[26])(list, n, fixed);
+    if (fixed != stack)
+        free(fixed);
 }
 
 static void wrap_command_list(void *list)
@@ -2205,6 +2280,151 @@ static void wrap_device(void *dev)
     LOG("device %p wrapped\n", dev);
 }
 
+/* ---- relay12: D3D11On12 ----
+ *
+ * Apple's d3d11.dll answers D3D11On12CreateDevice with a stub,
+ *     mov eax, 0x887a0004 (DXGI_ERROR_UNSUPPORTED) ; ret
+ * padded with int3 to its 16-byte slot, so Unity's D3D12 renderer, which
+ * needs a D3D11On12 device, gives up and falls back to D3D11. Relay12's
+ * d3d11on12core.dll implements the call, with the same signature, as
+ * WineD3D11On12CreateDeviceV1.
+ *
+ * Replacing Apple's d3d11.dll with Relay12's router is not an option here:
+ * its DllMain loads "d3d11.dll" and D3DMetal binds its dispatch to whichever
+ * module has that name, so renamed beside the router it forwards
+ * D3D11CreateDevice back to the router, and the two loop forever.
+ *
+ * So when RELAY12_EXPERIMENTAL_FRAME=1, the stub itself becomes an absolute
+ * jump to the core. Every D3D11On12 caller creates its D3D12 device first,
+ * through this shim, so this runs before the first call. Only a byte-exact
+ * stub is patched: a D3DMetal that implements D3D11On12 is left alone, and
+ * every other d3d11 entry point stays Apple's. Without the variable nothing
+ * here runs and d3d11.dll is not even loaded. */
+static const BYTE apple_on12_stub[16] =
+{
+    0xb8, 0x04, 0x00, 0x7a, 0x88, 0xc3, 0xcc, 0xcc,
+    0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
+};
+
+#define RELAY12_COUNT(array) (sizeof(array) / sizeof((array)[0]))
+
+/* Whether `name` is one of the ';'- or ','-separated file names in the
+ * environment variable `variable`, ignoring case. An unset variable holds
+ * nothing. */
+static BOOL relay12_listed(const WCHAR *variable, const WCHAR *name)
+{
+    WCHAR list[4096], *entry, *next;
+    DWORD length = GetEnvironmentVariableW(variable, list, RELAY12_COUNT(list));
+
+    if (!length || length >= RELAY12_COUNT(list))
+        return FALSE;
+    for (entry = list; entry; entry = next)
+    {
+        if ((next = wcspbrk(entry, L";,")))
+            *next++ = 0;
+        while (*entry == ' ')
+            entry++;
+        if (*entry && !lstrcmpiW(entry, name))
+            return TRUE;
+    }
+    return FALSE;
+}
+
+/* RELAY12_EXPERIMENTAL_FRAME=1 asks for the route. Steam hands its own
+ * environment to every game it starts, so Whisky scopes that request with two
+ * lists of executable names: RELAY12_EXPERIMENTAL_FRAME_APPS, when set, names
+ * the only programs that get it, and RELAY12_EXPERIMENTAL_FRAME_SKIP names
+ * programs that never do. A launcher's own processes never get it either way:
+ * Steam's Chromium helper can make a D3D12 device of its own, and none of
+ * them asks for D3D11On12. */
+static BOOL relay12_requested(void)
+{
+    static const WCHAR *const launcher_processes[] =
+    {
+        L"steam.exe", L"steamwebhelper.exe", L"steamservice.exe",
+        L"gameoverlayui.exe", L"gameoverlayui64.exe",
+    };
+    WCHAR path[MAX_PATH], *name;
+    char flag[2];
+    DWORD length;
+    unsigned int i;
+
+    if (GetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME", flag, sizeof(flag)) != 1 || flag[0] != '1')
+        return FALSE;
+    length = GetModuleFileNameW(NULL, path, RELAY12_COUNT(path));
+    if (!length || length >= RELAY12_COUNT(path))
+        return FALSE;
+    name = wcsrchr(path, '\\') ? wcsrchr(path, '\\') + 1 : path;
+
+    for (i = 0; i < RELAY12_COUNT(launcher_processes); i++)
+    {
+        if (!lstrcmpiW(name, launcher_processes[i]))
+        {
+            LOG("relay12: not routed in launcher process %ls\n", name);
+            return FALSE;
+        }
+    }
+    if (relay12_listed(L"RELAY12_EXPERIMENTAL_FRAME_SKIP", name))
+    {
+        LOG("relay12: %ls is in RELAY12_EXPERIMENTAL_FRAME_SKIP, not routed\n", name);
+        return FALSE;
+    }
+    if (GetEnvironmentVariableW(L"RELAY12_EXPERIMENTAL_FRAME_APPS", NULL, 0)
+            && !relay12_listed(L"RELAY12_EXPERIMENTAL_FRAME_APPS", name))
+    {
+        LOG("relay12: %ls is not in RELAY12_EXPERIMENTAL_FRAME_APPS, not routed\n", name);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static void route_d3d11on12(void)
+{
+    static LONG attempted;
+    BYTE jump[16], *stub;
+    HMODULE d3d11, core;
+    void *target;
+    DWORD protect;
+
+    if (InterlockedExchange(&attempted, 1) || !relay12_requested())
+        return;
+    if (!(d3d11 = LoadLibraryA("d3d11.dll"))
+            || !(stub = (BYTE *)GetProcAddress(d3d11, "D3D11On12CreateDevice")))
+    {
+        LOG("relay12: d3d11.dll has no D3D11On12CreateDevice (err %lu), not routed\n", GetLastError());
+        return;
+    }
+    if (memcmp(stub, apple_on12_stub, sizeof(apple_on12_stub)))
+    {
+        LOG("relay12: D3D11On12CreateDevice is not Apple's unsupported stub, left alone\n");
+        return;
+    }
+    if (!(core = LoadLibraryA("d3d11on12core.dll"))
+            || !(target = (void *)GetProcAddress(core, "WineD3D11On12CreateDeviceV1")))
+    {
+        LOG("relay12: d3d11on12core.dll is missing (err %lu), not routed\n", GetLastError());
+        return;
+    }
+
+    /* movabs rax, target ; jmp rax ; int3 int3 */
+    jump[0] = 0x48;
+    jump[1] = 0xb8;
+    memcpy(jump + 2, &target, sizeof(target));
+    jump[10] = 0xff;
+    jump[11] = 0xe0;
+    jump[12] = jump[13] = jump[14] = jump[15] = 0xcc;
+
+    if (!VirtualProtect(stub, sizeof(jump), PAGE_EXECUTE_READWRITE, &protect))
+    {
+        LOG("relay12: cannot unprotect D3D11On12CreateDevice (err %lu), not routed\n", GetLastError());
+        return;
+    }
+    memcpy(stub, jump, sizeof(jump));
+    VirtualProtect(stub, sizeof(jump), protect, &protect);
+    FlushInstructionCache(GetCurrentProcess(), stub, sizeof(jump));
+    LOG("relay12: D3D11On12CreateDevice routed to d3d11on12core %p\n", target);
+}
+
 /* ---- exports ---- */
 
 HRESULT WINAPI shimD3D12CreateDevice(IUnknown *adapter, D3D_FEATURE_LEVEL fl, REFIID riid, void **dev)
@@ -2218,6 +2438,8 @@ HRESULT WINAPI shimD3D12CreateDevice(IUnknown *adapter, D3D_FEATURE_LEVEL fl, RE
     LOG("D3D12CreateDevice -> 0x%08lx\n", hr);
     if (SUCCEEDED(hr) && dev && *dev)
         wrap_device(*dev);
+    if (SUCCEEDED(hr))
+        route_d3d11on12();
     return hr;
 }
 
