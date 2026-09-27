@@ -6,7 +6,12 @@
  * arguments, the pointer identity of the arrays and the counts. Only the slots
  * the shim hooks are implemented; every other slot records an unexpected call.
  * The vtables are as long as the ones the shim copies (64 and 96 slots), so
- * copying them never reads past the end. */
+ * copying them never reads past the end.
+ *
+ * CreateCommittedResource hands out resources from a fixed pool. They keep the
+ * interface the shim attaches with SetPrivateDataInterface and release it only
+ * when the test calls MockDestroyResource, which is how D3D12 tells the shim a
+ * texture has died. */
 #include <windows.h>
 #include <d3d12.h>
 #include <string.h>
@@ -14,6 +19,8 @@
 #define DEVICE_SLOTS 64
 #define LIST_SLOTS 96
 #define MAX_BARRIERS 256
+#define RESOURCE_SLOTS 16
+#define MAX_RESOURCES 8
 
 struct mock_object
 {
@@ -32,6 +39,18 @@ static int answer_tight_alignment;
 static UINT barrier_calls, barrier_count;
 static const D3D12_RESOURCE_BARRIER *barrier_array;
 static D3D12_RESOURCE_BARRIER barrier_copy[MAX_BARRIERS];
+
+struct mock_resource
+{
+    void **vtbl;
+    LONG ref;
+    IUnknown *private_data;
+    D3D12_RESOURCE_DESC desc;
+};
+
+static void *resource_vtbl[RESOURCE_SLOTS];
+static struct mock_resource resources[MAX_RESOURCES];
+static UINT nresources;
 
 static UINT copy_calls;
 static const D3D12_TEXTURE_COPY_LOCATION *copy_dst, *copy_src;
@@ -114,6 +133,43 @@ static void WINAPI mock_ResourceBarrier(void *self, UINT count, const D3D12_RESO
     memcpy(barrier_copy, barriers, min(count, MAX_BARRIERS) * sizeof(*barriers));
 }
 
+static ULONG WINAPI resource_AddRef(struct mock_resource *self)
+{
+    return InterlockedIncrement(&self->ref);
+}
+
+static ULONG WINAPI resource_Release(struct mock_resource *self)
+{
+    return InterlockedDecrement(&self->ref);
+}
+
+/* D3D12 holds a reference on the interface until the object is destroyed. */
+static HRESULT WINAPI resource_SetPrivateDataInterface(struct mock_resource *self, REFGUID guid,
+        IUnknown *data)
+{
+    if (self->private_data)
+        self->private_data->lpVtbl->Release(self->private_data);
+    if ((self->private_data = data))
+        data->lpVtbl->AddRef(data);
+    return S_OK;
+}
+
+static HRESULT WINAPI mock_CreateCommittedResource(void *self, const D3D12_HEAP_PROPERTIES *heap,
+        D3D12_HEAP_FLAGS flags, const D3D12_RESOURCE_DESC *desc, D3D12_RESOURCE_STATES state,
+        const D3D12_CLEAR_VALUE *clear, REFIID riid, void **out)
+{
+    struct mock_resource *resource;
+
+    if (nresources == MAX_RESOURCES)
+        return E_OUTOFMEMORY;
+    resource = &resources[nresources++];
+    resource->vtbl = resource_vtbl;
+    resource->ref = 1;
+    resource->desc = *desc;
+    *out = resource;
+    return S_OK;
+}
+
 static void init_vtables(void)
 {
     unsigned int i;
@@ -124,6 +180,13 @@ static void init_vtables(void)
         device_vtbl[i] = (void *)unexpected_slot;
     for (i = 0; i < LIST_SLOTS; i++)
         list_vtbl[i] = (void *)unexpected_slot;
+    for (i = 0; i < RESOURCE_SLOTS; i++)
+        resource_vtbl[i] = (void *)unexpected_slot;
+    resource_vtbl[0] = (void *)mock_QueryInterface;
+    resource_vtbl[1] = (void *)resource_AddRef;
+    resource_vtbl[2] = (void *)resource_Release;
+    resource_vtbl[5] = (void *)resource_SetPrivateDataInterface;
+    device_vtbl[27] = (void *)mock_CreateCommittedResource;
     device_vtbl[0] = list_vtbl[0] = (void *)mock_QueryInterface;
     device_vtbl[1] = list_vtbl[1] = (void *)mock_AddRef;
     device_vtbl[2] = list_vtbl[2] = (void *)mock_Release;
@@ -180,4 +243,25 @@ UINT WINAPI MockCopy(const D3D12_TEXTURE_COPY_LOCATION **dst, const D3D12_TEXTUR
     xyz[2] = copy_z;
     *box = copy_box;
     return copy_calls;
+}
+
+/* Resource i in creation order, its reference count and its format. */
+void *WINAPI MockResource(UINT i, LONG *ref, DXGI_FORMAT *format)
+{
+    if (i >= nresources)
+        return NULL;
+    *ref = resources[i].ref;
+    *format = resources[i].desc.Format;
+    return &resources[i];
+}
+
+/* What D3D12 does when the object dies: drop the attached interface. */
+void WINAPI MockDestroyResource(void *object)
+{
+    struct mock_resource *resource = object;
+    IUnknown *data = resource->private_data;
+
+    resource->private_data = NULL;
+    if (data)
+        data->lpVtbl->Release(data);
 }
