@@ -298,7 +298,14 @@ struct nv12
 
 #define MAX_NV12 64
 static struct nv12 pairs[MAX_NV12];
+/* One past the highest occupied slot, so a scan stops there. It shrinks when the
+ * top slots empty, but slots themselves never move: a pair_watch holds its
+ * slot's index for the life of the texture. */
 static unsigned int npairs;
+/* Pairs alive right now. npairs cannot be the "is there any video" test, since
+ * it only shrinks when the top slot empties; this is, and it returns to zero
+ * when the last video texture is destroyed. Changed only under cs. */
+static volatile LONG live_pairs;
 
 /* Slots are never compacted and the array is static, so the returned pointer
  * stays valid memory; a dropped slot just stops matching. The one window left is
@@ -309,7 +316,7 @@ static struct nv12 *find_pair(void *res)
     struct nv12 *found = NULL;
     unsigned int i;
 
-    if (!res || !cs_ready)
+    if (!res || !cs_ready || !live_pairs)
         return NULL;
     EnterCriticalSection(&cs);
     for (i = 0; i < npairs; i++)
@@ -320,6 +327,25 @@ static struct nv12 *find_pair(void *res)
         }
     LeaveCriticalSection(&cs);
     return found;
+}
+
+/* find_pair without the lock, for ResourceBarrier: a game records barriers many
+ * times a frame from several threads, and while a video plays every transition
+ * in every batch is looked up. Registration writes chroma before it publishes
+ * luma, and pair_drop clears luma before chroma, so a luma that matches here has
+ * its chroma written; a null chroma means the slot was dropped mid-read and is
+ * treated as no match. The window pair_drop leaves is the one find_pair already
+ * documents. */
+static ID3D12Resource *find_chroma(void *res)
+{
+    unsigned int i, n = *(volatile unsigned int *)&npairs;
+
+    if (!res)
+        return NULL;
+    for (i = 0; i < n; i++)
+        if (*(void *volatile *)&pairs[i].luma == res)
+            return *(ID3D12Resource *volatile *)&pairs[i].chroma;
+    return NULL;
 }
 
 /* Dropping a pair when the app's texture dies.
@@ -353,9 +379,12 @@ static void pair_drop(unsigned int slot)
     if (slot < npairs && pairs[slot].luma)
     {
         /* clear the match first, so find_pair cannot hand this slot out again */
-        pairs[slot].luma = NULL;
+        InterlockedExchangePointer((void **)&pairs[slot].luma, NULL);
         chroma = pairs[slot].chroma;
         pairs[slot].chroma = NULL;
+        InterlockedDecrement(&live_pairs);
+        while (npairs && !pairs[npairs - 1].luma)
+            npairs--;
     }
     LeaveCriticalSection(&cs);
 
@@ -622,7 +651,17 @@ static D3D12_RESOURCE_DESC res_desc(ID3D12Resource *res)
     return d;
 }
 
-/* fix those states and give every NV12 pair's chroma texture the same barrier */
+/* A transition between states that are equal once fixed does nothing. D3D12
+ * forbids one outright, and the fix makes them: PIXEL_SHADER_RESOURCE to
+ * VIDEO_PROCESS_READ is two states to the app and one to D3DMetal. */
+static BOOL barrier_is_noop(const D3D12_RESOURCE_BARRIER *bar)
+{
+    return bar->Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION
+            && fix_state(bar->Transition.StateBefore) == fix_state(bar->Transition.StateAfter);
+}
+
+/* fix those states, drop the transitions that become no-ops, and give every NV12
+ * pair's chroma texture the same barrier */
 static UINT fix_barriers(const D3D12_RESOURCE_BARRIER *bars, UINT count,
         D3D12_RESOURCE_BARRIER *out, UINT max)
 {
@@ -630,6 +669,8 @@ static UINT fix_barriers(const D3D12_RESOURCE_BARRIER *bars, UINT count,
 
     for (i = 0; i < count && n < max; i++)
     {
+        if (barrier_is_noop(&bars[i]))
+            continue;
         out[n] = bars[i];
         if (bars[i].Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION)
         {
@@ -638,16 +679,16 @@ static UINT fix_barriers(const D3D12_RESOURCE_BARRIER *bars, UINT count,
         }
         n++;
     }
-    for (i = 0; i < count && n < max; i++)
+    for (i = 0; i < count && n < max && live_pairs; i++)
     {
-        struct nv12 *pair;
+        ID3D12Resource *chroma;
 
-        if (bars[i].Type != D3D12_RESOURCE_BARRIER_TYPE_TRANSITION)
+        if (bars[i].Type != D3D12_RESOURCE_BARRIER_TYPE_TRANSITION || barrier_is_noop(&bars[i]))
             continue;
-        if (!(pair = find_pair(bars[i].Transition.pResource)))
+        if (!(chroma = find_chroma(bars[i].Transition.pResource)))
             continue;
         out[n] = bars[i];
-        out[n].Transition.pResource = pair->chroma;
+        out[n].Transition.pResource = chroma;
         out[n].Transition.StateBefore = fix_state(bars[i].Transition.StateBefore);
         out[n].Transition.StateAfter = fix_state(bars[i].Transition.StateAfter);
         n++;
@@ -1939,10 +1980,13 @@ static HRESULT WINAPI shim_CreateCommittedResource(void *dev, const D3D12_HEAP_P
             break;
     if (slot < MAX_NV12)
     {
-        pairs[slot].luma = *out;
+        /* luma last: find_chroma reads without the lock, and a matching luma
+         * has to mean the rest of the slot is already there */
         pairs[slot].chroma = chroma;
         pairs[slot].width = (UINT)desc->Width;
         pairs[slot].height = desc->Height;
+        InterlockedExchangePointer((void **)&pairs[slot].luma, *out);
+        InterlockedIncrement(&live_pairs);
         if (slot == npairs)
             npairs++;
         LOG("  pair %u registered\n", slot);
@@ -2106,7 +2150,7 @@ static void WINAPI shim_CopyTextureRegion(void *list, const D3D12_TEXTURE_COPY_L
 
     /* With no NV12 pair, no watched video texture and logging off, nothing
      * below can apply, so a game without video pays one branch per copy. */
-    if (!*(volatile unsigned int *)&npairs && !*(volatile unsigned int *)&nwatched && !want_log())
+    if (!live_pairs && !*(volatile unsigned int *)&nwatched && !want_log())
     {
         ((pfn_ctr)list_orig[16])(list, dst, x, y, z, src, box);
         return;
@@ -2192,13 +2236,13 @@ static void WINAPI shim_ResourceBarrier(void *list, UINT count, const D3D12_RESO
         return;
 
     /* Games issue barriers many times a frame, from several threads. With no
-     * NV12 pair alive and no video-only state in the batch there is nothing to
+     * NV12 pair alive and nothing in the batch to fix or drop there is nothing to
      * translate, so the app's own array goes straight through, with no copy and
-     * no lock. */
-    if (!*(volatile unsigned int *)&npairs)
+     * no lock. Once the last video texture is destroyed this path is back. */
+    if (!live_pairs)
     {
         for (i = 0; i < count; i++)
-            if (barrier_needs_fix(&bars[i]))
+            if (barrier_needs_fix(&bars[i]) || barrier_is_noop(&bars[i]))
                 break;
         if (i == count)
         {

@@ -7,3 +7,5 @@ MockListVtable
 MockUnexpectedCalls
 MockBarriers
 MockCopy
+MockResource
+MockDestroyResource
