@@ -2306,12 +2306,76 @@ static const BYTE apple_on12_stub[16] =
     0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
 };
 
+#define RELAY12_COUNT(array) (sizeof(array) / sizeof((array)[0]))
+
+/* Whether `name` is one of the ';'- or ','-separated file names in the
+ * environment variable `variable`, ignoring case. An unset variable holds
+ * nothing. */
+static BOOL relay12_listed(const WCHAR *variable, const WCHAR *name)
+{
+    WCHAR list[4096], *entry, *next;
+    DWORD length = GetEnvironmentVariableW(variable, list, RELAY12_COUNT(list));
+
+    if (!length || length >= RELAY12_COUNT(list))
+        return FALSE;
+    for (entry = list; entry; entry = next)
+    {
+        if ((next = wcspbrk(entry, L";,")))
+            *next++ = 0;
+        while (*entry == ' ')
+            entry++;
+        if (*entry && !lstrcmpiW(entry, name))
+            return TRUE;
+    }
+    return FALSE;
+}
+
+/* RELAY12_EXPERIMENTAL_FRAME=1 asks for the route. Steam hands its own
+ * environment to every game it starts, so Whisky scopes that request with two
+ * lists of executable names: RELAY12_EXPERIMENTAL_FRAME_APPS, when set, names
+ * the only programs that get it, and RELAY12_EXPERIMENTAL_FRAME_SKIP names
+ * programs that never do. A launcher's own processes never get it either way:
+ * Steam's Chromium helper can make a D3D12 device of its own, and none of
+ * them asks for D3D11On12. */
 static BOOL relay12_requested(void)
 {
+    static const WCHAR *const launcher_processes[] =
+    {
+        L"steam.exe", L"steamwebhelper.exe", L"steamservice.exe",
+        L"gameoverlayui.exe", L"gameoverlayui64.exe",
+    };
+    WCHAR path[MAX_PATH], *name;
     char flag[2];
+    DWORD length;
+    unsigned int i;
 
-    return GetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME", flag, sizeof(flag)) == 1
-            && flag[0] == '1';
+    if (GetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME", flag, sizeof(flag)) != 1 || flag[0] != '1')
+        return FALSE;
+    length = GetModuleFileNameW(NULL, path, RELAY12_COUNT(path));
+    if (!length || length >= RELAY12_COUNT(path))
+        return FALSE;
+    name = wcsrchr(path, '\\') ? wcsrchr(path, '\\') + 1 : path;
+
+    for (i = 0; i < RELAY12_COUNT(launcher_processes); i++)
+    {
+        if (!lstrcmpiW(name, launcher_processes[i]))
+        {
+            LOG("relay12: not routed in launcher process %ls\n", name);
+            return FALSE;
+        }
+    }
+    if (relay12_listed(L"RELAY12_EXPERIMENTAL_FRAME_SKIP", name))
+    {
+        LOG("relay12: %ls is in RELAY12_EXPERIMENTAL_FRAME_SKIP, not routed\n", name);
+        return FALSE;
+    }
+    if (GetEnvironmentVariableW(L"RELAY12_EXPERIMENTAL_FRAME_APPS", NULL, 0)
+            && !relay12_listed(L"RELAY12_EXPERIMENTAL_FRAME_APPS", name))
+    {
+        LOG("relay12: %ls is not in RELAY12_EXPERIMENTAL_FRAME_APPS, not routed\n", name);
+        return FALSE;
+    }
+    return TRUE;
 }
 
 static void route_d3d11on12(void)

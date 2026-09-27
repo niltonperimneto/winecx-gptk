@@ -1391,10 +1391,16 @@ jobs:
 
           # The Relay12 route decides once per process, so each case is its own
           # run. Native d3d11 and d3d11on12core load the mocks beside the test.
-          for mode in on12-off on12-on on12-foreign; do
-            (cd d3d12shim-test && env -u RELAY12_EXPERIMENTAL_FRAME WINEDEBUG=-all \
+          # on12-launcher runs the same test as steamwebhelper.exe, one of the
+          # launcher processes the route must never touch.
+          cp d3d12shim-test/d3d12shim_test.exe d3d12shim-test/steamwebhelper.exe
+          for mode in on12-off on12-on on12-foreign on12-listed on12-unlisted on12-skipped on12-launcher; do
+            exe=d3d12shim_test.exe
+            [ "$mode" = on12-launcher ] && exe=steamwebhelper.exe
+            (cd d3d12shim-test && env -u RELAY12_EXPERIMENTAL_FRAME -u RELAY12_EXPERIMENTAL_FRAME_APPS \
+              -u RELAY12_EXPERIMENTAL_FRAME_SKIP WINEDEBUG=-all \
               WINEDLLOVERRIDES="d3d11,d3d11on12core=n;mscoree,mshtml=d" \
-              ../Libraries/Wine/bin/wine64 d3d12shim_test.exe "$mode") > "d3d12shim-$mode.log" 2>&1 || true
+              ../Libraries/Wine/bin/wine64 "$exe" "$mode") > "d3d12shim-$mode.log" 2>&1 || true
             tr -d '\r' < "d3d12shim-$mode.log" | grep -E '^\[|^RESULT' | tee -a "$GITHUB_STEP_SUMMARY"
             tr -d '\r' < "d3d12shim-$mode.log" | grep -q "^RESULT: d3d12shim $mode ok\$" || {
               echo "::error::the d3d12 interposer's Relay12 route failed its $mode case"
