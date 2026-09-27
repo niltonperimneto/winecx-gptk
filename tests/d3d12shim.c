@@ -21,6 +21,12 @@
  *  - on12-on: with it, D3D11On12CreateDevice lands in the core, every
  *    argument intact.
  *  - on12-foreign: a stub that is not Apple's exact one is left alone.
+ *  - on12-listed: RELAY12_EXPERIMENTAL_FRAME_APPS names this program, in
+ *    another case and among others, so it is routed.
+ *  - on12-unlisted: the list names only another program, so it is not.
+ *  - on12-skipped: RELAY12_EXPERIMENTAL_FRAME_SKIP names this program.
+ *  - on12-launcher: run as steamwebhelper.exe, a launcher's own process is
+ *    never routed, whatever the variables say.
  *
  * Prints one line per check and a final "RESULT:" line, which is the verdict. */
 #include <windows.h>
@@ -65,7 +71,13 @@ static int run_on12(const char *mode, create_device_fn create_device)
 {
     static const BYTE apple_stub[16] =
             { 0xb8, 0x04, 0x00, 0x7a, 0x88, 0xc3, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc };
-    int on = !strcmp(mode, "on12-on"), foreign = !strcmp(mode, "on12-foreign");
+    static const char *const modes[] =
+            { "on12-off", "on12-on", "on12-foreign", "on12-listed", "on12-unlisted", "on12-skipped", "on12-launcher" };
+    int foreign = !strcmp(mode, "on12-foreign");
+    int on = !strcmp(mode, "on12-on") || !strcmp(mode, "on12-listed");
+    int requested = strcmp(mode, "on12-off") != 0;
+    char self[MAX_PATH];
+    unsigned int m;
     void *device = NULL, *device11 = (void *)(UINT_PTR)1, *context11 = (void *)(UINT_PTR)1;
     HMODULE d3d11 = LoadLibraryA("d3d11.dll");
     stub_address_fn stub_address;
@@ -74,9 +86,16 @@ static int run_on12(const char *mode, create_device_fn create_device)
     on12_fn on12;
     HRESULT hr;
 
-    if (!on && !foreign && strcmp(mode, "on12-off"))
+    for (m = 0; m < sizeof(modes) / sizeof(modes[0]) && strcmp(mode, modes[m]); m++) ;
+    if (m == sizeof(modes) / sizeof(modes[0]))
     {
         printf("RESULT: FAIL, unknown mode %s\n", mode);
+        return 1;
+    }
+    GetModuleFileNameA(NULL, self, sizeof(self));
+    if (!strcmp(mode, "on12-launcher") && !strstr(self, "steamwebhelper.exe"))
+    {
+        printf("RESULT: FAIL, on12-launcher must run as steamwebhelper.exe, not %s\n", self);
         return 1;
     }
     on12 = d3d11 ? (on12_fn)(void *)GetProcAddress(d3d11, "D3D11On12CreateDevice") : NULL;
@@ -89,7 +108,11 @@ static int run_on12(const char *mode, create_device_fn create_device)
     }
     CHECK(!memcmp(stub_address(), apple_stub, sizeof(apple_stub)), "the mock's stub is Apple's, byte for byte");
 
-    SetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME", on || foreign ? "1" : NULL);
+    SetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME", requested ? "1" : NULL);
+    SetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME_APPS", !strcmp(mode, "on12-listed")
+            ? "Other.exe; D3D12SHIM_TEST.EXE" : !strcmp(mode, "on12-unlisted") ? "PEAK.exe" : NULL);
+    SetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME_SKIP",
+            !strcmp(mode, "on12-skipped") ? "Some.exe,d3d12shim_test.exe" : NULL);
     if (foreign)
         CHECK(make_foreign(), "the mock's stub is made foreign");
 
@@ -112,8 +135,9 @@ static int run_on12(const char *mode, create_device_fn create_device)
     }
     else
     {
-        CHECK(hr == (HRESULT)0x887a0004, "without Relay12 D3D11On12CreateDevice still refuses");
-        CHECK(!memcmp(stub_address(), apple_stub, sizeof(apple_stub)), "without Relay12 the stub is untouched");
+        CHECK(hr == (HRESULT)0x887a0004, "a program Relay12 does not apply to still gets the refusal");
+        CHECK(!memcmp(stub_address(), apple_stub, sizeof(apple_stub)),
+                "a program Relay12 does not apply to keeps the stub untouched");
     }
 
     if (failures)
