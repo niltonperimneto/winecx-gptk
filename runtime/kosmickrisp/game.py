@@ -33,6 +33,11 @@ def run_game(config_path, launcher, env, output, run_probe):
     config = json.loads(config_path.read_text())
     if config is None:
         return {"status": "blocked", "reason": "no pinned game benchmark configured"}
+    if config.get("kind") == "provisioned-game-plan":
+        return {"status": "blocked", "benchmark": config["name"],
+                "renderer": config["primary"]["renderer"],
+                "executable": config["primary"]["executable"],
+                "reason": "; ".join(config["requirements"])}
     try:
         digest = config["archive_sha256"]
         if not re.fullmatch("[0-9a-f]{64}", digest):

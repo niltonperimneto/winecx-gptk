@@ -34,8 +34,8 @@ release/catalog publishing job.
 
 The runtime check can pass while migration readiness fails. With the currently
 pinned Mesa driver, geometry shaders and transform feedback are absent, and
-stock DXVK initialization fails locally. An unconfigured game is also reported
-as blocked, never passed. This expected red readiness result keeps the missing
+stock DXVK initialization fails locally. The selected Hades test remains
+blocked until its installation and gameplay harness are provisioned. This expected red readiness result keeps the missing
 migration requirements visible without hiding successful runtime work.
 
 Each subprocess has a timeout. Probe logs, source pins, capabilities, durations,
@@ -45,11 +45,29 @@ that diagnostic artifact. The build's existing probe logs remain available too.
 
 ## Configure the game benchmark
 
-`runtime/kosmickrisp/game.json` is deliberately `null` until a repeatable game or
-benchmark is selected. Replace it with a profile for a redistributable Windows
-benchmark ZIP that runs unattended and prints correctness, driver, and timing
-evidence. The profile is reviewed with the source; it is not arbitrary shell
-text supplied to the workflow.
+`runtime/kosmickrisp/game.json` selects **Hades (Windows)**. Its
+`provisioned-game-plan` profile records the selection and reports a named blocked
+result until the installation and gameplay harness are available; it does not
+launch or download the game yet.
+
+Use `x64Vk/Hades.exe` for the first native Vulkan/KosmicKrisp test. Use
+`x64/Hades.exe` for a subsequent DirectX/upstream-DXVK test once the DXVK
+capability gate passes. These are the renderer-specific Windows executables
+listed in [Supergiant's Hades FAQ](https://www.supergiantgames.com/faqs/hades/).
+The macOS game build does not exercise Wine. A Vulkan Hades pass alone cannot
+satisfy the separate upstream DXVK readiness gate.
+
+Provision a licensed Windows copy on a dedicated macOS 26 Apple Silicon runner,
+record its exact build and file hashes, and use an isolated test prefix/save.
+The current hosted job has no Hades installation. The gameplay harness still
+needs a fixed save and input sequence, backend evidence, visual checks, and
+frame-time capture with hardware-specific thresholds. Do not treat reaching the
+menu or keeping the process alive as a gameplay/performance pass. No unattended
+Hades benchmark flags or telemetry format have been established. Keep game files
+and saves out of uploaded diagnostic artifacts.
+
+The existing downloadable ZIP benchmark adapter remains available for other
+redistributable fixtures. Its example contract is:
 
 ```json
 {
