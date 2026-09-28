@@ -18,7 +18,7 @@ on:
         # deliberately no default: a default here wins over the shell fallback
         # below, so the version would go stale in two places instead of one
   push:
-    branches: [main]
+    branches: [main, feat/kosmickrisp-experimental]
     # a push to main publishes, so a readme edit would cut a release whose bits
     # are identical to the last one bar the version stamp. the manual escape is
     # "[skip ci]" in the commit subject, but only in that exact spelling, and
@@ -47,6 +47,8 @@ on:
 # of 2026, which is this project's deadline for finding another source of
 # x86_64 macOS libraries.
 env:
+  # Branch pushes exercise the experimental lane without a manual dispatch.
+  KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
   # WineCX 11.17 source with Whisky's platform fixes and the matching vendored
   # FAudio update. Keep the revision immutable so the canary remains
   # reproducible while the feature branch advances.
@@ -104,6 +106,7 @@ permissions:
 jobs:
   build:
     outputs:
+      kosmickrisp: ${{ env.KOSMICKRISP_ENABLED }}
       runtime_version: ${{ steps.install.outputs.runtime_version }}
       shippable: ${{ steps.make.outputs.shippable }}
     runs-on: macos-26
@@ -206,13 +209,14 @@ jobs:
           done
 
       - name: enable explicit experimental Vulkan loader selection
-        if: inputs.kosmickrisp == true
+        if: env.KOSMICKRISP_ENABLED == 'true'
         run: git -C winecx apply --check ../runtime/kosmickrisp/wine-loader.patch && git -C winecx apply ../runtime/kosmickrisp/wine-loader.patch
 
       - name: build experimental KosmicKrisp bundle
-        if: inputs.kosmickrisp == true
+        timeout-minutes: 60
+        if: env.KOSMICKRISP_ENABLED == 'true'
         run: |
-          python3 -m unittest discover -s tests -p 'test_kosmickrisp_launcher.py' -v
+          python3 -m unittest discover -s tests -p 'test_kosmickrisp*.py' -v
           brew install cmake ninja pkg-config llvm spirv-tools spirv-llvm-translator libclc python@3.13
           "$(brew --prefix python@3.13)/bin/python3.13" -m venv "$RUNNER_TEMP/kosmickrisp-python"
           source "$RUNNER_TEMP/kosmickrisp-python/bin/activate"
@@ -1064,9 +1068,12 @@ jobs:
           echo "::notice::relay12: installed $(ls Libraries/Wine/lib/wine/x86_64-windows/{d3d11on12core,d3d11on12,d3d11on12host,dxilconv}.dll | wc -l | tr -d " ") D3D11On12 modules"
 
       - name: install and probe experimental KosmicKrisp
-        if: inputs.kosmickrisp == true
+        timeout-minutes: 10
+        if: env.KOSMICKRISP_ENABLED == 'true'
         run: |
           cp -R payload/kosmickrisp Libraries/Wine/lib/kosmickrisp
+          mkdir -p Libraries/Wine/lib/kosmickrisp/tests
+          cp "$RUNNER_TEMP/kosmickrisp relocated/host-probe" Libraries/Wine/lib/kosmickrisp/tests/
           install -m 755 runtime/kosmickrisp/wine-kosmickrisp Libraries/Wine/bin/wine-kosmickrisp
           probe_dir="$RUNNER_TEMP/kosmickrisp-pe"
           mkdir -p "$probe_dir"
@@ -1074,13 +1081,24 @@ jobs:
             "$target-w64-mingw32-clang" -Wall -Wextra -Werror \
               -I"$RUNNER_TEMP/kosmickrisp-build/headers/include" \
               tests/kosmickrisp_probe.c -o "$probe_dir/$target.exe"
+            cp "$probe_dir/$target.exe" "Libraries/Wine/lib/kosmickrisp/tests/$target.exe"
+            "$target-w64-mingw32-clang" -O2 tests/d3d11feat.c -ld3d11 -ldxgi -ldxguid -luuid \
+              -o "Libraries/Wine/lib/kosmickrisp/tests/d3d11-$target.exe"
+            "$target-w64-mingw32-clang" -O2 tests/d3d9feat.c -ld3d9 \
+              -o "Libraries/Wine/lib/kosmickrisp/tests/d3d9-$target.exe"
             WINEPREFIX="$RUNNER_TEMP/kosmickrisp-prefix" WINEDEBUG=-all \
-              Libraries/Wine/bin/wine-kosmickrisp "$probe_dir/$target.exe" \
+              Libraries/Wine/bin/wine-kosmickrisp "$probe_dir/$target.exe" --present \
               2>&1 | tee "Libraries/Wine/lib/kosmickrisp/wine-$target-probe.txt"
           done
+          source runtime/kosmickrisp/pins.env
+          curl -fsSL "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_TEST_VERSION/dxvk-$DXVK_TEST_VERSION.tar.gz" \
+            -o "$probe_dir/dxvk.tar.gz"
+          echo "$DXVK_TEST_SHA256  $probe_dir/dxvk.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$probe_dir/dxvk.tar.gz" -C Libraries/Wine/lib/kosmickrisp/tests
+          cp runtime/kosmickrisp/licenses/dxvk-2.4.txt Libraries/Wine/lib/kosmickrisp/licenses/
 
       - name: upload experimental Vulkan probe logs
-        if: always() && inputs.kosmickrisp == true
+        if: always() && env.KOSMICKRISP_ENABLED == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: kosmickrisp-probe-logs
@@ -1515,7 +1533,7 @@ jobs:
         with:
           # a fast build says so in its own name, so an -O0 tree cannot be
           # mistaken for a release one three weeks from now
-          name: whiskywine-gptk-libraries${{ inputs.kosmickrisp == true && '-kosmickrisp-experimental' || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+          name: whiskywine-gptk-libraries${{ env.KOSMICKRISP_ENABLED == 'true' && '-kosmickrisp-experimental' || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
           path: |
             Libraries.tar.gz
             Libraries.tar.gz.sha256
@@ -1529,6 +1547,62 @@ jobs:
           # bottleneck is this runner's uplink at roughly 1MB/s, not its cpu,
           # and level 6 can only ever put fewer bytes on the wire.
 
+  kosmickrisp-validation:
+    name: KosmicKrisp / macOS 26 packaged runtime
+    needs: build
+    if: needs.build.outputs.kosmickrisp == 'true'
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+          path: downloaded
+      - name: verify and unpack in a relocated directory
+        run: |
+          cd downloaded
+          shasum -a 256 -c Libraries.tar.gz.sha256
+          mkdir -p "$RUNNER_TEMP/kosmickrisp relocated runtime"
+          tar -xzf Libraries.tar.gz -C "$RUNNER_TEMP/kosmickrisp relocated runtime"
+      - name: validate the packaged runtime on macOS 26
+        run: |
+          /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+          python3 runtime/kosmickrisp/validate.py \
+            --libraries "$RUNNER_TEMP/kosmickrisp relocated runtime/Libraries" \
+            --output "$PWD/kosmickrisp-results"
+      - name: retain results even when a probe fails
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kosmickrisp-validation-results
+          path: |
+            kosmickrisp-results/
+            !kosmickrisp-results/prefix/**
+            !kosmickrisp-results/game-files/**
+            !kosmickrisp-results/dxvk-*/*.dll
+            !kosmickrisp-results/dxvk-*/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  kosmickrisp-readiness:
+    name: KosmicKrisp / migration readiness (features and game evidence)
+    needs: kosmickrisp-validation
+    if: always() && needs.kosmickrisp-validation.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: kosmickrisp-validation-results
+          path: kosmickrisp-results
+      - name: require migration evidence
+        run: python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/results.json
+
   publish:
     name: publish the runtime release
     needs: build
@@ -1537,7 +1611,7 @@ jobs:
     # linked an API above the floor. that last one is how 4.5.0 and then 4.5.114
     # went out macOS-27-only: the availability check was fatal for opt=release
     # alone, and a plain push to main publishes at standard.
-    if: github.ref == 'refs/heads/main' && inputs.kosmickrisp != true && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
+    if: github.ref == 'refs/heads/main' && needs.build.outputs.kosmickrisp != 'true' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
     # a hosted runner, not the builder: gh is not on the builder's PATH, and
     # its uplink is ~1MB/s, so pushing the tarball to a release from there
     # would cost another quarter hour on top of the artifact upload. here the
