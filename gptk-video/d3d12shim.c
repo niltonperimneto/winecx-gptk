@@ -1061,36 +1061,136 @@ static const char *rectstr(const D3D12_RECT *r)
     return b;
 }
 
+/* One converted frame, copied out and written to disk a few frames later so the
+ * gpu has certainly finished with it. Rendering it host side is the only way to
+ * check the colours without trusting an eyeball. */
+static ID3D12Resource *dumpbuf;
+static unsigned int dump_at, dump_pitch, dump_w, dump_h;
+static BOOL dump_done;
+
 static unsigned int process_calls;
 static struct yuvblit blit;
 static BOOL blit_ready, blit_dead;
+
+/* Everything the conversion keeps -- the yuvblit state, the scratch target and
+ * a pending frame dump -- belongs to one device: the one whose command list
+ * last asked for a conversion. blit_device holds a reference on it, so none of
+ * those objects can outlive the device they were made on, whether or not
+ * d3dmetal's device children keep their device alive, and a command list from
+ * another device (a game that recreates its device) gets the state rebuilt
+ * rather than the old device's root signature and psos recorded into it.
+ *
+ * The cost is that a device the app has released stays alive until another
+ * device needs a conversion or the process exits. ensure_blit logs whether the
+ * device's children already hold it, which decides whether releasing this
+ * state on the app's last device reference is even observable. */
+static ID3D12Device *blit_device;
 
 /* if the app's output texture cannot be a render target, draw here and copy */
 static ID3D12Resource *scratch;
 static UINT scratch_w, scratch_h;
 static DXGI_FORMAT scratch_fmt;
 
+/* A replaced scratch target may still be the source of a copy the gpu has not
+ * run, and a command list holds no reference on it. It is released a number of
+ * conversions later instead, the same wait the frame dump relies on. */
+#define SCRATCH_RETIRE_CALLS 8
+#define RETIRED_SLOTS 4
+static struct { ID3D12Resource *res; unsigned int at; } retired[RETIRED_SLOTS];
+
 static void blit_log(const char *s)
 {
     LOG("%s\n", s);
 }
 
-static BOOL ensure_blit(void)
+static void reap_scratch(BOOL all)
+{
+    UINT i;
+
+    for (i = 0; i < RETIRED_SLOTS; i++)
+        if (retired[i].res && (all || process_calls - retired[i].at >= SCRATCH_RETIRE_CALLS))
+        {
+            ID3D12Resource_Release(retired[i].res);
+            retired[i].res = NULL;
+        }
+}
+
+static void retire_scratch(void)
+{
+    UINT i, oldest = 0;
+
+    if (!scratch)
+        return;
+    for (i = 0; i < RETIRED_SLOTS; i++)
+    {
+        if (!retired[i].res)
+            break;
+        if (retired[i].at < retired[oldest].at)
+            oldest = i;
+    }
+    if (i == RETIRED_SLOTS)
+    {
+        /* every slot is waiting: resized that often, the oldest is long done */
+        i = oldest;
+        ID3D12Resource_Release(retired[i].res);
+    }
+    retired[i].res = scratch;
+    retired[i].at = process_calls;
+    scratch = NULL;
+}
+
+static LONG device_refs(ID3D12Device *dev)
+{
+    ID3D12Device_AddRef(dev);
+    return (LONG)ID3D12Device_Release(dev);
+}
+
+static void blit_teardown(void)
+{
+    if (!blit_device)
+        return;
+    LOG("yuvblit: releasing conversion state for device %p\n", (void *)blit_device);
+    yuvblit_release(&blit);
+    retire_scratch();
+    reap_scratch(TRUE);
+    if (dumpbuf)
+    {
+        ID3D12Resource_Release(dumpbuf);
+        dumpbuf = NULL;
+        dump_done = TRUE;
+    }
+    ID3D12Device_Release(blit_device);
+    blit_device = NULL;
+    blit_ready = blit_dead = FALSE;
+}
+
+static BOOL ensure_blit(ID3D12Device *dev)
 {
     yuvblit_serialize_fn serialize;
+    LONG before, after;
 
-    if (blit_ready)
-        return TRUE;
-    if (blit_dead || !real_device)
-        return FALSE;
-    blit_dead = TRUE;   /* one attempt: a failure here will not fix itself */
+    if (dev == blit_device)
+        return blit_ready;
+    if (blit_device)
+        LOG("yuvblit: command list from device %p, state was built on %p\n",
+            (void *)dev, (void *)blit_device);
+    blit_teardown();
+
+    ID3D12Device_AddRef(dev);
+    blit_device = dev;
+    blit_dead = TRUE;   /* one attempt per device: a failure will not fix itself */
     if (!(serialize = (yuvblit_serialize_fn)real_fn("D3D12SerializeRootSignature")))
     {
         LOG("yuvblit: d3dmt.dll has no D3D12SerializeRootSignature\n");
         return FALSE;
     }
-    if (FAILED(yuvblit_init(&blit, real_device, serialize, blit_log)))
+    before = device_refs(dev);
+    if (FAILED(yuvblit_init(&blit, dev, serialize, blit_log)))
         return FALSE;
+    after = device_refs(dev);
+    /* a hint, not a measurement: another thread may move the count between */
+    LOG("yuvblit: device %p refcount %ld -> %ld across init, children %s their device\n",
+        (void *)dev, before, after, after > before ? "reference" : "do not reference");
     blit_dead = FALSE;
     blit_ready = TRUE;
     return TRUE;
@@ -1105,11 +1205,7 @@ static ID3D12Resource *ensure_scratch(UINT w, UINT h, DXGI_FORMAT fmt)
 
     if (scratch && scratch_w == w && scratch_h == h && scratch_fmt == fmt)
         return scratch;
-    if (scratch)
-    {
-        ID3D12Resource_Release(scratch);
-        scratch = NULL;
-    }
+    retire_scratch();
 
     memset(&heap, 0, sizeof(heap));
     heap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -1123,7 +1219,7 @@ static ID3D12Resource *ensure_scratch(UINT w, UINT h, DXGI_FORMAT fmt)
     desc.SampleDesc.Count = 1;
     desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 
-    hr = ((pfn_ccr)dev_orig[27])(real_device, &heap, D3D12_HEAP_FLAG_NONE, &desc,
+    hr = ((pfn_ccr)dev_orig[27])(blit_device, &heap, D3D12_HEAP_FLAG_NONE, &desc,
             D3D12_RESOURCE_STATE_RENDER_TARGET, NULL, &IID_ID3D12Resource, (void **)&res);
     LOG("yuvblit: scratch target %ux%u fmt=%u -> 0x%08lx\n", w, h, fmt, hr);
     if (FAILED(hr))
@@ -1134,13 +1230,6 @@ static ID3D12Resource *ensure_scratch(UINT w, UINT h, DXGI_FORMAT fmt)
     scratch_fmt = fmt;
     return res;
 }
-
-/* One converted frame, copied out and written to disk a few frames later so the
- * gpu has certainly finished with it. Rendering it host side is the only way to
- * check the colours without trusting an eyeball. */
-static ID3D12Resource *dumpbuf;
-static unsigned int dump_at, dump_pitch, dump_w, dump_h;
-static BOOL dump_done;
 
 static void dump_converted(ID3D12GraphicsCommandList *list, ID3D12Resource *tex,
         const D3D12_RESOURCE_DESC *desc, unsigned int n)
@@ -1165,7 +1254,7 @@ static void dump_converted(ID3D12GraphicsCommandList *list, ID3D12Resource *tex,
     bd.MipLevels = 1;
     bd.SampleDesc.Count = 1;
     bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-    hr = ((pfn_ccr)dev_orig[27])(real_device, &heap, D3D12_HEAP_FLAG_NONE, &bd,
+    hr = ((pfn_ccr)dev_orig[27])(blit_device, &heap, D3D12_HEAP_FLAG_NONE, &bd,
             D3D12_RESOURCE_STATE_COPY_DEST, NULL, &IID_ID3D12Resource, (void **)&dumpbuf);
     if (FAILED(hr))
     {
@@ -1237,7 +1326,8 @@ static void WINAPI vlist_ProcessFrames(void *this_, void *processor,
     D3D12_RESOURCE_DESC od;
     DXGI_COLOR_SPACE_TYPE cs;
     struct nv12 *pair;
-    BOOL loud = (n <= 4 || !(n % 300));
+    ID3D12Device *dev;
+    BOOL ready, loud = (n <= 4 || !(n % 300));
     HRESULT hr;
 
     if (loud)
@@ -1270,8 +1360,20 @@ static void WINAPI vlist_ProcessFrames(void *this_, void *processor,
                 (void *)in[0].InputStream[0].pTexture2D);
         return;
     }
-    if (!ensure_blit())
+    /* the list's own device, not the last one created: the conversion's
+     * objects have to come from the device the list will run on */
+    dev = NULL;
+    if (FAILED(ID3D12GraphicsCommandList_GetDevice(l->inner, &IID_ID3D12Device, (void **)&dev)) || !dev)
+    {
+        if (loud)
+            LOG("  command list %p reports no device\n", (void *)l->inner);
         return;
+    }
+    ready = ensure_blit(dev);
+    ID3D12Device_Release(dev);
+    if (!ready)
+        return;
+    reap_scratch(FALSE);
 
     cs = override_cs((p && p->vtbl == vprocessor_vtbl && p->num_in) ? p->in[0].ColorSpace
             : DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709);
