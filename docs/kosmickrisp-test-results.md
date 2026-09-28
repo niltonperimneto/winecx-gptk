@@ -2,7 +2,8 @@
 
 The experimental x86_64 bundle builds and passes basic Vulkan device creation
 and Win32 presentation tests on this machine. Upstream DXVK remains blocked by
-missing fillModeNonSolid, geometry shaders, and transform feedback.
+missing fillModeNonSolid and transform feedback (geometry shaders arrived with
+Mesa `063dfae`).
 
 ## Environment and scope
 
@@ -134,3 +135,31 @@ taken.
 Evidence in `~/Library/Caches/winecx-kosmickrisp-test/`: `dxvk311-probes/`,
 `hades-local/kk-05-vulkan/` (screenshots, Hades.log), `hades-local/dxvk311-dx11/`
 (Hades_dxgi.log, Hades.log), and the `hades-run.sh` harness.
+
+## KosmicKrisp bump to recipe `bac93e0` / Mesa `063dfae` (2026-09-28)
+
+The pins moved to the recipe commit that pulls in geometry shader support. The
+Mesa range adds `kk: Implement geometry shaders with poly`, `kk: Advertise
+geometryShader`, sparse buffer binding, and exact-thread indirect dispatch.
+
+The incremental rebuild reused a Meson configuration from the 2026-09-27 build.
+That configuration still set `HAVE_ENDIAN_H`, so the build failed on
+`endian.h`. A clean work directory, which is what CI uses, built without
+changes. This build did not need the zlib bundling step; the dependency audit
+still passed.
+
+| Check | Result |
+|---|---|
+| Capabilities | `geometryShader=1` (was 0), `fillModeNonSolid=0`, VK_EXT_transform_feedback absent |
+| Compute readback, Win32 present, all four presentation modes, both PE architectures | Passed, no regression |
+| Stock DXVK 3.1.1 D3D9/D3D11, both PE architectures | Still fails: `Skipping: Device does not support required feature 'fillModeNonSolid'` |
+| Hades Vulkan | Same as the previous build: menu, new game, and intro rendered; no new Wine or Hades errors |
+| Hades DX11 + DXVK 3.1.1 | Still `Could not create DXGI factory`; same cause |
+
+Geometry shaders are no longer a DXVK blocker at this pin. The remaining
+blockers are `fillModeNonSolid`, which DXVK 3.x requires before it will create
+any adapter, and VK_EXT_transform_feedback, which the driver only fills
+property limits for. KosmicKrisp does not yet advertise the extension.
+
+Evidence: `bundle-bac93e0/`, `build-bac93e0.log`, `kk-bac93e0-probes/`,
+`hades-local/kk-06-vulkan/`, `hades-local/kk-06-dx11/`.
