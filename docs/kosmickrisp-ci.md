@@ -10,7 +10,7 @@ release/catalog publishing job.
 
 1. **Build:** build the pinned x86_64 ICD, loader, and patched Wine on the hosted
    macOS 26 runner. Package the probe executables, shader fixture, and stock
-   DXVK 2.4 test DLLs with the artifact. DXVK remains a test fixture; the shipped
+   DXVK 3.1.1 test DLLs with the artifact. DXVK remains a test fixture; the shipped
    default DXVK directory is unchanged. Run the launcher and CI-harness unit tests.
 2. **KosmicKrisp / macOS 26 packaged runtime:** download the resulting artifact
    on a separate hosted runner and extract it into a path with spaces. Verify
@@ -24,7 +24,7 @@ release/catalog publishing job.
    shader with exact CPU readback, and swapchain recreation/presentation in
    windowed, resized, borderless-fullscreen, and restored modes. This does not
    test exclusive fullscreen or general shader conformance.
-5. Execute upstream DXVK 2.4 D3D9/D3D11 initialization probes for both PE
+5. Execute upstream DXVK 3.1.1 D3D9/D3D11 initialization probes for both PE
    architectures. Use application-local DLLs and native-only overrides, require
    the DXVK version in its logs, and retain missing-feature evidence. These are
    focused initialization checks, not an exhaustive D3D feature-level audit.

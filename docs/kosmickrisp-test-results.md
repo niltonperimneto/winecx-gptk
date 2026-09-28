@@ -2,7 +2,7 @@
 
 The experimental x86_64 bundle builds and passes basic Vulkan device creation
 and Win32 presentation tests on this machine. Upstream DXVK remains blocked by
-missing geometry shaders and transform feedback.
+missing fillModeNonSolid, geometry shaders, and transform feedback.
 
 ## Environment and scope
 
@@ -104,3 +104,33 @@ Evidence is retained locally in
 `~/Library/Caches/winecx-kosmickrisp-test/hades-startup/`: `result.json`,
 `diagnostic.log`, `startup-mscoree.log`, and the isolated prefix's Hades.log.
 The hosted CI runner still needs its own provisioned installation and harness.
+
+## DXVK 3.1.1 and both Hades renderers (2026-09-28)
+
+The upstream DXVK test fixture moved from 2.4 to 3.1.1 (`b1a1c99`). Same
+KosmicKrisp bundle, now with the Wine 11.17 runtime from 4.7.51, again through
+`CX_LIBVULKAN` in disposable prefixes.
+
+| Check | Result |
+|---|---|
+| Stock DXVK 3.1.1 D3D9/D3D11 initialization, both PE architectures | Failed; DXVK v3.1.1 verified in logs |
+| Hades Vulkan, `x64Vk/Hades.exe` | Menu, new run, and first room rendered; clean exit 0 after about 80 s |
+| Hades DX11, `x64/Hades.exe` + DXVK 3.1.1 | Failed: `Could not create DXGI factory`, `Failed to initialize ForgeRenderer` |
+
+DXVK 3.1.1 regressed further than 2.4 did. 2.4 created an adapter and then
+rejected feature level 10_0 (no geometry shaders). 3.1.1 treats
+`fillModeNonSolid` as a hard device requirement: it logs `Skipping: Device does
+not support required feature 'fillModeNonSolid'` and reports no adapters. The
+probe now prints that feature (KosmicKrisp: 0), and the validator lists it as
+known-missing, ahead of geometryShader and VK_EXT_transform_feedback.
+
+For the DX11 run, the DXVK DLLs went into the prefix's system32/syswow64 with
+native overrides. Nothing was copied into the game directory. Hades did not
+fall back to another renderer; its process stayed up with no window until the
+90-second deadline. The Vulkan result is based on screenshots of gameplay
+rendering, not on frame-time measurement. No FPS or MoltenVK comparison was
+taken.
+
+Evidence in `~/Library/Caches/winecx-kosmickrisp-test/`: `dxvk311-probes/`,
+`hades-local/kk-05-vulkan/` (screenshots, Hades.log), `hades-local/dxvk311-dx11/`
+(Hades_dxgi.log, Hades.log), and the `hades-run.sh` harness.
