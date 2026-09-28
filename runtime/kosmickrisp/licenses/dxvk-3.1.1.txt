@@ -1,4 +1,4 @@
-DXVK 2.4 source: https://github.com/doitsujin/dxvk/tree/008afc1c5f287e82a553108790da6e10b1159200
+DXVK 3.1.1 source: https://github.com/doitsujin/dxvk/tree/b1a1c99ab52b687cf950d62c88bc2fa316b41663
 
                   Copyright (c) 2017 Philip Rebohle
                   Copyright (c) 2019 Joshua Ashton

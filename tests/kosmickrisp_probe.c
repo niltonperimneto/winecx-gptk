@@ -93,9 +93,9 @@ int main(int argc, char **argv)
             VK_API_VERSION_MAJOR(props.properties.apiVersion),
             VK_API_VERSION_MINOR(props.properties.apiVersion),
             VK_API_VERSION_PATCH(props.properties.apiVersion), props.properties.limits.maxPushConstantsSize);
-        printf("geometryShader=%u tessellationShader=%u shaderInt64=%u\n",
+        printf("geometryShader=%u tessellationShader=%u shaderInt64=%u fillModeNonSolid=%u\n",
             features.features.geometryShader, features.features.tessellationShader,
-            features.features.shaderInt64);
+            features.features.shaderInt64, features.features.fillModeNonSolid);
         printf("descriptorIndexing=%u scalarBlockLayout=%u shaderInt8=%u synchronization2=%u\n",
             f12.descriptorIndexing, f12.scalarBlockLayout, f12.shaderInt8, f13.synchronization2);
 

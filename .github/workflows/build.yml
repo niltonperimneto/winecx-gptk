@@ -1095,7 +1095,7 @@ jobs:
             -o "$probe_dir/dxvk.tar.gz"
           echo "$DXVK_TEST_SHA256  $probe_dir/dxvk.tar.gz" | shasum -a 256 -c -
           tar -xzf "$probe_dir/dxvk.tar.gz" -C Libraries/Wine/lib/kosmickrisp/tests
-          cp runtime/kosmickrisp/licenses/dxvk-2.4.txt Libraries/Wine/lib/kosmickrisp/licenses/
+          cp runtime/kosmickrisp/licenses/dxvk-$DXVK_TEST_VERSION.txt Libraries/Wine/lib/kosmickrisp/licenses/
 
       - name: upload experimental Vulkan probe logs
         if: always() && env.KOSMICKRISP_ENABLED == 'true'

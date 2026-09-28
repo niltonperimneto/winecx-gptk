@@ -62,7 +62,7 @@ def parse_capabilities(text):
             extensions.append(line.partition("=")[2])
         for word in line.split():
             key, separator, value = word.partition("=")
-            if separator and key in ("geometryShader", "tessellationShader", "shaderInt64",
+            if separator and key in ("geometryShader", "tessellationShader", "shaderInt64", "fillModeNonSolid",
                                      "shaderInt8", "descriptorIndexing", "scalarBlockLayout",
                                      "synchronization2", "maxPushConstantsSize", "api"):
                 fields[key] = value
@@ -136,6 +136,9 @@ def main():
                 "status": "passed", "reason": "deterministic compute readback only; not general shader conformance"}
         caps = report["capabilities"]["x86_64"]
         missing = []
+        # DXVK 3.x refuses the whole adapter without fillModeNonSolid.
+        if caps.get("fillModeNonSolid") != "1":
+            missing.append("fillModeNonSolid")
         if caps.get("geometryShader") != "1":
             missing.append("geometryShader")
         if "VK_EXT_transform_feedback" not in caps["extensions"]:

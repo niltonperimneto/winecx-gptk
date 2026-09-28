@@ -58,8 +58,10 @@ class ValidationTests(unittest.TestCase):
         self.assertIn("Timed out", text)
 
     def test_capabilities_preserve_real_values(self):
-        parsed = parse_capabilities("geometryShader=0 tessellationShader=1\r\nextension=VK_KHR_swapchain\r\n")
+        parsed = parse_capabilities("geometryShader=0 tessellationShader=1 fillModeNonSolid=0\r\n"
+                                    "extension=VK_KHR_swapchain\r\n")
         self.assertEqual(parsed["geometryShader"], "0")
+        self.assertEqual(parsed["fillModeNonSolid"], "0")
         self.assertNotIn("VK_EXT_transform_feedback", parsed["extensions"])
 
     def test_readiness_rejects_missing_evidence(self):
