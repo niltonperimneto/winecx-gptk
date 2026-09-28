@@ -1,1 +1,18 @@
-null
+{
+  "name": "Hades",
+  "kind": "provisioned-game-plan",
+  "platform": "Windows",
+  "primary": {
+    "renderer": "Vulkan",
+    "executable": "x64Vk/Hades.exe"
+  },
+  "follow_up": {
+    "renderer": "DirectX through upstream DXVK",
+    "executable": "x64/Hades.exe"
+  },
+  "requirements": [
+    "Provision a licensed Windows Hades installation on a macOS 26 Apple Silicon runner and pin its build and file hashes.",
+    "Implement a repeatable gameplay harness with backend verification, visual correctness evidence, and frame-time measurements.",
+    "Set performance thresholds for the selected runner hardware."
+  ]
+}

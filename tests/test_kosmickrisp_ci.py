@@ -79,6 +79,15 @@ class ValidationTests(unittest.TestCase):
         config.write_text("null")
         self.assertEqual(run_game(config, None, {}, self.root, None)["status"], "blocked")
 
+    def test_selected_hades_does_not_run_without_provisioning(self):
+        config = Path(__file__).resolve().parents[1] / "runtime/kosmickrisp/game.json"
+        with patch("game.urllib.request.urlopen") as download:
+            result = run_game(config, None, {}, self.root, None)
+        download.assert_not_called()
+        self.assertEqual(result["benchmark"], "Hades")
+        self.assertEqual(result["renderer"], "Vulkan")
+        self.assertEqual(result["status"], "blocked")
+
     def test_archive_rejects_traversal(self):
         data = io.BytesIO()
         with zipfile.ZipFile(data, "w") as archive:
