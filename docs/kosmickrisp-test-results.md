@@ -78,3 +78,29 @@ shader/rendering correctness, complete version-specific
 DXVK capability auditing, and game/performance tests. A minos 26.0 load command
 does not prove runtime compatibility with macOS 26. No production migration or
 upstream DXVK compatibility claim follows from these smoke tests.
+
+## Hades Steam installation and first startup attempt (2026-09-28)
+
+Located the Windows Steam installation in the local Whisky Preview bottle.
+Steam build ID: `10929685`. Vulkan executable: `x64Vk/Hades.exe`, SHA-256
+`f2aadbb0b730f3a6d116fc28bf2ea89e1d7aa89aa6ef1e388184a9b39034a43f`.
+This identifies the tested executable, not a complete game-content manifest.
+
+Ran with the existing Wine 11.17 runtime and `CX_LIBVULKAN` pointing to the
+locally built KosmicKrisp loader, in a disposable prefix with local save folders.
+The synthetic probes' `mscoree` disable override must not carry over to Hades:
+its `BasecampBugReporter.Native.dll` imports that module. The first attempt
+exited 255 with the override; enabling it allowed game startup.
+
+The subsequent 45-second bounded run recorded `Created window app Hades`,
+`Running Vulkan`, and `InputSystem Initialized` in Hades.log. Wine's loader log
+recorded the experimental loader and KosmicKrisp ICD. The process did not exit
+before the deadline and was terminated (harness code 124). No successful game
+swapchain presentation, menu rendering, gameplay, or FPS result was established.
+This is an inconclusive startup attempt, not a passing game benchmark or proof
+that KosmicKrisp caused the startup stall.
+
+Evidence is retained locally in
+`~/Library/Caches/winecx-kosmickrisp-test/hades-startup/`: `result.json`,
+`diagnostic.log`, `startup-mscoree.log`, and the isolated prefix's Hades.log.
+The hosted CI runner still needs its own provisioned installation and harness.
