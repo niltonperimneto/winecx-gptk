@@ -17,7 +17,7 @@
 
 #define YUVBLIT_SRVS 128   /* two per call, so 64 calls of slack */
 #define YUVBLIT_RTVS 16
-#define YUVBLIT_PSOS 4
+#define YUVBLIT_PSOS 4     /* initial table size; it grows, one entry per output format */
 
 typedef HRESULT (WINAPI *yuvblit_serialize_fn)(const D3D12_ROOT_SIGNATURE_DESC *,
         D3D_ROOT_SIGNATURE_VERSION, ID3DBlob **, ID3DBlob **);
@@ -31,7 +31,8 @@ struct yuvblit
     UINT srv_size, rtv_size;
     UINT next_srv, next_rtv;
     ID3DBlob *vs, *ps;
-    struct { DXGI_FORMAT fmt; ID3D12PipelineState *pso; } psos[YUVBLIT_PSOS];
+    struct yuvblit_pso { DXGI_FORMAT fmt; ID3D12PipelineState *pso; } *psos;
+    UINT pso_count, pso_cap;
     void (*log)(const char *);
     char msg[256];
 };
@@ -142,12 +143,11 @@ static void yuvblit_release(struct yuvblit *b)
 {
     UINT i;
 
-    for (i = 0; i < YUVBLIT_PSOS; i++)
-        if (b->psos[i].pso)
-        {
-            ID3D12PipelineState_Release(b->psos[i].pso);
-            b->psos[i].pso = NULL;
-        }
+    for (i = 0; i < b->pso_count; i++)
+        ID3D12PipelineState_Release(b->psos[i].pso);
+    free(b->psos);
+    b->psos = NULL;
+    b->pso_count = b->pso_cap = 0;
     if (b->vs) { ID3D10Blob_Release(b->vs); b->vs = NULL; }
     if (b->ps) { ID3D10Blob_Release(b->ps); b->ps = NULL; }
     if (b->rootsig) { ID3D12RootSignature_Release(b->rootsig); b->rootsig = NULL; }
@@ -304,9 +304,29 @@ static ID3D12PipelineState *yuvblit_pso(struct yuvblit *b, DXGI_FORMAT fmt)
     HRESULT hr;
     UINT i;
 
-    for (i = 0; i < YUVBLIT_PSOS; i++)
-        if (b->psos[i].pso && b->psos[i].fmt == fmt)
+    for (i = 0; i < b->pso_count; i++)
+        if (b->psos[i].fmt == fmt)
             return b->psos[i].pso;
+
+    /* Room first, so a pso is never created that the table cannot keep. An
+     * uncached pso is not a one-off leak: the next call with the same format
+     * misses again and makes another, one per frame for as long as the video
+     * plays. Nothing is ever evicted either, because a command list holds no
+     * reference on its pso and one still in flight may be using it. The table
+     * is bounded by the render target formats there are. */
+    if (b->pso_count == b->pso_cap)
+    {
+        UINT cap = b->pso_cap ? b->pso_cap * 2 : YUVBLIT_PSOS;
+        struct yuvblit_pso *grown = realloc(b->psos, cap * sizeof(*grown));
+
+        if (!grown)
+        {
+            yuvblit_say(b, "yuvblit: no memory for a pso for format %u", fmt);
+            return NULL;
+        }
+        b->psos = grown;
+        b->pso_cap = cap;
+    }
 
     memset(&pd, 0, sizeof(pd));
     pd.pRootSignature = b->rootsig;
@@ -332,15 +352,10 @@ static ID3D12PipelineState *yuvblit_pso(struct yuvblit *b, DXGI_FORMAT fmt)
         yuvblit_say(b, "yuvblit: pso for format %u failed 0x%08lx", fmt, hr);
         return NULL;
     }
-    for (i = 0; i < YUVBLIT_PSOS; i++)
-        if (!b->psos[i].pso)
-        {
-            b->psos[i].fmt = fmt;
-            b->psos[i].pso = pso;
-            yuvblit_say(b, "yuvblit: pso ready for format %u", fmt);
-            return pso;
-        }
-    yuvblit_say(b, "yuvblit: pso table full, leaking one for format %u", fmt);
+    b->psos[b->pso_count].fmt = fmt;
+    b->psos[b->pso_count].pso = pso;
+    b->pso_count++;
+    yuvblit_say(b, "yuvblit: pso ready for format %u (%u cached)", fmt, b->pso_count);
     return pso;
 }
 
