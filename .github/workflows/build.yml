@@ -127,14 +127,14 @@ jobs:
         id: metal
         if: env.KOSMICKRISP_ENABLED == 'true'
         run: |
-          /usr/bin/clang -arch arm64 -framework Metal -lobjc \
+          /usr/bin/clang -arch arm64 -framework Metal -framework Foundation -lobjc \
             tests/kosmickrisp_metal_probe.m -o "$RUNNER_TEMP/kosmickrisp-metal-probe"
           if "$RUNNER_TEMP/kosmickrisp-metal-probe"; then
             echo 'available=true' >> "$GITHUB_OUTPUT"
           else
             echo 'available=false' >> "$GITHUB_OUTPUT"
-            echo '::notice::No Metal GPU is exposed by this runner; runtime GPU probes require a physical macOS 26 runner.'
-            echo 'KosmicKrisp GPU validation deferred: this runner exposes no Metal device.' >> "$GITHUB_STEP_SUMMARY"
+            echo '::notice::No physical Metal GPU is exposed by this runner; runtime GPU probes require a physical macOS 26 runner.'
+            echo 'KosmicKrisp GPU validation deferred: this runner exposes no physical Metal device.' >> "$GITHUB_STEP_SUMMARY"
           fi
 
       # compilation cache: harness-only changes rebuild in minutes instead of

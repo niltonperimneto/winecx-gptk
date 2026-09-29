@@ -7,12 +7,15 @@ Wine probes printed `vkCreateInstance(...): -3`. Those exit codes were masked by
 `| tee`, so the build job showed success. The separate validation job correctly
 reported host and Wine failures. Its artifact upload then followed Wine's
 `prefix/dosdevices/z:` symlink and failed with `EACCES`, hiding the probe logs.
-These results do not establish a driver defect: the runner's Metal device
-availability was not recorded in that run. GitHub has previously documented
-[Metal devices returning nil on hosted runners](https://github.com/actions/runner-images/issues/1779).
+The next [run 36544333636](https://github.com/niltonperimneto/winecx-gptk/actions/runs/36544333636)
+recorded `Metal device: Apple Paravirtual device` before the same Vulkan `-3`
+error. This identifies a virtual Metal device rather than a physical Apple GPU.
+GitHub has previously documented
+[hosted runner Metal device limitations](https://github.com/actions/runner-images/issues/1779).
 
 The workflow now checks `MTLCreateSystemDefaultDevice` explicitly. If the runner
-has no device, the artifact is still built and audited, while GPU execution and
+has no physical device, including a Paravirtual device, the artifact is still built
+and audited, while GPU execution and
 migration readiness are visibly skipped. A runner with a Metal device executes
 the probes with `pipefail`; any failed probe fails its build job. The validator
 keeps its Wine prefix outside the diagnostics tree and uploads only JSON,
