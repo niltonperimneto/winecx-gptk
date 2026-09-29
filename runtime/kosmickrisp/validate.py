@@ -64,7 +64,8 @@ def parse_capabilities(text):
             key, separator, value = word.partition("=")
             if separator and key in ("geometryShader", "tessellationShader", "shaderInt64",
                                      "shaderInt8", "descriptorIndexing", "scalarBlockLayout",
-                                     "synchronization2", "maxPushConstantsSize", "api"):
+                                     "synchronization2", "maxPushConstantsSize", "api",
+                                     "conformance", "fillModeNonSolid"):
                 fields[key] = value
     fields["extensions"] = extensions
     return fields
@@ -87,7 +88,10 @@ def main():
                   "game": {"status": "blocked", "reason": "no pinned game benchmark configured"},
                   "shader_correctness": {"status": "blocked", "reason": "compute readback not yet run"}}}
     checks = report["checks"]
-    env = dict(os.environ, WINEPREFIX=str(output / "prefix"), WINEDEBUG="-all",
+    # Keep Wine's z: symlink out of the diagnostics tree. Artifact upload tools
+    # can traverse it even when a glob tries to exclude the prefix.
+    prefix = output.with_name(output.name + "-prefix")
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG="-all",
                WINEDLLOVERRIDES="mscoree,mshtml=")
     for key in ("CX_LIBVULKAN", "CX_ACTIVE_GRAPHICS_BACKEND", "WINE_VULKAN_LIBRARY",
                 "VK_ICD_FILENAMES", "VK_ADD_DRIVER_FILES", "VK_DRIVER_FILES",
@@ -99,6 +103,9 @@ def main():
         ok = code not in (0, 124) if expected_failure else code == 0
         ok = ok and all(marker in text for marker in required)
         checks[name] = {"status": "passed" if ok else "failed", "exit_code": code, "seconds": elapsed}
+        if not ok:
+            checks[name]["missing_markers"] = [marker for marker in required if marker not in text]
+            print(f"::error::{name} exited {code}; missing markers: {checks[name]['missing_markers']}; log: {name}.log")
         return text
 
     try:
@@ -178,7 +185,7 @@ def main():
     except Exception as error:
         checks["validation"] = {"status": "failed", "reason": str(error)}
     finally:
-        if (output / "prefix").exists():
+        if prefix.exists():
             try:
                 run_probe([str(wine / "bin/wineserver"), "-k"], env, output / "cleanup.log", timeout=15)
             except OSError:

@@ -107,6 +107,7 @@ jobs:
   build:
     outputs:
       kosmickrisp: ${{ env.KOSMICKRISP_ENABLED }}
+      gpu_available: ${{ steps.metal.outputs.available }}
       runtime_version: ${{ steps.install.outputs.runtime_version }}
       shippable: ${{ steps.make.outputs.shippable }}
     runs-on: macos-26
@@ -121,6 +122,20 @@ jobs:
         run: |
           /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
           arch -x86_64 /usr/bin/true && echo "rosetta ok"
+
+      - name: check Metal device availability
+        id: metal
+        if: env.KOSMICKRISP_ENABLED == 'true'
+        run: |
+          /usr/bin/clang -arch arm64 -framework Metal -lobjc \
+            tests/kosmickrisp_metal_probe.m -o "$RUNNER_TEMP/kosmickrisp-metal-probe"
+          if "$RUNNER_TEMP/kosmickrisp-metal-probe"; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::No Metal GPU is exposed by this runner; runtime GPU probes require a physical macOS 26 runner.'
+            echo 'KosmicKrisp GPU validation deferred: this runner exposes no Metal device.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # compilation cache: harness-only changes rebuild in minutes instead of
       # ~50. compilercheck=content so cache survives runner image updates
@@ -230,10 +245,15 @@ jobs:
           /usr/bin/clang -arch x86_64 -Wall -Wextra -Werror \
             -I"$RUNNER_TEMP/kosmickrisp-build/headers/include" \
             tests/kosmickrisp_probe.c -o "$probe_dir/host-probe"
-          unset VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
-          VK_DRIVER_FILES="$probe_dir/driver/kosmickrisp_icd.json" \
-            "$probe_dir/host-probe" "$probe_dir/driver/libvulkan.1.dylib" \
-            2>&1 | tee payload/kosmickrisp/host-probe.txt
+          if [ '${{ steps.metal.outputs.available }}' = true ]; then
+            set -o pipefail
+            unset VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
+            VK_DRIVER_FILES="$probe_dir/driver/kosmickrisp_icd.json" \
+              "$probe_dir/host-probe" "$probe_dir/driver/libvulkan.1.dylib" \
+              2>&1 | tee payload/kosmickrisp/host-probe.txt
+          else
+            echo 'Metal device unavailable; host probe deferred' | tee payload/kosmickrisp/host-probe.txt
+          fi
 
       # Pin the UCRT toolchain. Hosted runners can already contain llvm-mingw;
       # accepting whatever happens to be on PATH made the selected CRT and the
@@ -1086,9 +1106,14 @@ jobs:
               -o "Libraries/Wine/lib/kosmickrisp/tests/d3d11-$target.exe"
             "$target-w64-mingw32-clang" -O2 tests/d3d9feat.c -ld3d9 \
               -o "Libraries/Wine/lib/kosmickrisp/tests/d3d9-$target.exe"
-            WINEPREFIX="$RUNNER_TEMP/kosmickrisp-prefix" WINEDEBUG=-all \
-              Libraries/Wine/bin/wine-kosmickrisp "$probe_dir/$target.exe" --present \
-              2>&1 | tee "Libraries/Wine/lib/kosmickrisp/wine-$target-probe.txt"
+            if [ '${{ steps.metal.outputs.available }}' = true ]; then
+              set -o pipefail
+              WINEPREFIX="$RUNNER_TEMP/kosmickrisp-prefix" WINEDEBUG=-all \
+                Libraries/Wine/bin/wine-kosmickrisp "$probe_dir/$target.exe" --present \
+                2>&1 | tee "Libraries/Wine/lib/kosmickrisp/wine-$target-probe.txt"
+            else
+              echo 'Metal device unavailable; Wine probe deferred' | tee "Libraries/Wine/lib/kosmickrisp/wine-$target-probe.txt"
+            fi
           done
           source runtime/kosmickrisp/pins.env
           curl -fsSL "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_TEST_VERSION/dxvk-$DXVK_TEST_VERSION.tar.gz" \
@@ -1561,7 +1586,7 @@ jobs:
   kosmickrisp-validation:
     name: KosmicKrisp / macOS 26 packaged runtime
     needs: build
-    if: needs.build.outputs.kosmickrisp == 'true'
+    if: needs.build.outputs.kosmickrisp == 'true' && needs.build.outputs.gpu_available == 'true'
     runs-on: macos-26
     timeout-minutes: 20
     permissions:
@@ -1590,11 +1615,10 @@ jobs:
         with:
           name: kosmickrisp-validation-results
           path: |
-            kosmickrisp-results/
-            !kosmickrisp-results/prefix/**
-            !kosmickrisp-results/game-files/**
-            !kosmickrisp-results/dxvk-*/*.dll
-            !kosmickrisp-results/dxvk-*/*.exe
+            kosmickrisp-results/results.json
+            kosmickrisp-results/summary.md
+            kosmickrisp-results/*.log
+            kosmickrisp-results/dxvk-*/*.log
           if-no-files-found: error
           retention-days: 30
 
