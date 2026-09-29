@@ -1121,6 +1121,25 @@ jobs:
           echo "$DXVK_TEST_SHA256  $probe_dir/dxvk.tar.gz" | shasum -a 256 -c -
           tar -xzf "$probe_dir/dxvk.tar.gz" -C Libraries/Wine/lib/kosmickrisp/tests
           cp runtime/kosmickrisp/licenses/dxvk-2.4.txt Libraries/Wine/lib/kosmickrisp/licenses/
+          # Keep upstream DXVK beside Whisky's current DXVK payload. A selected
+          # prefix must opt in because the current ICD lacks DXVK features.
+          curl -fsSL "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_UPSTREAM_VERSION/dxvk-$DXVK_UPSTREAM_VERSION.tar.gz" \
+            -o "$probe_dir/dxvk-upstream.tar.gz"
+          echo "$DXVK_UPSTREAM_SHA256  $probe_dir/dxvk-upstream.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$probe_dir/dxvk-upstream.tar.gz" -C "$probe_dir"
+          mkdir -p Libraries/DXVK-Upstream Libraries/Wine/share/kosmickrisp
+          cp -R "$probe_dir/dxvk-$DXVK_UPSTREAM_VERSION/x32" \
+                "$probe_dir/dxvk-$DXVK_UPSTREAM_VERSION/x64" Libraries/DXVK-Upstream/
+          cp runtime/kosmickrisp/licenses/dxvk-3.1.1.txt Libraries/DXVK-Upstream/LICENSE
+          install -m 755 runtime/kosmickrisp/wine-kosmickrisp-dxvk Libraries/Wine/bin/wine-kosmickrisp-dxvk
+          install -m 644 runtime/kosmickrisp/dxvk-prefix.py Libraries/Wine/share/kosmickrisp/dxvk-prefix.py
+          python3 - "$DXVK_UPSTREAM_VERSION" "$DXVK_UPSTREAM_SHA256" <<'PY'
+          import json, sys
+          with open('Libraries/DXVK-Upstream/SOURCE.json', 'w') as stream:
+              json.dump({'upstream': f'https://github.com/doitsujin/dxvk/releases/tag/v{sys.argv[1]}',
+                         'version': sys.argv[1], 'archive_sha256': sys.argv[2]}, stream, indent=2)
+              stream.write('\n')
+          PY
 
       - name: upload experimental Vulkan probe logs
         if: always() && env.KOSMICKRISP_ENABLED == 'true'
