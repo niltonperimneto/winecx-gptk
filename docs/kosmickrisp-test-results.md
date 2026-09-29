@@ -1,9 +1,10 @@
 # KosmicKrisp local test results — 2026-09-27
 
 The experimental x86_64 bundle builds and passes basic Vulkan device creation
-and Win32 presentation tests on this machine. Upstream DXVK remains blocked by
-missing fillModeNonSolid and transform feedback (geometry shaders arrived with
-Mesa `063dfae`).
+and Win32 presentation tests on this machine. With the local fillModeNonSolid
+patch (2026-09-29 entry), upstream DXVK 3.1.1 creates D3D9 and D3D11 (FL 11_1)
+devices. Transform feedback is still missing, so D3D10/11 stream output is
+unavailable.
 
 ## Environment and scope
 
@@ -163,3 +164,33 @@ property limits for. KosmicKrisp does not yet advertise the extension.
 
 Evidence: `bundle-bac93e0/`, `build-bac93e0.log`, `kk-bac93e0-probes/`,
 `hades-local/kk-06-vulkan/`, `hades-local/kk-06-dx11/`.
+
+## Local fillModeNonSolid patch: DXVK 3.1.1 creates devices (2026-09-29)
+
+`runtime/kosmickrisp/patches/0001-kk-expose-fillModeNonSolid-...patch`, applied
+by `build.sh` on top of Mesa `063dfae`, maps `VkPolygonMode` onto Metal's
+`setTriangleFillMode:`. Before this, KosmicKrisp never read the polygon mode
+and left the feature unset. `VK_POLYGON_MODE_LINE` becomes
+`MTLTriangleFillModeLines`. Metal has no point fill mode, so
+`VK_POLYGON_MODE_POINT` is drawn as wireframe: the feature is advertised as a
+partial implementation. Emulated geometry and tessellation stages rasterize
+already-expanded triangles, so the mode applies to the primitives that reach
+the rasterizer.
+
+| Check | Result |
+|---|---|
+| Probe | `fillModeNonSolid=1` |
+| Stock DXVK 3.1.1 D3D9/D3D11 initialization, both PE architectures | **Passed**: D3D9 device up; D3D11 feature level 11_1 |
+| Hades DX11, `x64/Hades.exe` + DXVK 3.1.1 | **Renders**: DXGI factory, FL 11_1 device, first room with HUD |
+
+DXVK 3.1.1 treats transform feedback as optional (`transformFeedback: 0`), so
+missing stream output no longer blocks device creation; D3D10/11 stream output
+will not work until it is implemented.
+
+Not yet verified: that wireframe output looks correct. No test draws with
+`VK_POLYGON_MODE_LINE` yet, including on emulated geometry/tessellation
+draws, where shared edges of expanded triangles may be drawn twice.
+`extendedDynamicState3PolygonMode` is still not advertised.
+
+Evidence: `bundle-fillmode/`, `fillmode-probes/`,
+`hades-local/kk-07-dx11-fillmode/`.
