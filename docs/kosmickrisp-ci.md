@@ -6,9 +6,9 @@ The build workflow now runs automatically on pushes to
 even if the checkbox is left off. Experimental artifacts never reach the
 release/catalog publishing job.
 
-The hosted macOS 26 image used by the current CI run did not expose a working
-Metal/Vulkan device. CI now compiles a small Metal device probe before the
-KosmicKrisp build. When Metal is unavailable, it still builds and audits the
+The hosted macOS 26 image exposes an Apple Paravirtual Metal device, which
+could not enumerate a Vulkan device with KosmicKrisp. CI now compiles a small Metal device probe before the
+KosmicKrisp build. When Metal is unavailable or virtualized, it still builds and audits the
 runtime artifact, then records a notice and skips GPU execution and the separate
 validation/readiness jobs. Skipped GPU jobs are **not** evidence of runtime or
 migration readiness. On a GPU-capable runner, probe failures stop the build

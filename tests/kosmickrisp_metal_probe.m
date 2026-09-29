@@ -8,7 +8,12 @@ int main(void) {
             puts("Metal device unavailable on this runner");
             return 2;
         }
-        printf("Metal device: %s\n", [[device name] UTF8String]);
+        NSString *name = [device name];
+        printf("Metal device: %s\n", [name UTF8String]);
+        if ([name rangeOfString:@"Paravirtual" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            puts("Virtual Metal device cannot validate KosmicKrisp on Apple hardware");
+            return 2;
+        }
         return 0;
     }
 }
