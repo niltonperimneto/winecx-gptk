@@ -29,10 +29,17 @@ bundle:
 Evidence is in `~/Library/Caches/winecx-kosmickrisp-fillmode-current/` and
 its `host-probe.log` and `hades-dx11/` logs. The tests used Wine from
 4.7.54 with the newly built KosmicKrisp bundle and an isolated prefix already
-containing upstream DXVK. They do not change the imported 4.7.54 runtime or
-prove Hades gameplay on this newer Mesa build. Window capture failed during
-this run, so visual correctness remains unverified.
+containing upstream DXVK. Window capture failed during the Hades run, so
+visual correctness remains unverified.
 
-The existing Whisky client still has no selectable KosmicKrisp + upstream
-DXVK backend. A new runtime containing this patch is necessary, and client
-backend selection remains separate work.
+The installed Whisky Preview client already has a "DXVK 3 + KosmicKrisp"
+backend. It discovers the upstream DLLs at `DXVK3/`, while the imported
+4.7.54 runtime shipped them at `DXVK-Upstream/`. The next runtime artifact
+uses the client layout. Meanwhile, the installed 4.7.54 runtime now has a
+local overlay: the rebuilt driver is in `Wine/lib/kosmickrisp/`, DXVK 3.1.1
+is in `DXVK3/`, and its opt-in launcher uses that directory. The original
+driver and launcher are backed up at the path recorded in
+`~/Library/Caches/winecx-kosmickrisp-fillmode-current/whisky-4.7.54-backup-path.txt`.
+The installed runtime reports `fillModeNonSolid=1`, and its D3D11 probe creates
+a DXVK 3.1.1 feature-level 11_1 device. Reimporting the original 4.7.54
+archive would replace this local overlay.

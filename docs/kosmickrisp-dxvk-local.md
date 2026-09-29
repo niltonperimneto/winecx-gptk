@@ -3,8 +3,9 @@
 This page describes the earlier 4.7.51 local installation. The imported
 4.7.54 runtime also lacks the fill-mode patch; see
 [the Mesa fill-mode port](kosmickrisp-fillmode-port.md) for the rebuilt driver
-and its passing DXVK 3.1.1 device probes. Neither runtime import adds a
-selectable backend to the current Whisky client.
+and its passing DXVK 3.1.1 device probes. The installed Whisky Preview client
+does have a selector, but expects `DXVK3/`, which those older runtimes did not
+ship. The next runtime artifact uses that layout.
 
 The Whisky Preview WineCX 4.7.51 runtime now has the locally built KosmicKrisp
 loader and ICD in `Wine/lib/kosmickrisp/` and upstream DXVK 3.1.1 in
@@ -38,9 +39,9 @@ This is an **experimental integration, not a working Direct3D backend yet**.
 In both 64-bit and 32-bit D3D9/D3D11 probes, the DXVK 3.1.1 log confirms its
 DLLs loaded, then reports `Device does not support required feature
 'fillModeNonSolid'` and rejects the KosmicKrisp adapter. The driver also lacks
-`VK_EXT_transform_feedback`. The current Whisky Preview app's normal DXVK
-switch uses `DXVK/` and reconciles `dxgi.dll` for its existing DXVK-macOS
-payload, so it does not select this upstream profile. Upstream DXVK's
+`VK_EXT_transform_feedback`. The normal Whisky DXVK backend uses `DXVK/` and
+reconciles `dxgi.dll` for its existing DXVK-macOS payload. The separate
+experimental backend uses `DXVK3/` in compatible client builds. Upstream DXVK's
 [installation instructions](https://github.com/doitsujin/dxvk) likewise
 require copying the DLLs into a Wine prefix and setting native overrides.
 

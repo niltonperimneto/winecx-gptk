@@ -4,7 +4,7 @@ set -euo pipefail
 wine_bin=$(cd -- "$(dirname -- "$0")" && pwd -P)
 wine_root=$(cd -- "$wine_bin/../.." && pwd -P)
 bundle="$wine_bin/../lib/kosmickrisp"
-payload="$wine_root/DXVK-Upstream"
+payload="$wine_root/DXVK3"
 helper="$wine_bin/../share/kosmickrisp/dxvk-prefix.py"
 prefix=${WINEPREFIX:?Set WINEPREFIX to the selected, initialized Wine bottle}
 for required in "$bundle/libvulkan.1.dylib" "$bundle/libvulkan_kosmickrisp.dylib" \
