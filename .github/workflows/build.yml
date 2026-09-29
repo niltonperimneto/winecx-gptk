@@ -1165,7 +1165,13 @@ jobs:
           sdkpath=$(xcrun --sdk macosx --show-sdk-path)
           sdkver=$(xcrun --sdk macosx --show-sdk-version)
           python3 - "$sdkpath" "$sdkver" <<'PYEOF'
-          import os, re, subprocess, sys
+          import json, os, re, subprocess, sys
+          from pathlib import Path
+          sys.path.insert(0, 'runtime/kosmickrisp')
+          from weak_dispatch import optional_dispatch
+
+          dispatch_manifest = Path('Libraries/Wine/lib/kosmickrisp/optional-dispatch.json')
+          optional_symbols = set(json.loads(dispatch_manifest.read_text())) if dispatch_manifest.exists() else set()
 
           sdk = sys.argv[1]
           sdkver = sys.argv[2]
@@ -1231,6 +1237,11 @@ jobs:
                   if not m:
                       continue
                   sym = m.group(1)
+                  # Mesa deliberately resolves absent generated dispatch slots to NULL.
+                  # Restrict this exception to weak dynamic imports in the ICD and
+                  # names extracted from the pinned build's generated declarations.
+                  if optional_dispatch(p, line, optional_symbols):
+                      continue
                   if sym not in universe:
                       kind = 'weak, so the compiler knew' if ' weak ' in line else 'strong'
                       bad.setdefault(p, set()).add('%s (%s)' % (sym, kind))

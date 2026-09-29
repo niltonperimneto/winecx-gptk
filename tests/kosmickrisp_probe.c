@@ -1,8 +1,7 @@
 /* Loader/ICD smoke test shared by the x86_64 host and Wine PE builds.
  * Uses real Vulkan headers so Features2/pNext queries retain the correct ABI.
- * This proves enumeration and basic device creation, plus one clear/present
- * with --present on Windows. It does not establish DXVK compatibility.
- * Missing optional features are reported only.
+ * Checks compute and geometry readback, plus presentation with --present
+ * on Windows. It does not establish DXVK compatibility.
  */
 #define VK_NO_PROTOTYPES
 #ifdef _WIN32
@@ -25,11 +24,13 @@
 
 #ifdef _WIN32
 #include "kosmickrisp_present.h"
-#include "kosmickrisp_compute.h"
 #endif
+#include "kosmickrisp_compute.h"
+#include "kosmickrisp_geometry.h"
 
 int main(int argc, char **argv)
 {
+    setvbuf(stdout, NULL, _IONBF, 0);
     PFN_vkGetInstanceProcAddr gipa;
     int present = 0;
 #ifdef _WIN32
@@ -47,7 +48,7 @@ int main(int argc, char **argv)
     VkInstance instance = VK_NULL_HANDLE;
     RESOLVE(vkCreateInstance);
     VkApplicationInfo app = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = "winecx KosmicKrisp probe", .apiVersion = VK_API_VERSION_1_3 };
+        .pApplicationName = "winecx KosmicKrisp probe", .apiVersion = VK_API_VERSION_1_4 };
     VkInstanceCreateInfo create = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app };
     const char *instance_extensions[] = { "VK_KHR_surface", "VK_KHR_win32_surface" };
@@ -72,6 +73,7 @@ int main(int argc, char **argv)
     if (!devices) return 1;
     CHECK(vkEnumeratePhysicalDevices(instance, &count, devices));
     unsigned found = 0;
+    int failed = 0;
     for (uint32_t i = 0; i < count; ++i) {
         VkPhysicalDeviceDriverProperties driver = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES };
@@ -81,6 +83,13 @@ int main(int argc, char **argv)
         printf("device=%s driver=%s id=%u info=%s\n", props.properties.deviceName,
             driver.driverName, driver.driverID, driver.driverInfo);
         if (driver.driverID != VK_DRIVER_ID_MESA_KOSMICKRISP) continue;
+        printf("conformance=%u.%u.%u.%u\n", driver.conformanceVersion.major,
+            driver.conformanceVersion.minor, driver.conformanceVersion.subminor,
+            driver.conformanceVersion.patch);
+        if (props.properties.apiVersion < VK_API_VERSION_1_4) {
+            fprintf(stderr, "KosmicKrisp must expose Vulkan 1.4 or newer\n");
+            return 1;
+        }
         ++found;
         VkPhysicalDeviceVulkan13Features f13 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
@@ -96,6 +105,7 @@ int main(int argc, char **argv)
         printf("geometryShader=%u tessellationShader=%u shaderInt64=%u\n",
             features.features.geometryShader, features.features.tessellationShader,
             features.features.shaderInt64);
+        printf("fillModeNonSolid=%u\n", features.features.fillModeNonSolid);
         printf("descriptorIndexing=%u scalarBlockLayout=%u shaderInt8=%u synchronization2=%u\n",
             f12.descriptorIndexing, f12.scalarBlockLayout, f12.shaderInt8, f13.synchronization2);
 
@@ -124,15 +134,22 @@ int main(int argc, char **argv)
         if (!queues) return 1;
         vkGetPhysicalDeviceQueueFamilyProperties(devices[i], &queue_count, queues);
         uint32_t family = 0;
-        VkQueueFlags required_flags = VK_QUEUE_GRAPHICS_BIT | (present ? VK_QUEUE_COMPUTE_BIT : 0);
+        VkQueueFlags required_flags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
         while (family < queue_count && (queues[family].queueFlags & required_flags) != required_flags) ++family;
         free(queues);
         if (family == queue_count) { fprintf(stderr, "no graphics queue\n"); return 1; }
         float priority = 1.0f;
         VkDeviceQueueCreateInfo queue = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
             .queueFamilyIndex = family, .queueCount = 1, .pQueuePriorities = &priority };
+        if (!features.features.geometryShader || !features.features.tessellationShader ||
+            !features.features.vertexPipelineStoresAndAtomics) {
+            fprintf(stderr, "geometry readback requires geometry/tessellation/vertex stores features\n");
+            return 1;
+        }
+        VkPhysicalDeviceFeatures enabled = { .geometryShader = VK_TRUE, .tessellationShader = VK_TRUE,
+            .vertexPipelineStoresAndAtomics = VK_TRUE };
         VkDeviceCreateInfo device_info = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .queueCreateInfoCount = 1, .pQueueCreateInfos = &queue };
+            .queueCreateInfoCount = 1, .pQueueCreateInfos = &queue, .pEnabledFeatures = &enabled };
         const char *swapchain_extension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
         if (present) {
             device_info.enabledExtensionCount = 1;
@@ -142,8 +159,9 @@ int main(int argc, char **argv)
         CHECK(vkCreateDevice(devices[i], &device_info, NULL, &device));
         PFN_vkDestroyDevice destroy = (PFN_vkDestroyDevice)vkGetDeviceProcAddr(device, "vkDestroyDevice");
         if (!destroy) return 1;
+        if (compute_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
+        failed |= geometry_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family);
 #ifdef _WIN32
-        if (present && compute_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
         if (present && present_frame(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
 #endif
         destroy(device, NULL);
@@ -152,5 +170,5 @@ int main(int argc, char **argv)
     free(devices);
     vkDestroyInstance(instance, NULL);
     if (!found) { fprintf(stderr, "KosmicKrisp not selected; refusing a fallback result\n"); return 1; }
-    return 0;
+    return failed;
 }

@@ -113,7 +113,10 @@ def main():
         report["sources"] = (bundle / "SOURCE.txt").read_text()
         check("hardware", ["system_profiler", "SPDisplaysDataType"])
         env["VK_DRIVER_FILES"] = str(bundle / "kosmickrisp_icd.json")
-        markers = ("driver=KosmicKrisp id=28", "KosmicKrisp device creation passed")
+        markers = ("driver=KosmicKrisp id=28", "KosmicKrisp device creation passed",
+                   "geometry rendering and side-effect readback passed",
+                   "adjacency-without-gs rendering and side-effect readback passed",
+                   "tessellation-geometry rendering and side-effect readback passed")
         check("host", [bundle / "tests/host-probe", bundle / "libvulkan.1.dylib"], markers)
 
         # This fails if the new patch was omitted, even if a global ICD happened
@@ -133,11 +136,13 @@ def main():
             report.setdefault("capabilities", {})[target] = parse_capabilities(text)
         if all(checks[f"wine-{target}"]["status"] == "passed" for target in ("x86_64", "i686")):
             report["migration"]["shader_correctness"] = {
-                "status": "passed", "reason": "deterministic compute readback only; not general shader conformance"}
+                "status": "passed", "reason": "deterministic compute, geometry, adjacency and tessellation readback; not general shader conformance"}
         caps = report["capabilities"]["x86_64"]
         missing = []
         if caps.get("geometryShader") != "1":
             missing.append("geometryShader")
+        if caps.get("fillModeNonSolid") != "1":
+            missing.append("fillModeNonSolid")
         if "VK_EXT_transform_feedback" not in caps["extensions"]:
             missing.append("VK_EXT_transform_feedback")
         report["migration"]["dxvk"]["known_missing"] = missing

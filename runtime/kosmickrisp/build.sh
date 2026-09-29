@@ -13,24 +13,36 @@ python3 -c 'import sys; assert sys.version_info >= (3, 10), "Mesa requires Pytho
 
 checkout() {
     local url=$1 revision=$2 directory=$3
-    if [ ! -d "$directory/.git" ]; then
+    if [ ! -e "$directory/.git" ]; then
         git init "$directory"
         git -C "$directory" remote add origin "$url"
     fi
-    git -C "$directory" fetch --depth=1 origin "$revision"
+    if [ -n "$(git -C "$directory" status --porcelain --ignore-submodules=all)" ]; then
+        echo "Local changes in $directory; refusing to change the checkout" >&2
+        return 1
+    fi
+    git -C "$directory" fetch --depth=1 "$url" "$revision"
     git -C "$directory" checkout --detach FETCH_HEAD
     [ "$(git -C "$directory" rev-parse HEAD)" = "$revision" ]
 }
 checkout https://github.com/shadexternals/mesa-kosmickrisp.git "$KOSMICKRISP_BUILD_COMMIT" "$work/recipe"
-git -C "$work/recipe" submodule update --init --recursive --depth=1
-[ "$(git -C "$work/recipe/externals/mesa" rev-parse HEAD)" = "$KOSMICKRISP_MESA_COMMIT" ]
+# Use upstream Mesa rather than the recipe's independently maintained fork.
+# Leave an already pinned tree to apply_patch.py, which validates its full state.
+if [ "$(git -C "$work/recipe/externals/mesa" rev-parse HEAD 2>/dev/null || true)" != "$KOSMICKRISP_MESA_COMMIT" ]; then
+    checkout "$KOSMICKRISP_MESA_URL" "$KOSMICKRISP_MESA_COMMIT" "$work/recipe/externals/mesa"
+fi
+python3 "$script_dir/apply_patch.py" "$work/recipe/externals/mesa" \
+    "$script_dir/patches/$KOSMICKRISP_MESA_PATCH" \
+    "$KOSMICKRISP_MESA_COMMIT" "$KOSMICKRISP_MESA_PATCH_SHA256"
+# ExternalProject stamps must never reuse a build from another patch revision.
+driver_build="$work/driver-build-$KOSMICKRISP_BUILD_COMMIT-$KOSMICKRISP_MESA_COMMIT-$KOSMICKRISP_MESA_PATCH_SHA256"
 checkout https://github.com/KhronosGroup/Vulkan-Loader.git "$VULKAN_LOADER_COMMIT" "$work/loader"
 checkout https://github.com/KhronosGroup/Vulkan-Headers.git "$VULKAN_HEADERS_COMMIT" "$work/headers"
 
-cmake -S "$work/recipe" -B "$work/driver-build" \
+cmake -S "$work/recipe" -B "$driver_build" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0
-cmake --build "$work/driver-build" --parallel "$(sysctl -n hw.ncpu)"
+cmake --build "$driver_build" --parallel "$(sysctl -n hw.ncpu)"
 cmake -S "$work/headers" -B "$work/headers-build" \
     -DCMAKE_INSTALL_PREFIX="$work/headers-install"
 cmake --install "$work/headers-build"
@@ -42,18 +54,20 @@ cmake --fresh -S "$work/loader" -B "$work/loader-build" \
     -DVULKAN_HEADERS_INSTALL_DIR="$work/headers-install"
 cmake --build "$work/loader-build" --parallel "$(sysctl -n hw.ncpu)"
 
-cp -L "$work/driver-build/outputs/libvulkan_kosmickrisp.dylib" "$output/"
+cp -L "$driver_build/outputs/libvulkan_kosmickrisp.dylib" "$output/"
+python3 "$script_dir/weak_dispatch.py" \
+    "$driver_build/externals/mesa/build-target/src" "$output/optional-dispatch.json"
 cp -L "$work/loader-build/loader/libvulkan.1.dylib" "$output/"
 # --prefer-static does not force Mesa's zlib fallback to build statically.
 # Bundle the exact target build, never the ARM64 Homebrew copy.
 if otool -L "$output/libvulkan_kosmickrisp.dylib" | grep -q '@rpath/libz.1.dylib'; then
-    cp -L "$work/driver-build/externals/mesa/build-target/subprojects/zlib-1.3.1/libz.1.dylib" "$output/"
+    cp -L "$driver_build/externals/mesa/build-target/subprojects/zlib-1.3.1/libz.1.dylib" "$output/"
     chmod u+w "$output/libvulkan_kosmickrisp.dylib"
     install_name_tool -change '@rpath/libz.1.dylib' '@loader_path/libz.1.dylib' "$output/libvulkan_kosmickrisp.dylib"
 fi
 # Preserve the API version from the actual Mesa build. The ICD path is relative
 # to the manifest, not a Mach-O @loader_path expression.
-python3 - "$work/driver-build/outputs/kosmickrisp_mesa_icd.json" "$output/kosmickrisp_icd.json" <<'PY'
+python3 - "$driver_build/outputs/kosmickrisp_mesa_icd.json" "$output/kosmickrisp_icd.json" <<'PY'
 import json, sys
 with open(sys.argv[1]) as stream:
     manifest = json.load(stream)
@@ -92,6 +106,8 @@ if [ -f "$work/recipe/externals/mesa/subprojects/zlib-1.3.1/README" ]; then
     cp "$work/recipe/externals/mesa/subprojects/zlib-1.3.1/README" "$output/licenses/zlib.txt"
 fi
 cp "$script_dir/pins.env" "$output/SOURCE.txt"
+mkdir -p "$output/patches"
+cp "$script_dir/patches/$KOSMICKRISP_MESA_PATCH" "$output/patches/"
 {
     /usr/bin/clang --version
     cmake --version
