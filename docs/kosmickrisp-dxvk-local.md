@@ -1,5 +1,11 @@
 # Local KosmicKrisp + upstream DXVK profile
 
+This page describes the earlier 4.7.51 local installation. The imported
+4.7.54 runtime also lacks the fill-mode patch; see
+[the Mesa fill-mode port](kosmickrisp-fillmode-port.md) for the rebuilt driver
+and its passing DXVK 3.1.1 device probes. Neither runtime import adds a
+selectable backend to the current Whisky client.
+
 The Whisky Preview WineCX 4.7.51 runtime now has the locally built KosmicKrisp
 loader and ICD in `Wine/lib/kosmickrisp/` and upstream DXVK 3.1.1 in
 `DXVK-Upstream/`. The DXVK archive is the official
