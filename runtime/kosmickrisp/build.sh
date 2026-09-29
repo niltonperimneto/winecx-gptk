@@ -21,6 +21,9 @@ checkout() {
         echo "Local changes in $directory; refusing to change the checkout" >&2
         return 1
     fi
+    if [ "$(git -C "$directory" rev-parse HEAD 2>/dev/null || true)" = "$revision" ]; then
+        return 0
+    fi
     git -C "$directory" fetch --depth=1 "$url" "$revision"
     git -C "$directory" checkout --detach FETCH_HEAD
     [ "$(git -C "$directory" rev-parse HEAD)" = "$revision" ]

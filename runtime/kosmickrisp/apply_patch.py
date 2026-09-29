@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply the pinned Mesa patch, accepting only pristine or exactly patched trees."""
+"""Apply the pinned Mesa patch set, accepting only pristine or exactly patched trees."""
 import argparse
 import hashlib
 import os
@@ -45,7 +45,7 @@ def main():
     parser.add_argument("sha256")
     args = parser.parse_args()
     try:
-        print("Mesa geometry patch: " + apply(args.source, args.patch, args.revision, args.sha256))
+        print("Mesa patch set: " + apply(args.source, args.patch, args.revision, args.sha256))
     except (RuntimeError, subprocess.CalledProcessError) as error:
         parser.exit(1, str(error) + "\n")
 

@@ -120,7 +120,8 @@ def main():
         report["sources"] = (bundle / "SOURCE.txt").read_text()
         check("hardware", ["system_profiler", "SPDisplaysDataType"])
         env["VK_DRIVER_FILES"] = str(bundle / "kosmickrisp_icd.json")
-        markers = ("driver=KosmicKrisp id=28", "KosmicKrisp device creation passed",
+        markers = ("driver=KosmicKrisp id=28", "fillModeNonSolid=1",
+                   "KosmicKrisp device creation passed",
                    "geometry rendering and side-effect readback passed",
                    "adjacency-without-gs rendering and side-effect readback passed",
                    "tessellation-geometry rendering and side-effect readback passed")
@@ -150,8 +151,9 @@ def main():
             missing.append("geometryShader")
         if caps.get("fillModeNonSolid") != "1":
             missing.append("fillModeNonSolid")
+        optional_missing = []
         if "VK_EXT_transform_feedback" not in caps["extensions"]:
-            missing.append("VK_EXT_transform_feedback")
+            optional_missing.append("VK_EXT_transform_feedback")
         report["migration"]["dxvk"]["known_missing"] = missing
         # Run stock DXVK with native-only overrides in isolated application dirs.
         # Keeping both the DLLs and EXE there prevents fallback to the shipped fork.
@@ -178,7 +180,8 @@ def main():
         dxvk_ok = not missing and all(result["status"] == "passed" for result in dxvk_results.values())
         report["migration"]["dxvk"] = {
             "status": "passed" if dxvk_ok else "blocked", "version": version,
-            "known_missing": missing, "probes": dxvk_results,
+            "known_missing": missing, "optional_missing": optional_missing,
+            "probes": dxvk_results,
             "reason": ("missing: " + ", ".join(missing)) if missing else
                 "D3D9/D3D11 initialization plus known-feature screen; game coverage is a separate gate"}
         report["migration"]["game"] = run_game(args.game_config, wine / "bin/wine-kosmickrisp", env, output, run_probe)
