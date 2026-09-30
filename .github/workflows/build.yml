@@ -53,7 +53,7 @@ env:
   # FAudio update. Keep the revision immutable so the canary remains
   # reproducible while the feature branch advances.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: 50a791172b5b87ca5fe1d839e557ffb6b79e9755
+  WINECX_COMMIT: 95f376a58af2c07094d392c0ae2815d33483e26b
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "26.09"
