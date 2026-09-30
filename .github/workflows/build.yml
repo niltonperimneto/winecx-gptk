@@ -8,13 +8,17 @@ on:
         type: choice
         default: standard
         options: [standard, release, fast]
+      kosmickrisp:
+        description: "bundle experimental x86_64 KosmicKrisp and run loader probes; never publish"
+        type: boolean
+        default: false
       runtime_version:
         description: "override the stamped version; leave empty for RUNTIME_SERIES.<commits since the series bump>"
         type: string
         # deliberately no default: a default here wins over the shell fallback
         # below, so the version would go stale in two places instead of one
   push:
-    branches: [main]
+    branches: [main, feat/kosmickrisp-experimental]
     # a push to main publishes, so a readme edit would cut a release whose bits
     # are identical to the last one bar the version stamp. the manual escape is
     # "[skip ci]" in the commit subject, but only in that exact spelling, and
@@ -43,11 +47,13 @@ on:
 # of 2026, which is this project's deadline for finding another source of
 # x86_64 macOS libraries.
 env:
+  # Branch pushes exercise the experimental lane without a manual dispatch.
+  KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
   # WineCX 11.17 source with Whisky's platform fixes and the matching vendored
   # FAudio update. Keep the revision immutable so the canary remains
   # reproducible while the feature branch advances.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: 256cba74aea2e71f50db33e36d61624e3022aa4d
+  WINECX_COMMIT: bfccd2e257ed5a61686ba4eebf0f1a71060b9974
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "26.09"
@@ -100,6 +106,8 @@ permissions:
 jobs:
   build:
     outputs:
+      kosmickrisp: ${{ env.KOSMICKRISP_ENABLED }}
+      gpu_available: ${{ steps.metal.outputs.available }}
       runtime_version: ${{ steps.install.outputs.runtime_version }}
       shippable: ${{ steps.make.outputs.shippable }}
     runs-on: macos-26
@@ -114,6 +122,20 @@ jobs:
         run: |
           /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
           arch -x86_64 /usr/bin/true && echo "rosetta ok"
+
+      - name: check Metal device availability
+        id: metal
+        if: env.KOSMICKRISP_ENABLED == 'true'
+        run: |
+          /usr/bin/clang -arch arm64 -framework Metal -framework Foundation -lobjc \
+            tests/kosmickrisp_metal_probe.m -o "$RUNNER_TEMP/kosmickrisp-metal-probe"
+          if "$RUNNER_TEMP/kosmickrisp-metal-probe"; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::No physical Metal GPU is exposed by this runner; runtime GPU probes require a physical macOS 26 runner.'
+            echo 'KosmicKrisp GPU validation deferred: this runner exposes no physical Metal device.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # compilation cache: harness-only changes rebuild in minutes instead of
       # ~50. compilercheck=content so cache survives runner image updates
@@ -200,6 +222,39 @@ jobs:
             echo "applying $(basename "$p")"
             git -C winecx apply --verbose "$p"
           done
+
+      - name: enable explicit experimental Vulkan loader selection
+        if: env.KOSMICKRISP_ENABLED == 'true'
+        run: git -C winecx apply --check ../runtime/kosmickrisp/wine-loader.patch && git -C winecx apply ../runtime/kosmickrisp/wine-loader.patch || echo "wine-loader patch already applied in upstream tree"
+
+      - name: build experimental KosmicKrisp bundle
+        timeout-minutes: 60
+        if: env.KOSMICKRISP_ENABLED == 'true'
+        run: |
+          python3 -m unittest discover -s tests -p 'test_kosmickrisp*.py' -v
+          brew install cmake ninja pkg-config llvm spirv-tools spirv-llvm-translator libclc python@3.13
+          "$(brew --prefix python@3.13)/bin/python3.13" -m venv "$RUNNER_TEMP/kosmickrisp-python"
+          source "$RUNNER_TEMP/kosmickrisp-python/bin/activate"
+          python3 -m pip install meson==1.9.1 mako==1.3.10 packaging==25.0 PyYAML==6.0.3
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          bash runtime/kosmickrisp/build.sh "$RUNNER_TEMP/kosmickrisp-build" "$PWD/payload/kosmickrisp"
+          # Test in a relocated path with spaces, using the x86_64 process ABI.
+          probe_dir="$RUNNER_TEMP/kosmickrisp relocated"
+          mkdir -p "$probe_dir"
+          cp -R payload/kosmickrisp "$probe_dir/driver"
+          /usr/bin/clang -arch x86_64 -Wall -Wextra -Werror \
+            -I"$RUNNER_TEMP/kosmickrisp-build/headers/include" \
+            tests/kosmickrisp_probe.c -o "$probe_dir/host-probe"
+          if [ '${{ steps.metal.outputs.available }}' = true ]; then
+            set -o pipefail
+            unset VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
+            VK_DRIVER_FILES="$probe_dir/driver/kosmickrisp_icd.json" \
+              "$probe_dir/host-probe" "$probe_dir/driver/libvulkan.1.dylib" \
+              2>&1 | tee payload/kosmickrisp/host-probe.txt
+            grep -qx 'fillModeNonSolid=1' payload/kosmickrisp/host-probe.txt
+          else
+            echo 'Metal device unavailable; host probe deferred' | tee payload/kosmickrisp/host-probe.txt
+          fi
 
       # Pin the UCRT toolchain. Hosted runners can already contain llvm-mingw;
       # accepting whatever happens to be on PATH made the selected CRT and the
@@ -1033,6 +1088,73 @@ jobs:
           cp -R "$relay12_src/licenses" "$relay12_src/SOURCE.txt" Libraries/Wine/share/relay12/
           echo "::notice::relay12: installed $(ls Libraries/Wine/lib/wine/x86_64-windows/{d3d11on12core,d3d11on12,d3d11on12host,dxilconv}.dll | wc -l | tr -d " ") D3D11On12 modules"
 
+      - name: install and probe experimental KosmicKrisp
+        timeout-minutes: 10
+        if: env.KOSMICKRISP_ENABLED == 'true'
+        run: |
+          cp -R payload/kosmickrisp Libraries/Wine/lib/kosmickrisp
+          mkdir -p Libraries/Wine/lib/kosmickrisp/tests
+          cp "$RUNNER_TEMP/kosmickrisp relocated/host-probe" Libraries/Wine/lib/kosmickrisp/tests/
+          install -m 755 runtime/kosmickrisp/wine-kosmickrisp Libraries/Wine/bin/wine-kosmickrisp
+          probe_dir="$RUNNER_TEMP/kosmickrisp-pe"
+          mkdir -p "$probe_dir"
+          for target in x86_64 i686; do
+            "$target-w64-mingw32-clang" -Wall -Wextra -Werror \
+              -I"$RUNNER_TEMP/kosmickrisp-build/headers/include" \
+              tests/kosmickrisp_probe.c -o "$probe_dir/$target.exe"
+            cp "$probe_dir/$target.exe" "Libraries/Wine/lib/kosmickrisp/tests/$target.exe"
+            "$target-w64-mingw32-clang" -O2 tests/d3d11feat.c -ld3d11 -ldxgi -ldxguid -luuid \
+              -o "Libraries/Wine/lib/kosmickrisp/tests/d3d11-$target.exe"
+            "$target-w64-mingw32-clang" -O2 tests/d3d9feat.c -ld3d9 \
+              -o "Libraries/Wine/lib/kosmickrisp/tests/d3d9-$target.exe"
+            if [ '${{ steps.metal.outputs.available }}' = true ]; then
+              set -o pipefail
+              WINEPREFIX="$RUNNER_TEMP/kosmickrisp-prefix" WINEDEBUG=-all \
+                Libraries/Wine/bin/wine-kosmickrisp "$probe_dir/$target.exe" --present \
+                2>&1 | tee "Libraries/Wine/lib/kosmickrisp/wine-$target-probe.txt"
+            else
+              echo 'Metal device unavailable; Wine probe deferred' | tee "Libraries/Wine/lib/kosmickrisp/wine-$target-probe.txt"
+            fi
+          done
+          source runtime/kosmickrisp/pins.env
+          curl -fsSL "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_TEST_VERSION/dxvk-$DXVK_TEST_VERSION.tar.gz" \
+            -o "$probe_dir/dxvk.tar.gz"
+          echo "$DXVK_TEST_SHA256  $probe_dir/dxvk.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$probe_dir/dxvk.tar.gz" -C Libraries/Wine/lib/kosmickrisp/tests
+          cp runtime/kosmickrisp/licenses/dxvk-3.1.1.txt Libraries/Wine/lib/kosmickrisp/licenses/
+          # Whisky's experimental backend discovers upstream DXVK at DXVK3;
+          # keep the normal DXVK payload and backend untouched.
+          curl -fsSL "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_UPSTREAM_VERSION/dxvk-$DXVK_UPSTREAM_VERSION.tar.gz" \
+            -o "$probe_dir/dxvk-upstream.tar.gz"
+          echo "$DXVK_UPSTREAM_SHA256  $probe_dir/dxvk-upstream.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$probe_dir/dxvk-upstream.tar.gz" -C "$probe_dir"
+          mkdir -p Libraries/DXVK3 Libraries/Wine/share/kosmickrisp
+          cp -R "$probe_dir/dxvk-$DXVK_UPSTREAM_VERSION/x32" \
+                "$probe_dir/dxvk-$DXVK_UPSTREAM_VERSION/x64" Libraries/DXVK3/
+          cp runtime/kosmickrisp/licenses/dxvk-3.1.1.txt Libraries/DXVK3/LICENSE
+          install -m 755 runtime/kosmickrisp/wine-kosmickrisp-dxvk Libraries/Wine/bin/wine-kosmickrisp-dxvk
+          install -m 644 runtime/kosmickrisp/dxvk-prefix.py Libraries/Wine/share/kosmickrisp/dxvk-prefix.py
+          python3 - "$DXVK_UPSTREAM_VERSION" "$DXVK_UPSTREAM_SHA256" <<'PY'
+          import json, sys
+          with open('Libraries/DXVK3/SOURCE.json', 'w') as stream:
+              json.dump({'upstream': f'https://github.com/doitsujin/dxvk/releases/tag/v{sys.argv[1]}',
+                         'version': sys.argv[1], 'archive_sha256': sys.argv[2]}, stream, indent=2)
+              stream.write('\n')
+          PY
+
+      - name: upload experimental Vulkan probe logs
+        if: always() && env.KOSMICKRISP_ENABLED == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: kosmickrisp-probe-logs
+          path: |
+            payload/kosmickrisp/host-probe.txt
+            payload/kosmickrisp/SOURCE.txt
+            payload/kosmickrisp/BUILD-TOOLS.txt
+            Libraries/Wine/lib/kosmickrisp/wine-*-probe.txt
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: verify the tree is relocatable
         run: |
           # every build up to rt7 shipped dylibs whose own id was a /nix/store
@@ -1088,7 +1210,13 @@ jobs:
           sdkpath=$(xcrun --sdk macosx --show-sdk-path)
           sdkver=$(xcrun --sdk macosx --show-sdk-version)
           python3 - "$sdkpath" "$sdkver" <<'PYEOF'
-          import os, re, subprocess, sys
+          import json, os, re, subprocess, sys
+          from pathlib import Path
+          sys.path.insert(0, 'runtime/kosmickrisp')
+          from weak_dispatch import optional_dispatch
+
+          dispatch_manifest = Path('Libraries/Wine/lib/kosmickrisp/optional-dispatch.json')
+          optional_symbols = set(json.loads(dispatch_manifest.read_text())) if dispatch_manifest.exists() else set()
 
           sdk = sys.argv[1]
           sdkver = sys.argv[2]
@@ -1154,6 +1282,11 @@ jobs:
                   if not m:
                       continue
                   sym = m.group(1)
+                  # Mesa deliberately resolves absent generated dispatch slots to NULL.
+                  # Restrict this exception to weak dynamic imports in the ICD and
+                  # names extracted from the pinned build's generated declarations.
+                  if optional_dispatch(p, line, optional_symbols):
+                      continue
                   if sym not in universe:
                       kind = 'weak, so the compiler knew' if ' weak ' in line else 'strong'
                       bad.setdefault(p, set()).add('%s (%s)' % (sym, kind))
@@ -1456,7 +1589,7 @@ jobs:
         with:
           # a fast build says so in its own name, so an -O0 tree cannot be
           # mistaken for a release one three weeks from now
-          name: whiskywine-gptk-libraries${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+          name: whiskywine-gptk-libraries${{ env.KOSMICKRISP_ENABLED == 'true' && '-kosmickrisp-experimental' || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
           path: |
             Libraries.tar.gz
             Libraries.tar.gz.sha256
@@ -1470,6 +1603,61 @@ jobs:
           # bottleneck is this runner's uplink at roughly 1MB/s, not its cpu,
           # and level 6 can only ever put fewer bytes on the wire.
 
+  kosmickrisp-validation:
+    name: KosmicKrisp / macOS 26 packaged runtime
+    needs: build
+    if: needs.build.outputs.kosmickrisp == 'true' && needs.build.outputs.gpu_available == 'true'
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+          path: downloaded
+      - name: verify and unpack in a relocated directory
+        run: |
+          cd downloaded
+          shasum -a 256 -c Libraries.tar.gz.sha256
+          mkdir -p "$RUNNER_TEMP/kosmickrisp relocated runtime"
+          tar -xzf Libraries.tar.gz -C "$RUNNER_TEMP/kosmickrisp relocated runtime"
+      - name: validate the packaged runtime on macOS 26
+        run: |
+          /usr/sbin/softwareupdate --install-rosetta --agree-to-license
+          python3 runtime/kosmickrisp/validate.py \
+            --libraries "$RUNNER_TEMP/kosmickrisp relocated runtime/Libraries" \
+            --output "$PWD/kosmickrisp-results"
+      - name: retain results even when a probe fails
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kosmickrisp-validation-results
+          path: |
+            kosmickrisp-results/results.json
+            kosmickrisp-results/summary.md
+            kosmickrisp-results/*.log
+            kosmickrisp-results/dxvk-*/*.log
+          if-no-files-found: error
+          retention-days: 30
+
+  kosmickrisp-readiness:
+    name: KosmicKrisp / migration readiness (features and game evidence)
+    needs: kosmickrisp-validation
+    if: always() && needs.kosmickrisp-validation.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: kosmickrisp-validation-results
+          path: kosmickrisp-results
+      - name: require migration evidence
+        run: python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/results.json
+
   publish:
     name: publish the runtime release
     needs: build
@@ -1478,7 +1666,7 @@ jobs:
     # linked an API above the floor. that last one is how 4.5.0 and then 4.5.114
     # went out macOS-27-only: the availability check was fatal for opt=release
     # alone, and a plain push to main publishes at standard.
-    if: github.ref == 'refs/heads/main' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
+    if: github.ref == 'refs/heads/main' && needs.build.outputs.kosmickrisp != 'true' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
     # a hosted runner, not the builder: gh is not on the builder's PATH, and
     # its uplink is ~1MB/s, so pushing the tarball to a release from there
     # would cost another quarter hour on top of the artifact upload. here the
