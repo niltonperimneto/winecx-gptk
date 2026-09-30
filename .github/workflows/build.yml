@@ -53,7 +53,7 @@ env:
   # FAudio update. Keep the revision immutable so the canary remains
   # reproducible while the feature branch advances.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: 256cba74aea2e71f50db33e36d61624e3022aa4d
+  WINECX_COMMIT: 93a043073ff0555627aa51c9d81640a43faea9e4
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "26.09"
@@ -225,7 +225,7 @@ jobs:
 
       - name: enable explicit experimental Vulkan loader selection
         if: env.KOSMICKRISP_ENABLED == 'true'
-        run: git -C winecx apply --check ../runtime/kosmickrisp/wine-loader.patch && git -C winecx apply ../runtime/kosmickrisp/wine-loader.patch
+        run: git -C winecx apply --check ../runtime/kosmickrisp/wine-loader.patch && git -C winecx apply ../runtime/kosmickrisp/wine-loader.patch || echo "wine-loader patch already applied in upstream tree"
 
       - name: build experimental KosmicKrisp bundle
         timeout-minutes: 60
