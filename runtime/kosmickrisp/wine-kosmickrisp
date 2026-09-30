@@ -1,0 +1,13 @@
+#!/bin/bash
+# Opt in per process. The usual wine/wine64 entry points keep using MoltenVK.
+set -euo pipefail
+wine_bin=$(cd -- "$(dirname -- "$0")" && pwd -P)
+bundle="$wine_bin/../lib/kosmickrisp"
+for required in libvulkan.1.dylib libvulkan_kosmickrisp.dylib kosmickrisp_icd.json; do
+    [ -f "$bundle/$required" ] || { echo "Missing KosmicKrisp component: $required" >&2; exit 1; }
+done
+export WINE_VULKAN_LIBRARY="$bundle/libvulkan.1.dylib"
+export VK_DRIVER_FILES="$bundle/kosmickrisp_icd.json"
+# Avoid inherited driver selection overriding the bundled ICD on older loaders.
+unset VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
+exec "$wine_bin/wine64" "$@"

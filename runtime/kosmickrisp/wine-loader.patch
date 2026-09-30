@@ -1,0 +1,14 @@
+--- a/dlls/win32u/vulkan.c
++++ b/dlls/win32u/vulkan.c
+@@ -3075,6 +3075,11 @@
+     else
+         ERR( "Using %s\n", libvulkan );
+ 
++    /* Opt-in host loader for the experimental KosmicKrisp runtime launcher.
++     * Keep the normal CrossOver backend selection unchanged when unset. */
++    if (getenv( "WINE_VULKAN_LIBRARY" ) && *getenv( "WINE_VULKAN_LIBRARY" ))
++        libvulkan = getenv( "WINE_VULKAN_LIBRARY" );
++
+     if (!(vulkan_handle = dlopen( libvulkan, RTLD_NOW )))
+     {
+         ERR( "Failed to load %s: %s\n", libvulkan, dlerror() );
