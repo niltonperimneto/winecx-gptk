@@ -9,9 +9,9 @@ on:
         default: standard
         options: [standard, release, fast]
       kosmickrisp:
-        description: "bundle experimental x86_64 KosmicKrisp and run loader probes; never publish"
+        description: "bundle x86_64 KosmicKrisp and run loader probes"
         type: boolean
-        default: false
+        default: true
       runtime_version:
         description: "override the stamped version; leave empty for RUNTIME_SERIES.<commits since the series bump>"
         type: string
@@ -47,13 +47,13 @@ on:
 # of 2026, which is this project's deadline for finding another source of
 # x86_64 macOS libraries.
 env:
-  # Branch pushes exercise the experimental lane without a manual dispatch.
-  KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
-  # WineCX 11.17 source with Whisky's platform fixes and the matching vendored
+  # KosmicKrisp Vulkan driver supersedes MoltenVK and is enabled by default.
+  KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp != false }}
+  # WineCX 11.18 source with Whisky's platform fixes and the matching vendored
   # FAudio update. Keep the revision immutable so the canary remains
   # reproducible while the feature branch advances.
   WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: bfccd2e257ed5a61686ba4eebf0f1a71060b9974
+  WINECX_COMMIT: da172caa09d6bd2f8712a7c34bf309df2a4d3251
   NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
   MOLTENVK_VERSION: "1.4.2"
   FAUDIO_VERSION: "26.09"
@@ -1589,7 +1589,7 @@ jobs:
         with:
           # a fast build says so in its own name, so an -O0 tree cannot be
           # mistaken for a release one three weeks from now
-          name: whiskywine-gptk-libraries${{ env.KOSMICKRISP_ENABLED == 'true' && '-kosmickrisp-experimental' || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+          name: whiskywine-gptk-libraries${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
           path: |
             Libraries.tar.gz
             Libraries.tar.gz.sha256
@@ -1615,7 +1615,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+          name: whiskywine-gptk-libraries${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
           path: downloaded
       - name: verify and unpack in a relocated directory
         run: |
@@ -1666,7 +1666,7 @@ jobs:
     # linked an API above the floor. that last one is how 4.5.0 and then 4.5.114
     # went out macOS-27-only: the availability check was fatal for opt=release
     # alone, and a plain push to main publishes at standard.
-    if: github.ref == 'refs/heads/main' && needs.build.outputs.kosmickrisp != 'true' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
+    if: github.ref == 'refs/heads/main' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
     # a hosted runner, not the builder: gh is not on the builder's PATH, and
     # its uplink is ~1MB/s, so pushing the tarball to a release from there
     # would cost another quarter hour on top of the artifact upload. here the
