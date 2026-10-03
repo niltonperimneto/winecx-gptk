@@ -1,165 +1,180 @@
 name: build winecx gptk runtime
-
 on:
   workflow_dispatch:
     inputs:
       opt:
-        description: "standard -O2, release -O3, fast -O0 for iteration only"
+        description: standard -O2, release -O3, fast -O0 for iteration only
         type: choice
         default: standard
-        options: [standard, release, fast]
+        options:
+          - standard
+          - release
+          - fast
       kosmickrisp:
-        description: "bundle experimental x86_64 KosmicKrisp and run loader probes; never publish"
+        description: bundle experimental x86_64 KosmicKrisp and run loader probes; never publish
         type: boolean
         default: false
       runtime_version:
-        description: "override the stamped version; leave empty for RUNTIME_SERIES.<commits since the series bump>"
+        description: override the stamped version; leave empty for RUNTIME_SERIES.<commits since the series bump>
         type: string
-        # deliberately no default: a default here wins over the shell fallback
-        # below, so the version would go stale in two places instead of one
+      rebuild_all:
+        description: Rebuild OCI foundation, tools and payload layers instead of restoring cached layers
+        type: boolean
+        default: false
   push:
-    branches: [main, feat/kosmickrisp-experimental]
-    # a push to main publishes, so a readme edit would cut a release whose bits
-    # are identical to the last one bar the version stamp. the manual escape is
-    # "[skip ci]" in the commit subject, but only in that exact spelling, and
-    # relying on remembering it is how the duplicate gets published anyway.
+    branches:
+      - main
+      - feat/kosmickrisp-experimental
     paths-ignore:
       - '**.md'
-      - 'LICENSE'
-      - 'runtime-catalog.json'
-
-# pinned by hand. an unpinned clone makes two builds of the same tree
-# incomparable, which is how a deployment mistake got misread for days as the
-# base having moved underneath us. the nixpkgs rev is a branch tip captured on
-# 2026-08-03, for the same reason: a branch ref moves, so the runtime's
-# freetype and gnutls would change without a commit here saying so.
-#
-# moltenvk comes from khronos' own release rather than nixpkgs, which is where
-# dxvk and dxmt already come from and for the same reason: it tracks the GPU,
-# not the base system, and it needs to move on its own schedule. nixpkgs is a
-# release behind (1.4.1 on 26.05-darwin, 1.2.11 on the pin above), and 1.4.2 is
-# the first build that knows about apple10 (M5).
-#
-# nixpkgs could not have supplied it anyway. nixpkgs 26.11 dropped
-# x86_64-darwin outright and evaluating legacyPackages.x86_64-darwin there is a
-# hard error, so unstable is unusable for this workflow entirely -- every
-# package here is x86_64-darwin. the 26.05-darwin branch keeps it until the end
-# of 2026, which is this project's deadline for finding another source of
-# x86_64 macOS libraries.
+      - LICENSE
+      - runtime-catalog.json
 env:
-  # Branch pushes exercise the experimental lane without a manual dispatch.
   KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
-  # WineCX 11.17 source with Whisky's platform fixes and the matching vendored
-  # FAudio update. Keep the revision immutable so the canary remains
-  # reproducible while the feature branch advances.
-  WINECX_REPO: https://github.com/niltonperimneto/winecx.git
-  WINECX_COMMIT: 256cba74aea2e71f50db33e36d61624e3022aa4d
-  NIXPKGS_REV: ac62194c3917d5f474c1a844b6fd6da2db95077d
-  MOLTENVK_VERSION: "1.4.2"
-  FAUDIO_VERSION: "26.09"
-  DXVK_VERSION: "1.10.3"
-  # Canary DXMT payload built by upstream CI from an immutable main commit,
-  # then published unchanged on our fork so the runtime does not depend on a
-  # transient Actions artifact or nightly.link.
-  DXMT_REPO: niltonperimneto/dxmt
-  DXMT_VERSION: "main-7c8dee1"
-  DXMT_COMMIT: 7c8dee1c2d73415301ceb7d1fa810861cef4cd67
-  DXMT_RELEASE_TAG: v0.80-relay12.7c8dee1
-  DXMT_ARTIFACT_SHA256: 00a41fcffd0ab488926310a83a357ceada6bae42268d83f58d9c541fccebe3bb
-  # Relay12's D3D11On12 modules, from a release of the relay12 repository built
-  # by its CI at RELAY12_COMMIT. The d3d12 interposer routes
-  # D3D11On12CreateDevice to them when RELAY12_EXPERIMENTAL_FRAME=1, which
-  # Whisky sets from its per-bottle and per-program toggle. SOURCE.txt in the
-  # archive names the source of each module and licenses/ carries every license.
-  RELAY12_REPO: niltonperimneto/relay12
-  RELAY12_COMMIT: 6373fdd439a4863cebed37e70c66806a456dac53
-  RELAY12_RELEASE_TAG: runtime-6373fdd
-  RELAY12_ARTIFACT_SHA256: c8475096fe664dbf501d52fc6a4401c0d8368782f408440b87f3772238e1798d
-  # the runtime stream this build publishes into. lived inline in the stamping
-  # step as a default and went stale there: v4.2.0 shipped while the workflow
-  # still said 4.1.0, so every dispatch without an explicit input mislabelled
-  # itself. it belongs next to the other pins, where it gets read.
-  # major.minor only. the patch number is the count of commits since this line
-  # last changed, so it moves on its own, resets to 0 at a series bump, and two
-  # builds of the same tree still stamp the same version. any commit that edits
-  # this assignment line resets the count, so touch it only to bump the series.
+  # Keep this assignment stable: version stamping counts commits since its last change.
   RUNTIME_SERIES: "4.7"
-  # Without this every binary carries the minos of whatever built it, so the
-  # self-hosted runner stamped macOS 27 onto a runtime dyld then refuses to load
-  # anywhere older. Whisky's own floor has to match this number.
-  MACOSX_DEPLOYMENT_TARGET: "26.0"
-
-# one build of a ref at a time. the runner is a single machine with one ccache,
-# and now that a green build publishes, two of them racing could put an older
-# tree's tarball on a newer version's tag. queue rather than cancel: cancelling
-# would throw away a build that was about to publish.
+  OPT_LEVEL: ${{ inputs.opt || 'standard' }}
+  REBUILD_ALL: ${{ inputs.rebuild_all == true }}
+  RUNTIME_VERSION_OVERRIDE: ${{ inputs.runtime_version || '' }}
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: false
-
 permissions:
-  # only the publish job below raises this to write. nothing here reaches
-  # another repo, so no token beyond the job's own is needed: the mirror in
-  # dappermint/Whisky pulls the release rather than being pushed to.
   contents: read
-
 jobs:
-  build:
-    outputs:
-      kosmickrisp: ${{ env.KOSMICKRISP_ENABLED }}
-      runtime_version: ${{ steps.install.outputs.runtime_version }}
-      shippable: ${{ steps.make.outputs.shippable }}
+  foundation:
     runs-on: macos-26
-    timeout-minutes: 300
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sysroot: ${{ steps.restore_sysroot.outputs.ref || steps.push_sysroot.outputs.ref }}
+      tools: ${{ steps.restore_tools.outputs.ref || steps.push_tools.outputs.ref }}
     steps:
       - uses: actions/checkout@v7
+      - name: Prepare macOS build host
+        run: bash tools/bootstrap_build.sh
+      - uses: oras-project/setup-oras@v1
         with:
-          # the patch number is the commit count, and a depth-1 checkout counts 1
-          fetch-depth: 0
-
-      - name: ensure rosetta
-        run: |
-          /usr/sbin/softwareupdate --install-rosetta --agree-to-license || true
-          arch -x86_64 /usr/bin/true && echo "rosetta ok"
-
-      # compilation cache: harness-only changes rebuild in minutes instead of
-      # ~50. compilercheck=content so cache survives runner image updates
-      # (mtime-based checks would invalidate everything on each image bump).
-      # for a provenance-clean release build, wipe the cache from the actions
-      # UI (or bump the key) and re-run; a cold cache is a full clean build.
-      - name: ccache
-        run: |
-          # a self-hosted runner is a real machine, and this one is nix-darwin
-          # managed with brew cleanup=uninstall, which reaps imperative
-          # installs. use what is already there and only install if missing
-          command -v ccache >/dev/null || brew install -q ccache
-          {
-            echo "CCACHE_DIR=$HOME/.ccache"
-            # two PE arches plus the unix half is ~10k objects; 2G evicted
-            echo "CCACHE_MAXSIZE=4G"
-            echo "CCACHE_COMPILERCHECK=content"
-            # wine stamps __DATE__/__TIME__ into a few files, and every run
-            # gets a fresh checkout, so without these the hit rate collapses
-            # on exactly the files that never changed
-            echo "CCACHE_SLOPPINESS=time_macros,locale,include_file_mtime,include_file_ctime"
-            # keep absolute build paths out of the hash so a cache from a
-            # differently-named workspace still hits
-            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
-            echo "CCACHE_NOHASHDIR=1"
-            # apfs copy-on-write clones instead of byte copies on every hit.
-            # not hardlinks: the package step runs llvm-strip over the outputs
-            # in place, which through a hardlink would rewrite the cache
-            echo "CCACHE_FILECLONE=1"
-            echo "CCACHE_INODECACHE=1"
-          } >> "$GITHUB_ENV"
-          # the PE half's cross compilers are wrapped in the mingw step, once
-          # their real paths are known
-
-      # hosted only. ~/.ccache is on the self-hosted runner's own disk and is
-      # still there next run, so archiving it to github and pulling it back is
-      # pure cost: measured on run 31625185579 at 102s to restore and 1215s to
-      # save, against a make of 71s. a hosted runner is a fresh vm and does
-      # need it.
+          version: 1.3.0
+      - name: Authenticate OCI registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: install nix
+        uses: DeterminateSystems/nix-installer-action@v23
+        with:
+          extra-conf: |
+            extra-platforms = x86_64-darwin
+      - name: Look up sysroot OCI layer
+        id: restore_sysroot
+        run: bash tools/build/oci.sh restore sysroot
+      - name: Build pinned Darwin foundation
+        if: steps.restore_sysroot.outputs.hit != 'true'
+        run: |-
+          bash tools/setup_mingw.sh
+          bash tools/setup_sysroot.sh
+      - name: Publish sysroot OCI layer
+        id: push_sysroot
+        if: steps.restore_sysroot.outputs.hit != 'true'
+        run: bash tools/build/oci.sh push sysroot sysroot-closure.nar sysroot.env store-outs.txt native-store-outs.txt nix-tool-outs.txt llvm-mingw-20240619-ucrt-macos-universal
+      - name: clone winecx
+        uses: actions/checkout@v7
+        with:
+          repository: niltonperimneto/winecx
+          ref: ${{ env.WINECX_COMMIT }}
+          path: winecx
+          ssh-key: ${{ secrets.WINECX_DEPLOY_KEY }}
+      - name: Prepare pinned Wine sources
+        run: bash tools/prepare_source.sh
+      - name: Look up tools OCI layer
+        id: restore_tools
+        run: bash tools/build/oci.sh restore tools
+      - name: Build native Wine tools
+        if: steps.restore_tools.outputs.hit != 'true'
+        run: bash tools/build_wine_tools.sh
+      - name: Publish tools OCI layer
+        id: push_tools
+        if: steps.restore_tools.outputs.hit != 'true'
+        run: bash tools/build/oci.sh push tools build-tools
+  payloads:
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.restore_payloads.outputs.ref || steps.push_payloads.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare macOS build host
+        run: bash tools/bootstrap_build.sh
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+      - name: Authenticate OCI registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: clone winecx
+        uses: actions/checkout@v7
+        with:
+          repository: niltonperimneto/winecx
+          ref: ${{ env.WINECX_COMMIT }}
+          path: winecx
+          ssh-key: ${{ secrets.WINECX_DEPLOY_KEY }}
+      - name: Prepare pinned Wine sources
+        run: bash tools/prepare_source.sh
+      - name: Look up payloads OCI layer
+        id: restore_payloads
+        run: bash tools/build/oci.sh restore payloads
+      - name: Fetch and verify graphics and addons
+        if: steps.restore_payloads.outputs.hit != 'true'
+        run: bash tools/fetch_payloads.sh
+      - name: Publish payloads OCI layer
+        id: push_payloads
+        if: steps.restore_payloads.outputs.hit != 'true'
+        run: bash tools/build/oci.sh push payloads addons payload
+  graphics:
+    uses: ./.github/workflows/kosmickrisp.yml
+    with:
+      enabled: ${{ inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
+      rebuild_all: ${{ inputs.rebuild_all == true }}
+    permissions:
+      contents: read
+      packages: write
+  core:
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - foundation
+    outputs:
+      ref: ${{ steps.push_core.outputs.ref }}
+      shippable: ${{ steps.make.outputs.shippable }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare macOS build host
+        run: bash tools/bootstrap_build.sh
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+      - name: Authenticate OCI registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: install nix
+        uses: DeterminateSystems/nix-installer-action@v23
+        with:
+          extra-conf: |
+            extra-platforms = x86_64-darwin
+      - name: Restore sysroot
+        run: bash tools/build/oci.sh pull sysroot "${{ needs.foundation.outputs.sysroot }}"
+      - name: Restore tools
+        run: bash tools/build/oci.sh pull tools "${{ needs.foundation.outputs.tools }}"
       - name: restore compiler cache
         uses: actions/cache@v6
         with:
@@ -168,16 +183,6 @@ jobs:
           restore-keys: |
             ccache-${{ env.WINECX_COMMIT }}-
             ccache-
-
-      # the self-hosted runner is nix-darwin managed and already carries
-      # extra-platforms = x86_64-darwin; installing over it would clobber a
-      # real machine's daemon and store
-      - name: install nix
-        uses: DeterminateSystems/nix-installer-action@v23
-        with:
-          extra-conf: |
-            extra-platforms = x86_64-darwin
-
       - name: clone winecx
         uses: actions/checkout@v7
         with:
@@ -185,1355 +190,113 @@ jobs:
           ref: ${{ env.WINECX_COMMIT }}
           path: winecx
           ssh-key: ${{ secrets.WINECX_DEPLOY_KEY }}
-
-      - name: verify vendored faudio
-        run: |
-          # CrossOver vendors its compatible FAudio revision in the winecx
-          # tree. Overlaying a newer upstream release can break that source
-          # combination, so verify the vendored version instead.
-          ver() { grep -oE "FAUDIO_${1}_VERSION[[:space:]]+[0-9]+" \
-                    winecx/libs/faudio/include/FAudio.h | grep -oE '[0-9]+$'; }
-          got="$(ver MAJOR).$(ver MINOR)"
-          want="${FAUDIO_VERSION%%.*}.$((10#${FAUDIO_VERSION##*.}))"
-          [ "$got" = "$want" ] || { echo "::error::faudio headers say $got, not $want"; exit 1; }
-          echo "faudio: $FAUDIO_VERSION (in-tree)"
-
-      - name: apply patches
-        run: |
-          # committed in the winecx branch on this lane; the glob guard keeps
-          # an empty patches/ from failing the loop
-          for p in "$PWD"/patches/*.patch; do
-            [ -e "$p" ] || { echo "no out-of-tree patches"; break; }
-            echo "applying $(basename "$p")"
-            git -C winecx apply --verbose "$p"
-          done
-
-      - name: enable explicit experimental Vulkan loader selection
-        if: env.KOSMICKRISP_ENABLED == 'true'
-        run: git -C winecx apply --check ../runtime/kosmickrisp/wine-loader.patch && git -C winecx apply ../runtime/kosmickrisp/wine-loader.patch
-
-      - name: build experimental KosmicKrisp bundle
-        timeout-minutes: 60
-        if: env.KOSMICKRISP_ENABLED == 'true'
-        run: |
-          python3 -m unittest discover -s tests -p 'test_kosmickrisp*.py' -v
-          brew install cmake ninja pkg-config llvm spirv-tools spirv-llvm-translator libclc python@3.13
-          "$(brew --prefix python@3.13)/bin/python3.13" -m venv "$RUNNER_TEMP/kosmickrisp-python"
-          source "$RUNNER_TEMP/kosmickrisp-python/bin/activate"
-          python3 -m pip install meson==1.9.1 mako==1.3.10 packaging==25.0 PyYAML==6.0.3
-          export PATH="$(brew --prefix llvm)/bin:$PATH"
-          bash runtime/kosmickrisp/build.sh "$RUNNER_TEMP/kosmickrisp-build" "$PWD/payload/kosmickrisp"
-          # Test in a relocated path with spaces, using the x86_64 process ABI.
-          probe_dir="$RUNNER_TEMP/kosmickrisp relocated"
-          mkdir -p "$probe_dir"
-          cp -R payload/kosmickrisp "$probe_dir/driver"
-          /usr/bin/clang -arch x86_64 -Wall -Wextra -Werror \
-            -I"$RUNNER_TEMP/kosmickrisp-build/headers/include" \
-            tests/kosmickrisp_probe.c -o "$probe_dir/host-probe"
-          unset VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
-          VK_DRIVER_FILES="$probe_dir/driver/kosmickrisp_icd.json" \
-            "$probe_dir/host-probe" "$probe_dir/driver/libvulkan.1.dylib" \
-            2>&1 | tee payload/kosmickrisp/host-probe.txt
-
-      # Pin the UCRT toolchain. Hosted runners can already contain llvm-mingw;
-      # accepting whatever happens to be on PATH made the selected CRT and the
-      # d3d12video header version depend on the runner image.
-      - name: pinned llvm-mingw UCRT toolchain for the PE half
-        run: |
-          curl --fail --location --silent --show-error -O \
-            https://github.com/mstorsjo/llvm-mingw/releases/download/20240619/llvm-mingw-20240619-ucrt-macos-universal.tar.xz
-          tar -xf llvm-mingw-20240619-ucrt-macos-universal.tar.xz
-          toolchain="$PWD/llvm-mingw-20240619-ucrt-macos-universal/bin"
-          echo "$toolchain" >> "$GITHUB_PATH"
-          export PATH="$toolchain:$PATH"
-          x86_64-w64-mingw32-clang --version | head -1
-          i686-w64-mingw32-clang --version | head -1
-          # Wrappers keep both C and C++ PE compilation on this exact toolchain.
-          mkdir -p ccache-bin
-          for t in \
-            x86_64-w64-mingw32-clang x86_64-w64-mingw32-clang++ \
-            i686-w64-mingw32-clang i686-w64-mingw32-clang++; do
-            # resolve the real binary now and bake the absolute path in: doing
-            # the lookup inside the wrapper recurses forever, because by then
-            # ccache-bin is first on PATH and `command -v` finds the wrapper
-            real=$(command -v "$t") || { echo "::error::$t not found"; exit 1; }
-            printf '#!/bin/sh\nexec ccache "%s" "$@"\n' "$real" > "ccache-bin/$t"
-            chmod +x "ccache-bin/$t"
-          done
-          PATH="$PWD/ccache-bin:$PATH" x86_64-w64-mingw32-clang --version >/dev/null
-          PATH="$PWD/ccache-bin:$PATH" i686-w64-mingw32-clang --version >/dev/null
-
-      - name: nix toolchain and x86_64 libs
-        run: |
-          NIXPKGS="github:NixOS/nixpkgs/$NIXPKGS_REV"
-          tools=$(nix build --no-link --print-out-paths \
-            "$NIXPKGS#bison" "$NIXPKGS#flex" "$NIXPKGS#pkg-config")
-          toolpath=""
-          for t in $tools; do toolpath="$t/bin:$toolpath"; done
-          echo "NIX_TOOL_PATH=$toolpath" >> "$GITHUB_ENV"
-
-          outs=""
-          # ffmpeg-headless, not ffmpeg: winedmo wants libavutil, libavformat
-          # and libavcodec and nothing else, and the full build drags in SDL
-          # and an x11 closure that would be bundled along with it
-          # glib and orc are pulled in by name because pkg-config resolves
-          # gstreamer-1.0.pc's Requires: through PKG_CONFIG_PATH and nothing
-          # here reads nixpkgs' propagated-build-inputs, so without them the
-          # gstreamer probe fails on a missing glib-2.0 and configure quietly
-          # drops winegstreamer
-          for p in freetype gnutls libpng zlib brotli bzip2 nettle libtasn1 libidn2 p11-kit libunistring gmp vulkan-headers ffmpeg-headless \
-                   glib orc \
-                   gst_all_1.gstreamer gst_all_1.gst-plugins-base gst_all_1.gst-plugins-good \
-                   gst_all_1.gst-plugins-bad gst_all_1.gst-libav; do
-            # ffmpeg splits its dylibs into a "lib" output that neither dev nor
-            # out carries: without it configure finds the headers, fails the
-            # link test, and quietly disables ffmpeg. missing outputs on the
-            # other packages are skipped by the guard below.
-            for o in dev out lib; do
-              if path=$(nix build --no-link --print-out-paths \
-                "$NIXPKGS#legacyPackages.x86_64-darwin.$p.$o" 2>/dev/null); then
-                outs="$outs $path"
-              fi
-            done
-          done
-          echo "$outs" | tr ' ' '\n' | grep . > store-outs.txt
-          pcp=""
-          incs=""
-          ldfs=""
-          for d in $outs; do
-            [ -d "$d/lib/pkgconfig" ] && pcp="$d/lib/pkgconfig:$pcp"
-            [ -d "$d/include" ] && incs="$incs -I$d/include"
-            [ -d "$d/lib" ] && ldfs="$ldfs -L$d/lib"
-          done
-          {
-            echo "NIX_PKG_CONFIG_PATH=$pcp"
-            echo "NIX_INCS=$incs"
-            echo "NIX_LDFS=$ldfs"
-          } >> "$GITHUB_ENV"
-          cat store-outs.txt
-
-      # makedep, winebuild, wrc, widl and wmc get exec'd thousands of times per
-      # build. built x86_64 they are all rosetta processes, and macos 27.0's
-      # ecosystemanalyticsd queues an analysis per rosetta exec whose bird XPC
-      # lookup can never succeed from the system domain, requeueing forever --
-      # which takes the whole machine to load ~10 and only a reboot clears it.
-      # that is survivable on a throwaway hosted runner and not on this one.
-      # build them native and point the main configure at them; the only
-      # translated processes left per run are the smoke tests'.
-      #
-      # native freetype is needed because sfnt2fon links it, and the x86_64 nix
-      # libs from the step above are the wrong arch for this stage.
-      - name: native tools build
-        run: |
-          NIXPKGS="github:NixOS/nixpkgs/$NIXPKGS_REV"
-          outs=$(nix build --no-link --print-out-paths \
-            "$NIXPKGS#freetype.dev" "$NIXPKGS#freetype.out" \
-            "$NIXPKGS#libpng.dev" "$NIXPKGS#zlib.dev" \
-            "$NIXPKGS#brotli.dev" "$NIXPKGS#bzip2.dev")
-          pcp=""
-          for d in $outs; do
-            [ -d "$d/lib/pkgconfig" ] && pcp="$d/lib/pkgconfig:$pcp"
-          done
-          export PATH="$NIX_TOOL_PATH$PATH"
-          export SDKROOT="$(/usr/bin/xcrun --show-sdk-path)"
-          export CC="ccache /usr/bin/clang"
-          export PKG_CONFIG_PATH="$pcp"
-          mkdir build-tools && cd build-tools
-          # this configure runs natively, so without an explicit arch list wine
-          # defaults to aarch64 and stops on "PE cross-compilation is required
-          # for aarch64". only __tooldeps__ is ever built here, so the list only
-          # has to name archs a PE compiler exists for -- the same two the real
-          # build uses.
-          ../winecx/configure \
-            --enable-archs=i386,x86_64 \
-            --without-x --without-wayland --without-gstreamer \
-            --without-oss --without-alsa --without-pulse --without-sane \
-            --without-usb --without-v4l2 --without-pcap --without-capi \
-            --without-opencl --without-ffmpeg --without-cups \
-            --disable-tests
-          make -j"$(sysctl -n hw.ncpu)" __tooldeps__
-          # wrc resolves its nls data relative to its own binary
-          # (tools/wrc/../../nls, see get_nlsdir in tools/tools.h), and
-          # __tooldeps__ never populates an out-of-tree nls dir. a persistent
-          # workspace can carry one from an earlier full make, which is why
-          # this only surfaces on a fresh hosted runner: the main build's
-          # first .res file dies with "unable to load locale.nls".
-          # link the file, not the dir: if configure already made nls/ a real
-          # directory, a dir symlink silently lands inside it as nls/nls,
-          # which is how the first attempt at this fix failed. same shape as
-          # the main build's own locale.nls rule. then prove it resolves, so
-          # a regression fails here and not two minutes into make.
-          rm -rf nls && mkdir nls && ln -s ../../winecx/nls/locale.nls nls/locale.nls
-          test -r nls/locale.nls || { echo "::error::tools nls dir does not resolve"; exit 1; }
-
-      - name: configure
-        env:
-          OPT_LEVEL: ${{ inputs.opt }}
-        run: |
-          export PATH="$PWD/ccache-bin:$NIX_TOOL_PATH$PATH"
-          export SDKROOT="$(/usr/bin/xcrun --show-sdk-path)"
-          export CC="ccache /usr/bin/clang -arch x86_64"
-          export CROSSCC="x86_64-w64-mingw32-clang"
-          export CXX="ccache /usr/bin/clang++ -arch x86_64"
-          export CROSSCXX="x86_64-w64-mingw32-clang++"
-          export PKG_CONFIG_PATH="$NIX_PKG_CONFIG_PATH"
-          # -O2 unless asked otherwise: that is what wine itself ships and
-          # where a push build should stay. -O3 is opt-in for the runtimes we
-          # release; configure already adds -fno-strict-aliasing, the flag
-          # wine depends on, which is what makes raising it safe. -O0 roughly
-          # halves clang's time, for runs whose only job is to answer whether
-          # a patch works
-          case "$OPT_LEVEL" in
-            release)
-              OPT="-O3"
-              ;;
-            fast)
-              OPT="-O0 -g0"
-              echo "::warning::fast build, -O0 and no debug info; do not publish this artifact"
-              ;;
-            *)
-              OPT="-O2"
-              ;;
-          esac
-          echo "optimisation: $OPT" | tee -a "$GITHUB_STEP_SUMMARY"
-          # -Werror=unguarded-availability-new is the floor's enforcement: the
-          # builder's SDK is newer than MACOSX_DEPLOYMENT_TARGET, and clang's
-          # answer to an API above the target is a weak link, so the call is a
-          # null pointer on the older OS instead of a link error anyone would
-          # notice. as an error it stops at the line. host flags only, mingw
-          # does not know it.
-          export CFLAGS="$OPT -Wno-error=implicit-function-declaration -Werror=unguarded-availability-new $NIX_INCS"
-          export CROSSCFLAGS="$OPT"
-          export LDFLAGS="$NIX_LDFS"
-          # the one API that is already above the floor. all three call sites
-          # sit behind #ifdef HAVE_PIPE2 with a pipe + fcntl fallback next to
-          # them, so refusing the detection costs two syscalls per pipe and
-          # makes the self hosted lane's binaries loadable on the floor.
-          export ac_cv_func_pipe2=no
-          export ac_cv_lib_soname_freetype="libfreetype.6.dylib"
-          export ac_cv_lib_soname_gnutls="libgnutls.30.dylib"
-          # wine dlopens MoltenVK by soname; the bundled copy is found via
-          # the loader fallback path whisky already sets for its runtime
-          export ac_cv_lib_soname_MoltenVK="libMoltenVK.dylib"
-          mkdir build && cd build
-          ../winecx/configure \
-            --host=x86_64-apple-darwin24 \
-            --with-wine-tools=../build-tools \
-            --enable-archs=i386,x86_64 \
-            --disable-tests \
-            --without-x --without-wayland \
-            --without-oss --without-alsa --without-pulse --without-sane \
-            --without-usb --without-v4l2 --without-pcap --without-capi \
-            --without-opencl --without-cups \
-            --prefix=/opt/whiskywine || {
-              echo "==== core tests section ===="
-              sed -n '100,500p' config.log
-              exit 1
-            }
-
-          # wine's configure only warns when an optional library is missing, so
-          # a broken pkg-config path ships a runtime with no video decode and
-          # says nothing. winedmo backs mfsrcsnk / mfmp4srcsnk / mfasfsrcsnk,
-          # which is how a game plays its intro before it lets you in.
-          grep -q '^#define HAVE_FFMPEG 1' include/config.h || {
-            echo "::error::ffmpeg was not found; winedmo would ship with no backend"
-            grep -i 'ffmpeg\|libav' config.log | tail -20
-            exit 1
-          }
-          echo "ffmpeg: found"
-
-          # same story for gstreamer, which is what wmvcore, the quartz
-          # DirectShow path and every mfplat decoder go through. configure
-          # disables winegstreamer with a notice and builds on happily.
-          grep -qE '^GSTREAMER_LIBS *= *.+' Makefile || {
-            echo "::error::winegstreamer is not in the build; gstreamer was not found"
-            grep -i 'gstreamer\|glib-2.0\|gst_pad_new' config.log | tail -30
-            exit 1
-          }
-          echo "gstreamer: found"
-
-      - name: make
+      - name: Prepare pinned Wine sources
+        run: bash tools/prepare_source.sh
+      - name: Configure compiler wrappers
+        run: bash tools/setup_mingw.sh --wrappers-only
+      - name: Build Wine core
         id: make
-        env:
-          OPT_LEVEL: ${{ inputs.opt }}
-        run: |
-          export PATH="$PWD/ccache-bin:$NIX_TOOL_PATH$PATH"
-          cd build
-          # the runner has few cores and much of the work is i/o bound behind
-          # winebuild, so oversubscribing by half keeps them fed
-          ncpu=$(sysctl -n hw.logicalcpu)
-          ccache -z >/dev/null
-          set -o pipefail
-          make -j"$(( ncpu + ncpu / 2 ))" 2>&1 | tee /tmp/make.log
-
-          # pinning the deployment target stops the binaries claiming to be
-          # newer, but not configure finding an API the SDK declares and the
-          # floor does not have: v4.0.1 linked pipe2, macOS 27 only, weakly, so
-          # ntdll.so loads on 26 and then calls a null pointer at the first
-          # server_pipe. build on a runner whose SDK matches the floor and this
-          # stays quiet.
-          if grep -q "has been marked as being introduced in macOS" /tmp/make.log; then
-            syms=$(grep -oE "'[a-z_0-9]+' has been marked as being introduced in macOS [0-9.]+" /tmp/make.log | sort -u)
-            # the self hosted lane is a newer macOS than the floor, so its SDK
-            # always offers something and failing every push there would cost the
-            # fast lane for nothing. so the build stays green and hands the
-            # verdict to the publish job instead, which is the step that has to
-            # care. only an explicit release build stops here.
-            echo "shippable=false" >> "$GITHUB_OUTPUT"
-            if [ "${OPT_LEVEL:-}" = "release" ]; then
-              printf '%s\n' "$syms" | sed 's/^/::error::newer than the floor: /'
-              echo "::error::a release cannot link these; build on a runner whose SDK matches $MACOSX_DEPLOYMENT_TARGET"
-              exit 1
-            fi
-            printf '%s\n' "$syms" | sed 's/^/::warning::newer than the floor: /'
-            echo "::warning::not shippable as built; publish will skip this run, a release needs the hosted lane"
-          fi
-          # per-run numbers, not lifetime ones: this is how we tell whether
-          # the restored cache actually did anything
-          {
-            echo "### ccache"
-            echo '```'
-            ccache -s
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: unpack wine-mono and wine-gecko
-        run: |
-          # the extracted form, which is what the stock whisky engine ships and
-          # what mscoree and mshtml load straight out of the datadir. the .msi
-          # form works too but appwiz then installs a copy into every prefix,
-          # costing ~180MB per bottle. versions come from winecx's own
-          # dlls/appwiz.cpl/addons.c, which is what the loaders look for:
-          # metahost.c wants wine-mono-$MONO_VERSION, nsembed.c wants
-          # wine-gecko-$GECKO_VERSION-$arch. addons.c only carries .msi hashes,
-          # so the tarball hashes are pinned here instead.
-          set -eu
-          mono_ver=$(sed -n 's/^#define MONO_VERSION "\(.*\)"/\1/p' winecx/dlls/appwiz.cpl/addons.c)
-          gecko_ver=$(sed -n 's/^#define GECKO_VERSION "\(.*\)"/\1/p' winecx/dlls/appwiz.cpl/addons.c)
-
-          # a hash has to be pinned for whatever version winecx asks for, so
-          # unknown versions still fail. keeping both bases in the table lets
-          # the wine 10 and wine 11 branches share this file.
-          case "$mono_ver" in
-            9.4.0)  mono_sha=fd772219aacf46b825fa891a647af4a9ddf8439320101c231918b2037bf13858 ;;
-            10.4.1) mono_sha=a16606ef0724202e6a6848ece6e0cbba64d11e2f11aefe744af1d93c6d9f99bb ;;
-            11.2.0) mono_sha=c9fb2e2823acf30b000b8806177db0f40751786136dd3f8fb2be7897b1643d06 ;;
-            11.3.0) mono_sha=54a1b0111c3fe4b785eae688af94d27e64995707ad648b6fee8000381b80d298 ;;
-            *) echo "no pinned hash for mono $mono_ver"; exit 1 ;;
-          esac
-          case "$gecko_ver" in
-            2.47.4) gecko_x86_sha=2cfc8d5c948602e21eff8a78613e1826f2d033df9672cace87fed56e8310afb6
-                    gecko_x64_sha=fd88fc7e537d058d7a8abf0c1ebc90c574892a466de86706a26d254710a82814 ;;
-            *) echo "no pinned hashes for gecko $gecko_ver"; exit 1 ;;
-          esac
-          echo "mono $mono_ver, gecko $gecko_ver"
-
-          fetch() {
-            curl -fsSL -o "$2" "$1"
-            got=$(shasum -a 256 "$2" | cut -d' ' -f1)
-            [ "$got" = "$3" ] || { echo "hash mismatch for $2: $got != $3"; exit 1; }
-          }
-
-          mkdir -p addons/mono addons/gecko
-          fetch "https://dl.winehq.org/wine/wine-mono/$mono_ver/wine-mono-$mono_ver-x86.tar.xz" \
-                mono.tar.xz "$mono_sha"
-          fetch "https://dl.winehq.org/wine/wine-gecko/$gecko_ver/wine-gecko-$gecko_ver-x86.tar.xz" \
-                gecko-x86.tar.xz "$gecko_x86_sha"
-          fetch "https://dl.winehq.org/wine/wine-gecko/$gecko_ver/wine-gecko-$gecko_ver-x86_64.tar.xz" \
-                gecko-x64.tar.xz "$gecko_x64_sha"
-
-          tar -xJf mono.tar.xz -C addons/mono
-          tar -xJf gecko-x86.tar.xz -C addons/gecko
-          tar -xJf gecko-x64.tar.xz -C addons/gecko
-          [ -d "addons/mono/wine-mono-$mono_ver" ] || { echo "mono tarball layout changed"; exit 1; }
-          [ -d "addons/gecko/wine-gecko-$gecko_ver-x86_64" ] || { echo "gecko tarball layout changed"; exit 1; }
-          du -sh addons/mono addons/gecko
-
-          # a runtime with no d3d11 implementation cannot render chromium:
-          # wined3d goes through apple's opengl, frozen at 4.1, which gives
-          # ANGLE feature level 9_3 and a hard "GLES 3.0 > max supported 2.0".
-          # dxvk and dxmt are what make steam's ui appear.
-          mkdir -p payload
-          fetch "https://github.com/Gcenx/DXVK-macOS/releases/download/v$DXVK_VERSION-20230507-repack/dxvk-macOS-async-v$DXVK_VERSION-20230507-repack.tar.gz" \
-                dxvk.tar.gz acd1520ad105d8ef124a09c8e11a259a5dc8bdc565ad18e0e52693f9807b2477
-          fetch "https://github.com/$DXMT_REPO/releases/download/$DXMT_RELEASE_TAG/dxmt-7c8dee1c-builtin.tar.gz" \
-                dxmt.tar.gz "$DXMT_ARTIFACT_SHA256"
-          tar -xzf dxvk.tar.gz -C payload
-          tar -xzf dxmt.tar.gz -C payload
-          fetch "https://github.com/$RELAY12_REPO/releases/download/$RELAY12_RELEASE_TAG/relay12-$RELAY12_RELEASE_TAG.tar.gz" \
-                relay12.tar.gz "$RELAY12_ARTIFACT_SHA256"
-          tar -xzf relay12.tar.gz -C payload
-          [ -d "payload/relay12-$RELAY12_RELEASE_TAG/x86_64-windows" ] || { echo "relay12 archive layout changed"; exit 1; }
-
-          # khronos' own build, not nixpkgs': see the note by MOLTENVK_VERSION.
-          # the plain macos tar, not -privateapi -- that variant's extra
-          # features are AMD-only and it reaches into unsupported Metal SPI for
-          # them, which is not a trade worth making on apple silicon.
-          fetch "https://github.com/KhronosGroup/MoltenVK/releases/download/v$MOLTENVK_VERSION/MoltenVK-macos.tar" \
-                moltenvk.tar f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e
-          tar -xf moltenvk.tar -C payload MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib
-          # ships universal; the rest of Wine/lib and the wine binary itself are
-          # x86_64, so thin it to match rather than carry an arm64 slice nothing
-          # in this runtime can load
-          lipo -thin x86_64 payload/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib \
-               -output payload/libMoltenVK.dylib
-          lipo -archs payload/libMoltenVK.dylib
-          ls payload
-
-      - name: install and package
-        id: install
-        run: |
-          export PATH="$NIX_TOOL_PATH$PATH"
-
-          # this step ran 1517s on run 31625185579 against a make of 71s, and
-          # the obvious suspects all measured small on this machine: the
-          # per-file python3 13s over 700 files, codesign 10s, the tree copies
-          # under a second. so the cost is somewhere else and guessing at it
-          # wasted a round. report each phase and let the build say.
-          _t0=$SECONDS; _tp=$SECONDS
-          phase() { echo "::notice::phase $1: $((SECONDS-_tp))s (total $((SECONDS-_t0))s)"; _tp=$SECONDS; }
-
-          cd build
-          # install-lib, not install, and this is where the step's 25 minutes
-          # went. wine's `install` also runs install-dev, whose prerequisite
-          # list is 2181 import libraries -- caught in the act on run
-          # 31650565219, compiling dlls/d3dx9_25 fourteen minutes into a step
-          # that is supposed to be copying files. every one of them was then
-          # thrown away four lines below by the *.a delete. install-lib is
-          # wine's own target for "libraries needed to run applications" and
-          # is what install-image uses; it carries the dlls, the unix .so
-          # modules, the loader, nls and fonts.
-          #
-          # and -j, which install never had, so whatever is left to build now
-          # uses the machine.
-          ncpu=$(sysctl -n hw.logicalcpu)
-          make -j"$ncpu" install-lib DESTDIR="$PWD/../staging"
-          phase "make install-lib"
-          mkdir -p "$PWD/../staging/opt/whiskywine/share/wine/mono" "$PWD/../staging/opt/whiskywine/share/wine/gecko"
-          cp -R "$PWD/../addons/mono"/* "$PWD/../staging/opt/whiskywine/share/wine/mono/"
-          cp -R "$PWD/../addons/gecko"/* "$PWD/../staging/opt/whiskywine/share/wine/gecko/"
-          cd ..
-          mkdir -p Libraries/Wine
-          cp -R staging/opt/whiskywine/bin Libraries/Wine/bin
-          cp -R staging/opt/whiskywine/lib Libraries/Wine/lib
-          cp -R staging/opt/whiskywine/share Libraries/Wine/share
-          host="Libraries/Wine/libexec/GameModeProcessHost.app"
-          mkdir -p "$host/Contents/MacOS"
-          /usr/bin/clang -arch x86_64 -O2 -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" \
-            runtime/GameModeProcessHost/main.c -o "$host/Contents/MacOS/GameModeProcessHost"
-          /usr/bin/clang -arch x86_64 -O2 -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" \
-            runtime/GameModeProcessHost/probe.c -o GameModeProcessHostProbe
-          cp runtime/GameModeProcessHost/Info.plist "$host/Contents/Info.plist"
-          codesign --force --sign - --timestamp=none "$host"
-          codesign --verify --strict --verbose=2 "$host"
-          host_stderr=$(mktemp)
-          set +e
-          host_output=$("$host/Contents/MacOS/GameModeProcessHost" "$PWD/GameModeProcessHostProbe" 2>"$host_stderr")
-          host_status=$?
-          set -e
-          [ "$host_status" -eq 37 ] || { echo "::error::Game Mode host lost exit status: $host_status"; exit 1; }
-          [ "$host_output" = "same-pid" ] || { echo "::error::Game Mode host changed PID"; exit 1; }
-          grep -Eq '^WHISKY_CHILD_POLICY result=host-entered native-pid=[0-9]+$' "$host_stderr" \
-            || { echo "::error::Game Mode host did not report entry"; cat "$host_stderr"; exit 1; }
-          rm "$host_stderr" GameModeProcessHostProbe
-          phase "copy staging into Libraries"
-
-          # dxmt's wine-side half is ONLY the winemetal bridge. copying the
-          # whole payload dir in here would overwrite wine's builtin
-          # d3d11/dxgi with dxmt's, which makes every fresh prefix run dxmt
-          # silently -- and dxmt refuses the cross-process swapchains steam's
-          # post-2026-08 webhelper creates, so the login window never maps. it
-          # would also put nvapi64.dll in the builtins, which must never be
-          # visible to the webhelper: chromium probes for an nvidia gpu, loads
-          # d3dmetal, and takes the helper down with it. the d3d frontends stay
-          # per-bottle in Libraries/DXMT, deployed by whisky's backend picker.
-          dxmt=payload/$DXMT_COMMIT
-          cp -R "$dxmt/x86_64-unix/." Libraries/Wine/lib/wine/x86_64-unix/
-          cp "$dxmt/x86_64-windows/winemetal.dll" Libraries/Wine/lib/wine/x86_64-windows/
-          if [ -f "$dxmt/i386-windows/winemetal.dll" ]; then
-            cp "$dxmt/i386-windows/winemetal.dll" Libraries/Wine/lib/wine/i386-windows/
-          fi
-
-          # and the per-bottle payloads whisky's backend picker offers
-          dxvk=payload/dxvk-macOS-async-v$DXVK_VERSION-20230507-repack
-          mkdir -p Libraries/DXVK Libraries/DXMT
-          cp -R "$dxvk/." Libraries/DXVK/
-          cp -R "$dxmt/x86_64-windows" Libraries/DXMT/x64
-          cp -R "$dxmt/i386-windows" Libraries/DXMT/x32
-
-          # whisky decides whether a prefix dll is "really" native by reading
-          # 16 bytes at offset 0x40 and looking for "Wine builtin DLL". dxmt's
-          # three d3d frontends carry that marker, so whisky's loader ignores
-          # them in a bottle and silently falls back to wined3d. strip it back
-          # to the stock DOS stub on exactly those three. nvapi64/nvngx must
-          # keep their markers: steam's webhelper dies without them.
-          for arch in x64 x32; do
-            for dll in d3d11.dll d3d10core.dll dxgi.dll; do
-              f="Libraries/DXMT/$arch/$dll"
-              [ -f "$f" ] || continue
-              printf '\016\037\272\016\000\264\011\315\041\270\001\114\315\041\220\220' \
-                | dd of="$f" bs=1 seek=64 conv=notrunc status=none
-            done
-          done
-          for arch in x64 x32; do
-            for dll in d3d11.dll d3d10core.dll dxgi.dll; do
-              f="Libraries/DXMT/$arch/$dll"
-              [ -f "$f" ] || continue
-              if dd if="$f" bs=1 skip=64 count=16 status=none | grep -q 'Wine builtin'; then
-                echo "::error::$f still carries the builtin marker"; exit 1
-              fi
-            done
-          done
-
-          # gcc emits DWARF and nothing strips it, so ntdll.dll ships at 3.0MB
-          # against the stock engine's 0.7MB. and the .a import libraries are
-          # link-time only; the stock engine ships none. together they are
-          # ~600MB of the tree.
-          command -v x86_64-w64-mingw32-strip >/dev/null || {
-            echo "::error::x86_64-w64-mingw32-strip not on PATH"; exit 1; }
-          # install-lib does not install these any more, so this should find
-          # nothing. kept as the guard that says so if that ever changes back
-          a=$(find Libraries/Wine/lib/wine/*-windows -name '*.a' | wc -l | tr -d ' ')
-          [ "$a" = 0 ] && echo "import libraries: none installed, as expected" \
-                       || echo "::warning::install-lib brought in $a import libraries, deleting"
-          find Libraries/Wine/lib/wine/*-windows -name '*.a' -delete
-          # batched: gnu strip prints an error for a non-COFF file (.tlb, .nls)
-          # and keeps going with the rest of the batch, unlike llvm-strip which
-          # abandoned it, so the old one-file-per-spawn form burned ~10k
-          # process launches, each taxed by the rosetta analytics daemons
-          find Libraries/Wine/lib/wine/*-windows -type f -print0 \
-            | xargs -0 -P "$(sysctl -n hw.logicalcpu)" -n 64 \
-                x86_64-w64-mingw32-strip --strip-debug 2>/dev/null || true
-          phase "strip the PE half"
-          # wine 11 installs the loader beside ntdll.so in lib/wine/<arch>-unix
-          # instead of in bin, and bin now gets only wineserver. that is not
-          # cosmetic: loader/main.c dlopens "ntdll.so" out of its own
-          # realpath'd directory, and ntdll computes the loader back the same
-          # way, as <ntdll_dir>/wine (dlls/ntdll/unix/loader.c). a copy into
-          # bin looks for bin/ntdll.so and dies, measured on the 26.3 tree:
-          #   wine: could not load ntdll.so: dlopen(.../bin/ntdll.so)
-          # symlinks are fine, because realpath resolves them back to the real
-          # directory before the dirname is taken. verified: bin/wine64 through
-          # a symlink prints winecx-26.3.0.
-          #
-          # whisky invokes bin/wine64, so bin still has to offer these names.
-          # CW HACK 22144 wants wineloader among them.
-          loader=Libraries/Wine/lib/wine/x86_64-unix/wine
-          [ -x "$loader" ] || { echo "::error::no loader at $loader"; exit 1; }
-          for n in wine wine64 wineloader; do
-            ln -sf ../lib/wine/x86_64-unix/wine "Libraries/Wine/bin/$n"
-          done
-          ./Libraries/Wine/bin/wine64 --version
-
-          # bundle the nix dylib closure flat into Wine/lib and rewrite
-          # store references to loader-relative so the tarball is portable
-          LIBDIR="$PWD/Libraries/Wine/lib"
-          scan() { otool -L "$1" 2>/dev/null | awk '/\/nix\/store/{print $1}'; }
-
-          # two kinds of dependency, and only one of them is discoverable.
-          # freetype and gnutls are dlopened by soname so they never
-          # appear in a load command: they have to be named. everything the
-          # unix modules link against directly (ffmpeg, and whatever it drags
-          # in) does appear, so seed from the tree itself rather than from a
-          # hand-kept list -- that list is what silently dropped a dependency
-          # every time the configure flags changed.
-          # gstreamer's plugins are dlopened out of a directory, not linked, so
-          # they have to be copied in before the closure walk runs -- their own
-          # dependencies (the codec libraries) are only reachable through them.
-          # patch 0018 points GStreamer here at run time.
-          mkdir -p "$LIBDIR/gstreamer-1.0"
-          for d in $(cat store-outs.txt); do
-            [ -d "$d/lib/gstreamer-1.0" ] || continue
-            for p in "$d/lib/gstreamer-1.0/"*.dylib; do
-              [ -f "$p" ] || continue
-              cp -L "$p" "$LIBDIR/gstreamer-1.0/$(basename "$p")"
-              chmod u+w "$LIBDIR/gstreamer-1.0/$(basename "$p")"
-            done
-          done
-          echo "gstreamer plugins: $(ls "$LIBDIR/gstreamer-1.0" | wc -l | tr -d ' ')"
-          phase "copy gstreamer plugins"
-
-          # MoltenVK is the one dlopened library that no longer comes out of the
-          # nix closure, so it is placed by hand. it needs no closure walk: its
-          # only dependencies are system frameworks and libc++, nothing in
-          # /nix/store. fixup() below still gives it a @loader_path id and an
-          # ad-hoc signature along with everything else in LIBDIR.
-          [ -f payload/libMoltenVK.dylib ] || {
-            echo "::error::no libMoltenVK.dylib in payload, the fetch step did not run"; exit 1; }
-          cp payload/libMoltenVK.dylib "$LIBDIR/libMoltenVK.dylib"
-          chmod u+w "$LIBDIR/libMoltenVK.dylib"
-          echo "moltenvk: $MOLTENVK_VERSION $(lipo -archs "$LIBDIR/libMoltenVK.dylib")"
-
-          queue=""
-          for d in $(cat store-outs.txt); do
-            for so in libfreetype.6.dylib libgnutls.30.dylib; do
-              [ -f "$d/lib/$so" ] && queue="$queue $d/lib/$so"
-            done
-          done
-          for f in Libraries/Wine/lib/wine/*-unix/*.so Libraries/Wine/bin/wine \
-                   "$LIBDIR"/gstreamer-1.0/*.dylib; do
-            [ -f "$f" ] || continue
-            queue="$queue $(scan "$f" | tr '\n' ' ')"
-          done
-          while [ -n "$queue" ]; do
-            next=""
-            for lib in $queue; do
-              base=$(basename "$lib")
-              [ -e "$LIBDIR/$base" ] && continue
-              cp -L "$lib" "$LIBDIR/$base"
-              chmod u+w "$LIBDIR/$base"
-              next="$next $(scan "$LIBDIR/$base" | tr '\n' ' ')"
-            done
-            queue=""
-            for l in $next; do
-              [ -e "$LIBDIR/$(basename "$l")" ] || queue="$queue $l"
-            done
-          done
-
-          phase "nix closure walk"
-
-          # two iconvs are needed and they are not interchangeable: _iconv is
-          # only in macOS's /usr/lib copy, _libiconv only in nix's. ask each
-          # library which it imports rather than naming names -- the name list
-          # this replaces had libintl alone, and missed libglib, which failed
-          # to load and took libgstreamer and every media decoder with it.
-          fixup() {
-            local f="$1"
-            local rel
-            rel=$(python3 -c "import os,sys; print(os.path.relpath(sys.argv[1], os.path.dirname(sys.argv[2])))" "$LIBDIR" "$f")
-            chmod u+w "$f" 2>/dev/null || true
-            # the id, not only the dependencies: a dylib that still calls itself
-            # /nix/store/... cannot be dlopened off the builder, which silently
-            # cost us fonts, vulkan and tls in every build up to rt7
-            # *.dylib* and not *.dylib: some libraries carry their version
-            # after the extension (libfreeaptx.dylib.0, out of gst-plugins-bad's
-            # closure), and the narrower glob left those with a /nix/store id
-            case "$f" in
-              *.dylib*) install_name_tool -id "@loader_path/$(basename "$f")" "$f" 2>/dev/null || true ;;
-            esac
-            for ref in $(scan "$f"); do
-              if [[ "$(basename "$ref")" == libiconv*.dylib ]] && nm -u "$f" 2>/dev/null | grep -q '^ *_iconv$'; then
-                install_name_tool -change "$ref" "/usr/lib/libiconv.2.dylib" "$f" 2>/dev/null || true
-              else
-                install_name_tool -change "$ref" "@loader_path/$rel/$(basename "$ref")" "$f" 2>/dev/null || true
-              fi
-            done
-            codesign -f -s - "$f" 2>/dev/null || true
-          }
-          for f in "$LIBDIR"/*.dylib*; do
-            if [ -f "$f" ]; then fixup "$f"; fi
-          done
-          # the plugins sit one level down, so fixup's relpath resolves to ".."
-          for f in "$LIBDIR"/gstreamer-1.0/*.dylib*; do
-            if [ -f "$f" ]; then fixup "$f"; fi
-          done
-          find Libraries/Wine/bin -type f | while read -r f; do fixup "$f"; done
-          find Libraries/Wine/lib/wine -name "*.so" | while read -r f; do fixup "$f"; done
-
-          phase "fixup: install_name_tool and codesign"
-
-          # the reference runtime ships both names; match it
-          ln -sf libfreetype.6.dylib "$LIBDIR/libfreetype.dylib"
-
-          # the unix modules dlopen libgnutls/libfreetype/libMoltenVK by bare
-          # soname. dlopen searches the caller's rpaths, and lib/wine/<arch>-unix
-          # is two levels below the bundled dylibs, so without this entry none of
-          # them resolve: no tls, no fonts, no vulkan. reference runtimes carry it.
-          for f in Libraries/Wine/lib/wine/*-unix/*.so; do
-            install_name_tool -add_rpath "@loader_path/../../" "$f" 2>/dev/null || true
-            codesign -f -s - "$f" 2>/dev/null || true
-          done
-
-          # d3dmetal exposes no ID3D12VideoDevice, so a game that decodes video
-          # itself and asks d3d12 to convert NV12 to RGB gets E_NOINTERFACE and
-          # falls back to a path no windows machine runs: stalker cop ee draws
-          # its intro half resolution with the chroma flat, the olive artifact.
-          # this interposer supplies the missing video processor.
-          #
-          # built here but not installed here: it has to sit in the d3d12.dll
-          # builtin slot with apple's dll renamed alongside it, and apple's dll
-          # only lands when the gptk payload is deployed on the user's machine.
-          # install-whiskywine.sh --gptk does the swap.
-          mkdir -p Libraries/Wine/lib/gptk-video
-          # -fno-strict-aliasing for the same reason wine builds with it: this is
-          # com vtable code that puns objects between struct types and swaps
-          # vtable pointers through void ***, which is exactly what the aliasing
-          # rules let the compiler assume cannot happen.
-          x86_64-w64-mingw32-clang -shared -O2 -fno-strict-aliasing \
-            -o Libraries/Wine/lib/gptk-video/d3d12shim.dll \
-            "$GITHUB_WORKSPACE/gptk-video/d3d12shim.c" \
-            "$GITHUB_WORKSPACE/gptk-video/d3d12shim.def" \
-            -I"$GITHUB_WORKSPACE/gptk-video" -luuid -ldxguid
-
-          # wineserver memcmps "Wine builtin DLL" plus its NUL, 17 bytes, at
-          # file offset 0x40. without the stamp the loader finds it in
-          # WINEDLLPATH and ignores it as not a builtin.
-          python3 - Libraries/Wine/lib/gptk-video/d3d12shim.dll <<'EOF'
-          import struct, sys
-          p = sys.argv[1]
-          d = bytearray(open(p, 'rb').read())
-          if struct.unpack_from('<I', d, 0x3c)[0] < 0x60:
-              raise SystemExit('pe header overlaps the builtin marker')
-          d[0x40:0x60] = b'Wine builtin DLL' + b'\0' * 16
-          open(p, 'wb').write(bytes(d))
-          EOF
-          phase "gptk-video: d3d12 video processor interposer"
-
-          # d3dmetal's IDXGIAdapter::CheckInterfaceSupport returns S_OK and
-          # writes -1 into the version out-param. engines format that
-          # LARGE_INTEGER as four words and read "65535.65535.65535.65535",
-          # which fails their minimum driver check: helldivers 2 puts a modal
-          # "GPU drivers are out of date" box in front of the game for it.
-          #
-          # this cannot live in the d3d12 shim. measured on helldivers 2:
-          # neither the exe nor game.dll imports d3d12 or dxgi statically, and
-          # the driver check runs before d3d12 is touched, so the d3d12 shim is
-          # not in the process yet and there is no import entry to patch.
-          x86_64-w64-mingw32-clang -shared -O2 -fno-strict-aliasing \
-            -o Libraries/Wine/lib/gptk-video/dxgishim.dll \
-            "$GITHUB_WORKSPACE/gptk-video/dxgishim.c" \
-            "$GITHUB_WORKSPACE/gptk-video/dxgishim.def" \
-            -luuid -ldxguid
-
-          python3 - Libraries/Wine/lib/gptk-video/dxgishim.dll <<'EOF'
-          import struct, sys
-          p = sys.argv[1]
-          d = bytearray(open(p, 'rb').read())
-          if struct.unpack_from('<I', d, 0x3c)[0] < 0x60:
-              raise SystemExit('pe header overlaps the builtin marker')
-          d[0x40:0x60] = b'Wine builtin DLL' + b'\0' * 16
-          open(p, 'wb').write(bytes(d))
-          EOF
-          phase "gptk-video: dxgi driver version interposer"
-
-          # These shims are built outside Wine's makefiles, so they do not get
-          # Wine's normal CRT selection checks. Assert the contract on the PE
-          # import table before the artifacts can enter a runtime archive.
-          for shim in Libraries/Wine/lib/gptk-video/{d3d12shim,dxgishim}.dll; do
-            imports="$(x86_64-w64-mingw32-objdump -p "$shim")"
-            if grep -Eiq 'DLL Name: +msvcrt\.dll' <<<"$imports"; then
-              echo "::error::$shim imports legacy msvcrt.dll"
-              exit 1
-            fi
-            if ! grep -Eiq 'DLL Name: +api-ms-win-crt-' <<<"$imports"; then
-              echo "::error::$shim has no UCRT API-set import"
-              exit 1
-            fi
-          done
-          phase "gptk-video: verified UCRT imports"
-
-          # whisky's GPTKImporter deploys apple's payload into this directory
-          # and symlinks lib/wine/x86_64-unix/{d3d10,d3d11,d3d12,dxgi}.so at
-          # libd3dshared.dylib. it must exist in the tarball or the importer
-          # has nowhere to put it; tar drops empty directories, hence the file.
-          mkdir -p Libraries/Wine/lib/external
-          cat > Libraries/Wine/lib/external/README <<'EOF'
-          apple's game porting toolkit payload goes here: D3DMetal.framework
-          and libd3dshared.dylib, as copies, with lib/wine/x86_64-unix/d3d10.so,
-          d3d11.so, d3d12.so and dxgi.so as symlinks to ../../external/
-          libd3dshared.dylib.
-
-          symlinks, never copies: libd3dshared resolves the framework through
-          @rpath/D3DMetal.framework/D3DMetal and its only LC_RPATH is
-          @loader_path, so a copy into x86_64-unix/ moves @loader_path away
-          from lib/external and d3dmetal dies on an assertion with no wine
-          error at all.
-
-          not shipped in this artifact: apple's gptk is not redistributable.
-          whisky's GPTKImporter fills this in from your own gptk install, and
-          Gaems/install-whiskywine.sh --gptk does the same for a manual
-          install.
-          EOF
-
-          cat > Libraries/WhiskyWineVersion.plist <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>gptkCapable</key>
-            <true/>
-            <key>manifestVersion</key>
-            <integer>2</integer>
-            <key>releaseChannel</key>
-            <string>canary</string>
-            <key>name</key>
-            <string>winecx-gptk</string>
-            <key>wineVersion</key>
-            <string>11.0</string>
-            <key>wineSourceRevision</key>
-            <string>WINE_SOURCE_REV</string>
-            <key>patchset</key>
-            <string>whisky-crossover-26.3-canary</string>
-            <key>patchsetRevision</key>
-            <string>PATCHSET_REV</string>
-            <key>buildArchitecture</key>
-            <string>x86_64+i386-wow64</string>
-            <key>minimumMacOS</key>
-            <string>26.0</string>
-            <key>capabilities</key>
-            <dict>
-              <key>wsarecvmsg</key><true/>
-              <key>ipv4ReceiveTOS</key><true/>
-              <key>ipv6ReceiveTrafficClass</key><true/>
-              <key>overlappedReceiveMessage</key><true/>
-              <key>childLaunchPolicies</key><true/>
-              <key>childLaunchPolicySchema</key><integer>1</integer>
-              <key>gameModeProcessHost</key><true/>
-              <key>graphicsClassifiers</key>
-              <array>
-                <string>d3d11</string><string>dxgi</string><string>d3d12</string>
-                <string>d3d12core</string><string>vulkan</string>
-              </array>
-              <key>dxvk</key><true/>
-              <key>dxmt</key><true/>
-              <key>wined3d</key><true/>
-              <key>wow64</key><true/>
-              <key>gptkMajorVersions</key><array><integer>4</integer></array>
-            </dict>
-            <key>dxvkVersion</key>
-            <string>DXVK_VER</string>
-            <key>dxmtVersion</key>
-            <string>DXMT_VER</string>
-            <key>version</key>
-            <dict>
-              <key>major</key>
-              <integer>VER_MAJOR</integer>
-              <key>minor</key>
-              <integer>VER_MINOR</integer>
-              <key>patch</key>
-              <integer>VER_PATCH</integer>
-            </dict>
-          </dict>
-          </plist>
-          PLIST
-          # the version was a constant here, so every build stamped 4.0.0 whatever
-          # it was published as. the app reads this file, not the release tag, so
-          # a mismatch makes it offer the same update forever.
-          rv="${{ inputs.runtime_version || '' }}"
-          series_base=$(git log -1 -G'^  RUNTIME_SERIES: ' --format=%H -- .github/workflows/build.yml)
-          [ -n "$series_base" ] || { echo "::error::cannot find the series base commit"; exit 1; }
-          rv="${rv:-$RUNTIME_SERIES.$(git rev-list --count "$series_base..HEAD")}"
-          case "$rv" in
-            [0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "::error::runtime_version '$rv' is not major.minor.patch"; exit 1;;
-          esac
-          sed -i '' "s/DXVK_VER/$DXVK_VERSION/; s/DXMT_VER/$DXMT_VERSION/" Libraries/WhiskyWineVersion.plist
-          sed -i '' "s/WINE_SOURCE_REV/$WINECX_COMMIT/; s/PATCHSET_REV/${GITHUB_SHA}/" Libraries/WhiskyWineVersion.plist
-          sed -i '' "s/VER_MAJOR/${rv%%.*}/; s/VER_MINOR/$(echo "$rv" | cut -d. -f2)/; s/VER_PATCH/${rv##*.}/" \
-            Libraries/WhiskyWineVersion.plist
-          grep -q VER_ Libraries/WhiskyWineVersion.plist && { echo "::error::version not substituted"; exit 1; }
-          echo "runtime version stamped: $rv"
-          # later steps name the release after it; recomputing the commit count
-          # there would drift the moment someone passes runtime_version
-          echo "RUNTIME_VERSION=$rv" >> "$GITHUB_ENV"
-          echo "runtime_version=$rv" >> "$GITHUB_OUTPUT"
-
-      - name: install relay12's D3D11On12 modules
-        run: |
-          set -euo pipefail
-          export PATH="$NIX_TOOL_PATH$PATH"
-          # Its own step, not part of install and package: that script sits near
-          # GitHub's 21000-character limit for one run block.
-
-          # Relay12's four modules live in the builtin directory itself: unlike
-          # the interposers they need nothing from apple's payload, so they ship
-          # in place. Whisky seeds their system32 placeholders per bottle. Each
-          # exports under its own file name, so Wine always loads this copy.
-          # d3d11on12host is built by Wine's own makefiles and is already a
-          # builtin; the other three are stamped the way the shims are.
-          relay12_src="payload/relay12-$RELAY12_RELEASE_TAG"
-          for module in d3d11on12core d3d11on12 d3d11on12host dxilconv; do
-            cp "$relay12_src/x86_64-windows/$module.dll" Libraries/Wine/lib/wine/x86_64-windows/
-          done
-          python3 - Libraries/Wine/lib/wine/x86_64-windows/{d3d11on12core,d3d11on12,dxilconv}.dll <<'EOF'
-          import struct, sys
-          for p in sys.argv[1:]:
-              d = bytearray(open(p, 'rb').read())
-              if struct.unpack_from('<I', d, 0x3c)[0] < 0x60:
-                  raise SystemExit(p + ': pe header overlaps the builtin marker')
-              d[0x40:0x60] = b'Wine builtin DLL' + b'\0' * 16
-              open(p, 'wb').write(bytes(d))
-          EOF
-          for module in d3d11on12core d3d11on12 d3d11on12host dxilconv; do
-            dll="Libraries/Wine/lib/wine/x86_64-windows/$module.dll"
-            [ "$(dd if="$dll" bs=1 skip=64 count=16 2>/dev/null)" = "Wine builtin DLL" ] \
-              || { echo "::error::$dll is not marked builtin"; exit 1; }
-            if grep -Eiq 'DLL Name: +(d3d11|d3d11mt)\.dll' <<<"$(x86_64-w64-mingw32-objdump -p "$dll")"; then
-              echo "::error::$dll imports d3d11: it would bind to apple's forwarder at load"
-              exit 1
-            fi
-          done
-          mkdir -p Libraries/Wine/share/relay12
-          cp -R "$relay12_src/licenses" "$relay12_src/SOURCE.txt" Libraries/Wine/share/relay12/
-          echo "::notice::relay12: installed $(ls Libraries/Wine/lib/wine/x86_64-windows/{d3d11on12core,d3d11on12,d3d11on12host,dxilconv}.dll | wc -l | tr -d " ") D3D11On12 modules"
-
-      - name: install and probe experimental KosmicKrisp
-        timeout-minutes: 10
-        if: env.KOSMICKRISP_ENABLED == 'true'
-        run: |
-          cp -R payload/kosmickrisp Libraries/Wine/lib/kosmickrisp
-          mkdir -p Libraries/Wine/lib/kosmickrisp/tests
-          cp "$RUNNER_TEMP/kosmickrisp relocated/host-probe" Libraries/Wine/lib/kosmickrisp/tests/
-          install -m 755 runtime/kosmickrisp/wine-kosmickrisp Libraries/Wine/bin/wine-kosmickrisp
-          probe_dir="$RUNNER_TEMP/kosmickrisp-pe"
-          mkdir -p "$probe_dir"
-          for target in x86_64 i686; do
-            "$target-w64-mingw32-clang" -Wall -Wextra -Werror \
-              -I"$RUNNER_TEMP/kosmickrisp-build/headers/include" \
-              tests/kosmickrisp_probe.c -o "$probe_dir/$target.exe"
-            cp "$probe_dir/$target.exe" "Libraries/Wine/lib/kosmickrisp/tests/$target.exe"
-            "$target-w64-mingw32-clang" -O2 tests/d3d11feat.c -ld3d11 -ldxgi -ldxguid -luuid \
-              -o "Libraries/Wine/lib/kosmickrisp/tests/d3d11-$target.exe"
-            "$target-w64-mingw32-clang" -O2 tests/d3d9feat.c -ld3d9 \
-              -o "Libraries/Wine/lib/kosmickrisp/tests/d3d9-$target.exe"
-            WINEPREFIX="$RUNNER_TEMP/kosmickrisp-prefix" WINEDEBUG=-all \
-              Libraries/Wine/bin/wine-kosmickrisp "$probe_dir/$target.exe" --present \
-              2>&1 | tee "Libraries/Wine/lib/kosmickrisp/wine-$target-probe.txt"
-          done
-          source runtime/kosmickrisp/pins.env
-          curl -fsSL "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_TEST_VERSION/dxvk-$DXVK_TEST_VERSION.tar.gz" \
-            -o "$probe_dir/dxvk.tar.gz"
-          echo "$DXVK_TEST_SHA256  $probe_dir/dxvk.tar.gz" | shasum -a 256 -c -
-          tar -xzf "$probe_dir/dxvk.tar.gz" -C Libraries/Wine/lib/kosmickrisp/tests
-          cp runtime/kosmickrisp/licenses/dxvk-$DXVK_TEST_VERSION.txt Libraries/Wine/lib/kosmickrisp/licenses/
-
-      - name: upload experimental Vulkan probe logs
-        if: always() && env.KOSMICKRISP_ENABLED == 'true'
-        uses: actions/upload-artifact@v7
+        run: bash tools/build_wine_core.sh
+      - name: Publish core OCI layer
+        id: push_core
+        run: bash tools/build/oci.sh push core staging
+  assemble:
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - foundation
+      - core
+      - payloads
+      - graphics
+    outputs:
+      ref: ${{ steps.push_assembled.outputs.ref }}
+      runtime_version: ${{ steps.install.outputs.runtime_version }}
+    steps:
+      - uses: actions/checkout@v7
         with:
-          name: kosmickrisp-probe-logs
-          path: |
-            payload/kosmickrisp/host-probe.txt
-            payload/kosmickrisp/SOURCE.txt
-            payload/kosmickrisp/BUILD-TOOLS.txt
-            Libraries/Wine/lib/kosmickrisp/wine-*-probe.txt
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: verify the tree is relocatable
-        run: |
-          # every build up to rt7 shipped dylibs whose own id was a /nix/store
-          # path that exists only on the runner, so they could not be dlopened
-          # anywhere else and the runtime silently lost fonts, vulkan and tls.
-          : > /tmp/badrefs
-          find Libraries -type f ! -type l -print0 | while IFS= read -r -d '' f; do
-            file -b "$f" | grep -q Mach-O || continue
-            # only absolute paths are a problem. @loader_path and bare names
-            # both relocate; the reference runtime uses bare names throughout.
-            otool -D "$f" 2>/dev/null | sed -n '2p' | grep -E '^/' \
-              | grep -vE '^(/usr/lib/|/System/)' \
-              | sed "s|^|id $f -> |" >> /tmp/badrefs
-            otool -L "$f" 2>/dev/null | tail -n +3 | awk '{print $1}' \
-              | grep -E '^/' | grep -vE '^(/usr/lib/|/System/)' \
-              | sed "s|^|dep $f -> |" >> /tmp/badrefs
-          done
-          if [ -s /tmp/badrefs ]; then
-            sed 's/^/::error::not relocatable: /' /tmp/badrefs
-            echo "$(wc -l < /tmp/badrefs) absolute reference(s); refusing to ship"
-            exit 1
-          fi
-          echo "relocatable: ok"
-
-          # v4.0.0 shipped minos 27.0 and dyld refuses that below 27. older is
-          # fine, newer is unloadable, and no other gate can see it.
-          floor="${MACOSX_DEPLOYMENT_TARGET%%.*}"
-          : > /tmp/toonew
-          find Libraries -type f ! -type l -print0 | while IFS= read -r -d '' f; do
-            file -b "$f" | grep -q Mach-O || continue
-            minos=$(otool -l "$f" 2>/dev/null | awk '/LC_BUILD_VERSION/{v=1} v && /minos/{print $2; exit}')
-            [ -n "$minos" ] || continue
-            if [ "${minos%%.*}" -gt "$floor" ]; then
-              echo "$f minos $minos" >> /tmp/toonew
-            fi
-          done
-          if [ -s /tmp/toonew ]; then
-            sed 's/^/::error::built too new: /' /tmp/toonew
-            echo "$(wc -l < /tmp/toonew) binary(s) above macOS $floor; refusing to ship"
-            exit 1
-          fi
-          echo "deployment target: nothing newer than macOS $floor"
-
-          # v4.5.0 shipped an ntdll.so with an undefined pipe2 (#3): the macos
-          # 27 sdk declared it, the 26.0 floor does not have it, and the dlopen
-          # sweep below cannot see a lazily bound import on a host that has the
-          # symbol. so audit the artifact itself: every undefined symbol in
-          # every bundled mach-o must exist in the sdk's stubs or in something
-          # we bundle. weak imports count, a weak import is how the compiler
-          # links an api it knows is above the floor. authoritative only when
-          # the sdk matches the floor; wider than that the pass proves little,
-          # which the summary line says.
-          sdkpath=$(xcrun --sdk macosx --show-sdk-path)
-          sdkver=$(xcrun --sdk macosx --show-sdk-version)
-          python3 - "$sdkpath" "$sdkver" <<'PYEOF'
-          import os, re, subprocess, sys
-
-          sdk = sys.argv[1]
-          sdkver = sys.argv[2]
-          floor = int(os.environ['MACOSX_DEPLOYMENT_TARGET'].split('.')[0])
-
-          universe = set()
-          pat_list = re.compile(
-              r"(symbols|weak-symbols|thread-local-symbols|objc-classes|objc-eh-types|objc-ivars)"
-              r":\s*\[([^\]]*)\]", re.S)
-          for root, dirs, files in os.walk(sdk):
-              for name in files:
-                  if not name.endswith('.tbd'):
-                      continue
-                  try:
-                      text = open(os.path.join(root, name), errors='ignore').read()
-                  except OSError:
-                      continue
-                  for kind, body in pat_list.findall(text):
-                      for tok in body.split(','):
-                          tok = tok.strip().strip("'\"")
-                          if not tok:
-                              continue
-                          if kind in ('objc-classes', 'objc-eh-types'):
-                              universe.add('_OBJC_CLASS_$_' + tok)
-                              universe.add('_OBJC_METACLASS_$_' + tok)
-                              universe.add('_OBJC_EHTYPE_$_' + tok)
-                          elif kind == 'objc-ivars':
-                              universe.add('_OBJC_IVAR_$_' + tok)
-                          else:
-                              universe.add(tok)
-
-          MAGICS = (b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca')
-          machos = []
-          for root, dirs, files in os.walk('Libraries'):
-              for name in files:
-                  p = os.path.join(root, name)
-                  if os.path.islink(p):
-                      continue
-                  try:
-                      with open(p, 'rb') as fh:
-                          magic = fh.read(4)
-                  except OSError:
-                      continue
-                  if magic in MAGICS:
-                      machos.append(p)
-
-          def nm(args, path):
-              r = subprocess.run(['nm'] + args + [path], capture_output=True, text=True)
-              return r.stdout if r.returncode == 0 else ''
-
-          for p in machos:
-              for line in nm(['-gUj'], p).splitlines():
-                  line = line.strip()
-                  if line and not line.endswith(':'):
-                      universe.add(line)
-
-          bad = {}
-          for p in machos:
-              for line in nm(['-m'], p).splitlines():
-                  if '(undefined)' not in line:
-                      continue
-                  m = re.search(r'external (\S+)', line)
-                  if not m:
-                      continue
-                  sym = m.group(1)
-                  if sym not in universe:
-                      kind = 'weak, so the compiler knew' if ' weak ' in line else 'strong'
-                      bad.setdefault(p, set()).add('%s (%s)' % (sym, kind))
-
-          if bad:
-              for p in sorted(bad):
-                  for s in sorted(bad[p]):
-                      print('::error::unresolvable at the floor: %s needs %s' % (p, s))
-              total = sum(len(v) for v in bad.values())
-              print('::error::%d undefined symbol(s) outside the sdk and the bundle' % total)
-              sys.exit(1)
-
-          sdk_major = int(sdkver.split('.')[0])
-          if sdk_major > floor:
-              print('undefined-symbol audit: clean against the %s sdk, but the floor is %d; '
-                    'only a matching sdk makes this a proof' % (sdkver, floor))
-          else:
-              print('undefined-symbol audit: clean against the %s sdk, floor %d' % (sdkver, floor))
-          print('%d mach-o files, %d symbols in the universe' % (len(machos), len(universe)))
-          PYEOF
-
-          # a 64-bit-only tree cannot load syswow64\ntdll.dll, so every 32-bit
-          # program dies with c0000135. one build shipped with this empty.
-          i386=$(ls Libraries/Wine/lib/wine/i386-windows 2>/dev/null | wc -l | tr -d ' ')
-          [ "$i386" -gt 500 ] || { echo "::error::i386-windows has $i386 files"; exit 1; }
-          echo "i386 PE half: $i386 files"
-
-          # an unstripped PE half is ~600MB of DWARF nobody can use, and it is
-          # silent: everything still runs, the download is just twice the size.
-          # ntdll is 0.7MB stripped in the stock engine and 3.0MB unstripped here
-          # wc -c, not stat -f%z: the self-hosted runner puts nix coreutils
-          # ahead of /usr/bin, and GNU stat has no -f
-          ntdll=$(wc -c < Libraries/Wine/lib/wine/x86_64-windows/ntdll.dll | tr -d ' ')
-          [ "$ntdll" -lt 1500000 ] || {
-            echo "::error::ntdll.dll is $ntdll bytes, the PE half did not get stripped"
-            exit 1
-          }
-
-          # the extracted addons the stock engine also ships. without them a new
-          # prefix stops on a modal wine-mono dialog and waits for a click.
-          # globbed rather than pinned: which versions to fetch is already
-          # decided by winecx's addons.c, and asserting them twice means every
-          # bump breaks here too
-          for d in Libraries/Wine/share/wine/mono/wine-mono-* \
-                   Libraries/Wine/share/wine/gecko/wine-gecko-*-x86 \
-                   Libraries/Wine/share/wine/gecko/wine-gecko-*-x86_64; do
-            [ -d "$d" ] || { echo "::error::missing $d"; exit 1; }
-            echo "addons: $(basename "$d")"
-          done
-
-          # without a d3d11 implementation steam paints nothing: wined3d goes
-          # through apple's opengl, frozen at 4.1, and ANGLE reports feature
-          # level 9_3 against chromium's hard GLES 3.0 requirement
-          [ -f Libraries/DXVK/x64/d3d11.dll ] || { echo "::error::no dxvk payload"; exit 1; }
-          [ -f Libraries/Wine/lib/wine/x86_64-unix/winemetal.so ] || {
-            echo "::error::no dxmt builtin"; exit 1; }
-          [ -d Libraries/Wine/lib/external ] || {
-            echo "::error::no lib/external for the gptk payload"; exit 1; }
-          # the builtin d3d must be wine's own: a dxmt-flavoured builtin
-          # hijacks every fresh prefix and then refuses steam's cross-process
-          # swapchains, so the login window never maps
-          for d in d3d11 dxgi d3d10core; do
-            if strings "Libraries/Wine/lib/wine/x86_64-windows/$d.dll" 2>/dev/null \
-               | grep -q 'DXMT_\|dxmt\.con'; then
-              echo "::error::builtin $d.dll is dxmt, not wine"; exit 1
-            fi
-          done
-          # and nvapi64 must not be a builtin at all
-          if [ -f Libraries/Wine/lib/wine/x86_64-windows/nvapi64.dll ]; then
-            echo "::error::nvapi64.dll is in the builtins; the webhelper dies on it"
-            exit 1
-          fi
-          echo "graphics payloads: ok"
-
-          # and the media half: winedmo builds whether or not ffmpeg was there,
-          # it just does nothing without it
-          otool -L Libraries/Wine/lib/wine/x86_64-unix/winedmo.so \
-            | grep -q 'libavcodec' || {
-            echo "::error::winedmo.so has no ffmpeg; video decode would be dead"
-            exit 1
-          }
-          otool -L Libraries/Wine/lib/wine/x86_64-unix/winegstreamer.so \
-            | grep -q 'libgstreamer-1.0' || {
-            echo "::error::no winegstreamer; wmvcore, quartz and the mfplat decoders would be dead"
-            exit 1
-          }
-          plugins=$(ls Libraries/Wine/lib/gstreamer-1.0 2>/dev/null | wc -l | tr -d ' ')
-          [ "$plugins" -gt 50 ] || {
-            echo "::error::only $plugins gstreamer plugins bundled"
-            exit 1
-          }
-          echo "media: ok, $plugins gstreamer plugins"
-
-      - name: verify the runtime can open a window
-        run: |
-          # the three gates above inspect the tree; none of them runs anything,
-          # which is how a build that could not create a single top-level window
-          # passed all of them. the display driver failing to init is invisible
-          # short of asking for a window: wine falls back to nodrv, keeps going,
-          # and only CreateWindowEx tells you, with ERROR_INVALID_WINDOW_HANDLE.
-          export PATH="$NIX_TOOL_PATH$PATH"
-          x86_64-w64-mingw32-clang -O2 -o winmsg.exe tests/winmsg.c -luser32
-
-          export WINEPREFIX="$PWD/smoke-prefix"
-          export DYLD_FALLBACK_LIBRARY_PATH="$PWD/Libraries/Wine/lib"
-          export WINEDLLOVERRIDES="mscoree=d;mshtml=d"
-          WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wineboot -u >/dev/null 2>&1 || true
-
-          WINEDEBUG=+winediag ./Libraries/Wine/bin/wine64 winmsg.exe > smoke.log 2>&1 || true
-          grep -E '^\[|^RESULT|^FAIL' smoke.log | tee -a "$GITHUB_STEP_SUMMARY"
-
-          if grep -q "nodrv_CreateWindow" smoke.log; then
-            echo "::error::the display driver did not load; the runtime fell back to nodrv"
-            sed -n 's/^.*winediag:/  /p' smoke.log | head -5
-            exit 1
-          fi
-          grep -q "RESULT: windows ok" smoke.log || {
-            echo "::error::the runtime cannot create a window"
-            tail -20 smoke.log
-            exit 1
-          }
-          echo "windows: ok"
-
-
-          # and media foundation, which is the only way to tell whether the
-          # bundled gstreamer plugins were actually found: a wrong plugin path
-          # still starts, still answers MFStartup, and just has no decoders
-          x86_64-w64-mingw32-clang -O2 -o mfprobe.exe tests/mfprobe.c -lmfplat -lole32
-          WINEDLLOVERRIDES="mscoree=d;mshtml=d" WINEDEBUG=-all \
-            ./Libraries/Wine/bin/wine64 mfprobe.exe > mf.log 2>&1 || true
-          grep -E '^\[|^RESULT|^FAIL' mf.log | tee -a "$GITHUB_STEP_SUMMARY"
-          grep -q "RESULT: media foundation has decoders" mf.log || {
-            echo "::error::media foundation has no h264 decoder; gstreamer found no plugins"
-            tail -20 mf.log
-            exit 1
-          }
-          echo "media foundation: ok"
-
-
-          # the check above runs on the builder, where the /nix/store originals
-          # satisfy anything the bundled copies cannot, so it passed for months
-          # while the shipped libglib could not load at all. load the bundled
-          # files by path instead. x86_64 like the bundle, which is the same
-          # rosetta exposure the smoke tests above already take.
-          /usr/bin/clang -arch x86_64 -O2 -o dlopenall tests/dlopenall.c
-          file ./dlopenall | grep -q 'Mach-O 64-bit executable x86_64' || {
-            echo "::error::dlopenall is not a native x86_64 Mach-O executable"
-            file ./dlopenall
-            exit 1
-          }
-          find Libraries/Wine/lib -name '*.dylib*' -o -name '*.so' \
-            | sort | tr '\n' '\0' | xargs -0 ./dlopenall > dlopen.log 2>&1 || true
-          grep '^FAIL' dlopen.log | head -20
-          tail -1 dlopen.log | tee -a "$GITHUB_STEP_SUMMARY"
-          grep -q "RESULT: 0 of" dlopen.log || {
-            echo "::error::bundled libraries do not load; the runtime is broken for anyone without this nix store"
-            exit 1
-          }
-
-      - name: verify Steam and EOS receive-message control data
-        run: |
-          set -euo pipefail
-          x86_64-w64-mingw32-clang -O2 -Wall -Werror -o wsarecvmsg.exe tests/wsarecvmsg.c -lws2_32
-
-          # Keep this probe out of the window/media smoke prefix and always stop
-          # its wineserver.  On a freshly-created prefix wine64 can report 1
-          # after the child has returned 0 (during background prefix teardown),
-          # so the probe's explicit RESULT line is the authoritative verdict.
-          export WINEPREFIX="$PWD/network-smoke-prefix"
-          export DYLD_FALLBACK_LIBRARY_PATH="$PWD/Libraries/Wine/lib"
-          export WINEDLLOVERRIDES="mscoree=d;mshtml=d"
-          cleanup_network_prefix() {
-            WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wineboot -k >/dev/null 2>&1 || true
-          }
-          trap cleanup_network_prefix EXIT
-          WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wineboot -u >/dev/null 2>&1 || true
-
-          set +e
-          WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wsarecvmsg.exe | tee wsarecvmsg.log
-          pipeline_status=("${PIPESTATUS[@]}")
-          set -e
-          [ "${pipeline_status[1]}" -eq 0 ] || {
-            echo "::error::tee could not write the network verification log"
-            exit "${pipeline_status[1]}"
-          }
-          if [ "${pipeline_status[0]}" -ne 0 ]; then
-            echo "::warning::wine64 returned ${pipeline_status[0]} after the network probe; validating the probe result"
-          fi
-
-          # MinGW programs may emit CRLF even when Wine forwards stdout to a
-          # Unix pipe. Store a deterministic receipt and match it exactly.
-          tr -d '\r' < wsarecvmsg.log > wsarecvmsg.normalized.log
-          mv wsarecvmsg.normalized.log wsarecvmsg.log
-          grep -q '^RESULT: WSARecvMsg IPv4 TOS, IPv6 traffic class, and overlapped receive verified$' wsarecvmsg.log
-          cp wsarecvmsg.log Libraries/RuntimeNetworkVerification.txt
-
-      - name: verify the d3d12 interposer against a recording d3dmetal
-        run: |
-          set -euo pipefail
-          # The shipped, builtin-stamped shim runs against tests/d3d12shim_mock.c
-          # built as d3dmt.dll, the name the shim loads Apple's d3d12 under.
-          # That checks what reaches d3dmetal: the tight-alignment answer, the
-          # zero-copy barrier path, and that batches over 32 barriers are kept.
-          mkdir -p d3d12shim-test
-          cp Libraries/Wine/lib/gptk-video/d3d12shim.dll d3d12shim-test/
-          x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -o d3d12shim-test/d3dmt.dll \
-            tests/d3d12shim_mock.c tests/d3d12shim_mock.def -luuid
-          x86_64-w64-mingw32-clang -O2 -Wall -Werror -o d3d12shim-test/d3d12shim_test.exe \
-            tests/d3d12shim.c -luuid -ldxguid
-          # For the Relay12 route: Apple's exact D3D11On12CreateDevice stub as
-          # d3d11.dll, and a d3d11on12core.dll that proves the call arrived.
-          x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -o d3d12shim-test/d3d11.dll \
-            tests/d3d11_on12stub_mock.c tests/d3d11_on12stub_mock.def
-          x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -o d3d12shim-test/d3d11on12core.dll \
-            tests/d3d11on12core_mock.c tests/d3d11on12core_mock.def
-
-          export WINEPREFIX="$PWD/d3d12shim-prefix"
-          export DYLD_FALLBACK_LIBRARY_PATH="$PWD/Libraries/Wine/lib"
-          export WINEDLLOVERRIDES="mscoree=d;mshtml=d"
-          cleanup_shim_prefix() {
-            WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wineboot -k >/dev/null 2>&1 || true
-          }
-          trap cleanup_shim_prefix EXIT
-          WINEDEBUG=-all ./Libraries/Wine/bin/wine64 wineboot -u >/dev/null 2>&1 || true
-
-          # As with the network probe, the RESULT line is the verdict, not
-          # wine64's exit status during prefix teardown.
-          (cd d3d12shim-test && WINEDEBUG=-all ../Libraries/Wine/bin/wine64 d3d12shim_test.exe) \
-            > d3d12shim.log 2>&1 || true
-          tr -d '\r' < d3d12shim.log | grep -E '^\[|^RESULT' | tee -a "$GITHUB_STEP_SUMMARY"
-          tr -d '\r' < d3d12shim.log | grep -q '^RESULT: d3d12shim ok$' || {
-            echo "::error::the d3d12 interposer forwarded something d3dmetal must not see"
-            exit 1
-          }
-
-          # The Relay12 route decides once per process, so each case is its own
-          # run. Native d3d11 and d3d11on12core load the mocks beside the test.
-          # on12-launcher runs the same test as steamwebhelper.exe, one of the
-          # launcher processes the route must never touch.
-          cp d3d12shim-test/d3d12shim_test.exe d3d12shim-test/steamwebhelper.exe
-          for mode in on12-off on12-on on12-foreign on12-listed on12-unlisted on12-skipped on12-launcher; do
-            exe=d3d12shim_test.exe
-            [ "$mode" = on12-launcher ] && exe=steamwebhelper.exe
-            (cd d3d12shim-test && env -u RELAY12_EXPERIMENTAL_FRAME -u RELAY12_EXPERIMENTAL_FRAME_APPS \
-              -u RELAY12_EXPERIMENTAL_FRAME_SKIP WINEDEBUG=-all \
-              WINEDLLOVERRIDES="d3d11,d3d11on12core=n;mscoree,mshtml=d" \
-              ../Libraries/Wine/bin/wine64 "$exe" "$mode") > "d3d12shim-$mode.log" 2>&1 || true
-            tr -d '\r' < "d3d12shim-$mode.log" | grep -E '^\[|^RESULT' | tee -a "$GITHUB_STEP_SUMMARY"
-            tr -d '\r' < "d3d12shim-$mode.log" | grep -q "^RESULT: d3d12shim $mode ok\$" || {
-              echo "::error::the d3d12 interposer's Relay12 route failed its $mode case"
-              exit 1
-            }
-          done
-
-      - name: package
-        run: |
-          # Metadata is excluded because the verifier treats these two files as
-          # the signed envelope. Every other regular file must be declared.
-          python3 - <<'PY'
-          import hashlib, json, os
-
-          root = "Libraries"
-          metadata = {"WhiskyWineVersion.plist", "RuntimeManifest.json"}
-          files = []
-          for directory, _, names in os.walk(root):
-              for name in names:
-                  path = os.path.join(directory, name)
-                  relative = os.path.relpath(path, root)
-                  if relative in metadata or os.path.islink(path) or not os.path.isfile(path):
-                      continue
-                  digest = hashlib.sha256()
-                  with open(path, "rb") as stream:
-                      for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                          digest.update(chunk)
-                  files.append({
-                      "path": relative,
-                      "size": os.path.getsize(path),
-                      "sha256": digest.hexdigest()
-                  })
-          manifest = {"formatVersion": 1, "files": sorted(files, key=lambda item: item["path"])}
-          with open(os.path.join(root, "RuntimeManifest.json"), "w") as stream:
-              json.dump(manifest, stream, indent=2, sort_keys=True)
-              stream.write("\n")
-          PY
-
-          # the plist rides alongside the tarball so the publish job, and then
-          # the mirror in dappermint/Whisky, can read the version without
-          # decompressing 434MB to reach one file
-          cp Libraries/WhiskyWineVersion.plist .
-          cp Libraries/RuntimeManifest.json .
-          cp Libraries/RuntimeNetworkVerification.txt .
-          tar -czf Libraries.tar.gz Libraries
-          shasum -a 256 Libraries.tar.gz | tee Libraries.tar.gz.sha256
-          # the stock whisky engine v3.1.1 tarball is 332,438,526 bytes and
-          # carries the same addons, so this is the number to compare against
-          echo "tarball bytes: $(wc -c < Libraries.tar.gz | tr -d ' ')" | tee -a "$GITHUB_STEP_SUMMARY"
-
+          fetch-depth: 0
+      - name: Prepare macOS build host
+        run: bash tools/bootstrap_build.sh
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+      - name: Authenticate OCI registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: install nix
+        uses: DeterminateSystems/nix-installer-action@v23
+        with:
+          extra-conf: |
+            extra-platforms = x86_64-darwin
+      - name: Restore sysroot
+        run: bash tools/build/oci.sh pull sysroot "${{ needs.foundation.outputs.sysroot }}"
+      - name: Restore core
+        run: bash tools/build/oci.sh pull core "${{ needs.core.outputs.ref }}"
+      - name: Restore payloads
+        run: bash tools/build/oci.sh pull payloads "${{ needs.payloads.outputs.ref }}"
+      - name: Assemble and sign runtime
+        id: install
+        run: bash tools/assemble_runtime.sh
+      - name: Restore kosmickrisp
+        run: bash tools/build/oci.sh pull kosmickrisp "${{ needs.graphics.outputs.ref }}"
+        if: env.KOSMICKRISP_ENABLED == 'true'
+      - name: Install and probe optional KosmicKrisp
+        if: env.KOSMICKRISP_ENABLED == 'true'
+        run: bash tools/install_kosmickrisp.sh
+      - name: Publish assembled OCI layer
+        id: push_assembled
+        run: bash tools/build/oci.sh push assembled Libraries
+  build:
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - foundation
+      - core
+      - assemble
+    outputs:
+      kosmickrisp: ${{ env.KOSMICKRISP_ENABLED }}
+      runtime_version: ${{ needs.assemble.outputs.runtime_version }}
+      shippable: ${{ needs.core.outputs.shippable }}
+      ref: ${{ steps.push_runtime.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare macOS build host
+        run: bash tools/bootstrap_build.sh
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+      - name: Authenticate OCI registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: install nix
+        uses: DeterminateSystems/nix-installer-action@v23
+        with:
+          extra-conf: |
+            extra-platforms = x86_64-darwin
+      - name: Restore sysroot
+        run: bash tools/build/oci.sh pull sysroot "${{ needs.foundation.outputs.sysroot }}"
+      - name: Restore assembled
+        run: bash tools/build/oci.sh pull assembled "${{ needs.assemble.outputs.ref }}"
+      - name: Run strict runtime gates
+        run: bash tools/run_probes.sh
+      - name: Package verified runtime
+        run: bash tools/package_runtime.sh
+      - name: Publish runtime OCI layer
+        id: push_runtime
+        run: bash tools/build/oci.sh push runtime Libraries.tar.gz Libraries.tar.gz.sha256 WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt
       - name: upload runtime
         uses: actions/upload-artifact@v7
         with:
-          # a fast build says so in its own name, so an -O0 tree cannot be
-          # mistaken for a release one three weeks from now
-          name: whiskywine-gptk-libraries${{ env.KOSMICKRISP_ENABLED == 'true' && '-kosmickrisp-experimental' || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+          name: whiskywine-gptk-libraries${{ env.KOSMICKRISP_ENABLED == 'true' && '-kosmickrisp-experimental' || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised'
+            || '' }}
           path: |
             Libraries.tar.gz
             Libraries.tar.gz.sha256
@@ -1541,12 +304,17 @@ jobs:
             RuntimeManifest.json
             RuntimeNetworkVerification.txt
           retention-days: 14
-          # left at the default 6. tried 0 on the theory that re-deflating an
-          # already-gzipped payload is wasted work, and it went the wrong way:
-          # 860s for 428MB at the default against 1139s for 434MB at 0. the
-          # bottleneck is this runner's uplink at roughly 1MB/s, not its cpu,
-          # and level 6 can only ever put fewer bytes on the wire.
-
+      - name: Keep probe diagnostics
+        if: always()
+        run: |-
+          mkdir -p .build/logs
+          cp ./*.log .build/logs/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: runtime-probe-logs
+          path: .build/logs/
+          retention-days: 14
   kosmickrisp-validation:
     name: KosmicKrisp / macOS 26 packaged runtime
     needs: build
@@ -1586,7 +354,6 @@ jobs:
             !kosmickrisp-results/dxvk-*/*.exe
           if-no-files-found: error
           retention-days: 30
-
   kosmickrisp-readiness:
     name: KosmicKrisp / migration readiness (features and game evidence)
     needs: kosmickrisp-validation
@@ -1602,20 +369,10 @@ jobs:
           path: kosmickrisp-results
       - name: require migration evidence
         run: python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/results.json
-
   publish:
     name: publish the runtime release
     needs: build
-    # only main, never a fast build (-O0 with no debug info is for iteration,
-    # and a dispatch off a branch is for looking at), and never a tree that
-    # linked an API above the floor. that last one is how 4.5.0 and then 4.5.114
-    # went out macOS-27-only: the availability check was fatal for opt=release
-    # alone, and a plain push to main publishes at standard.
     if: github.ref == 'refs/heads/main' && needs.build.outputs.kosmickrisp != 'true' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
-    # a hosted runner, not the builder: gh is not on the builder's PATH, and
-    # its uplink is ~1MB/s, so pushing the tarball to a release from there
-    # would cost another quarter hour on top of the artifact upload. here the
-    # bytes never leave github.
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1623,11 +380,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
+      - name: Load pinned build inputs
+        run: sed -n 's/^export //p' tools/build/pins.env >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v8
         with:
           name: whiskywine-gptk-libraries
-
       - name: cut the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1668,7 +425,6 @@ jobs:
               --prerelease --title "canary runtime $RUNTIME_VERSION" --notes-file notes.md
           fi
           echo "published $tag" >> "$GITHUB_STEP_SUMMARY"
-
       - name: publish the opt-in canary catalog
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1737,3 +493,114 @@ jobs:
             [ "$attempt" -lt 5 ] || exit 1
             sleep 2
           done
+  oci-images:
+    name: Dockerfile OCI distribution images
+    runs-on: ubuntu-latest
+    needs:
+      - foundation
+      - payloads
+      - core
+      - build
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Prepare Dockerfile artifact contexts
+        id: registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          mkdir -p .build/images
+          printf '%s' "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          registry=$(printf 'ghcr.io/%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+      - name: Fetch sysroot manifest by digest
+        run: |-
+          mkdir -p .build/images/sysroot
+          oras pull "${{ needs.foundation.outputs.sysroot }}" --output .build/images/sysroot
+          python3 tools/build/archive.py verify .build/images/sysroot sysroot
+      - name: Build sysroot OCI transport image
+        uses: docker/build-push-action@v6
+        with:
+          context: .build/images
+          file: docker/Dockerfile
+          target: sysroot
+          push: true
+          tags: ${{ steps.registry.outputs.registry }}/sysroot-image:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          build-args: |-
+            SOURCE_REVISION=${{ github.sha }}
+            RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}
+      - name: Fetch tools manifest by digest
+        run: |-
+          mkdir -p .build/images/tools
+          oras pull "${{ needs.foundation.outputs.tools }}" --output .build/images/tools
+          python3 tools/build/archive.py verify .build/images/tools tools
+      - name: Build tools OCI transport image
+        uses: docker/build-push-action@v6
+        with:
+          context: .build/images
+          file: docker/Dockerfile
+          target: tools
+          push: true
+          tags: ${{ steps.registry.outputs.registry }}/tools-image:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          build-args: |-
+            SOURCE_REVISION=${{ github.sha }}
+            RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}
+      - name: Fetch payloads manifest by digest
+        run: |-
+          mkdir -p .build/images/payloads
+          oras pull "${{ needs.payloads.outputs.ref }}" --output .build/images/payloads
+          python3 tools/build/archive.py verify .build/images/payloads payloads
+      - name: Build payloads OCI transport image
+        uses: docker/build-push-action@v6
+        with:
+          context: .build/images
+          file: docker/Dockerfile
+          target: payloads
+          push: true
+          tags: ${{ steps.registry.outputs.registry }}/payloads-image:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          build-args: |-
+            SOURCE_REVISION=${{ github.sha }}
+            RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}
+      - name: Fetch core manifest by digest
+        run: |-
+          mkdir -p .build/images/core
+          oras pull "${{ needs.core.outputs.ref }}" --output .build/images/core
+          python3 tools/build/archive.py verify .build/images/core core
+      - name: Build core OCI transport image
+        uses: docker/build-push-action@v6
+        with:
+          context: .build/images
+          file: docker/Dockerfile
+          target: core
+          push: true
+          tags: ${{ steps.registry.outputs.registry }}/core-image:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          build-args: |-
+            SOURCE_REVISION=${{ github.sha }}
+            RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}
+      - name: Fetch runtime manifest by digest
+        run: |-
+          mkdir -p .build/images/runtime
+          oras pull "${{ needs.build.outputs.ref }}" --output .build/images/runtime
+          python3 tools/build/archive.py verify .build/images/runtime runtime
+      - name: Build runtime OCI transport image
+        uses: docker/build-push-action@v6
+        with:
+          context: .build/images
+          file: docker/Dockerfile
+          target: runtime
+          push: true
+          tags: ${{ steps.registry.outputs.registry }}/runtime-image:${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          build-args: |-
+            SOURCE_REVISION=${{ github.sha }}
+            RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}

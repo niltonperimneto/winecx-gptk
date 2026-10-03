@@ -75,3 +75,5 @@ you build a library around any of this.
 ## history
 
 the wine 10 line (crossover 25.1, series 4.3) proved d3dmetal executes on a self-built runtime and carried the first version of the cross-process bridge as four patches; the wine 11.0 line (crossover 26.3) collapsed them to one. both era tips are tagged, [`lane/wine10-cx25`](../../tree/lane/wine10-cx25) and [`lane/wine11.0-cx26`](../../tree/lane/wine11.0-cx26), and the old `patches/` files are browsable in those trees.
+
+Build architecture and local iteration: [OCI build system](docs/oci-build-system.md).
