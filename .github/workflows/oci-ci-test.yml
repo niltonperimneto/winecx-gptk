@@ -1,0 +1,17 @@
+name: OCI driver integration test
+on:
+  push:
+    branches:
+      - codex/oci-build-ci
+    paths:
+      - .github/workflows/oci-ci-test.yml
+  workflow_dispatch: null
+permissions:
+  contents: read
+  packages: write
+jobs:
+  graphics:
+    uses: ./.github/workflows/kosmickrisp.yml
+    with:
+      enabled: true
+      rebuild_all: false

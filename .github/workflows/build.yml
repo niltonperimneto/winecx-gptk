@@ -31,7 +31,6 @@ on:
       - runtime-catalog.json
 env:
   KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
-  # Keep this assignment stable: version stamping counts commits since its last change.
   RUNTIME_SERIES: "4.7"
   OPT_LEVEL: ${{ inputs.opt || 'standard' }}
   REBUILD_ALL: ${{ inputs.rebuild_all == true }}
@@ -251,70 +250,24 @@ jobs:
         id: push_assembled
         run: bash tools/build/oci.sh push assembled Libraries
   build:
-    runs-on: macos-26
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      packages: write
+    name: Validate OCI runtime
     needs:
       - foundation
       - core
       - assemble
-    outputs:
-      kosmickrisp: ${{ env.KOSMICKRISP_ENABLED }}
+    uses: ./.github/workflows/validate.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      sysroot_ref: ${{ needs.foundation.outputs.sysroot }}
+      assembled_ref: ${{ needs.assemble.outputs.ref }}
       runtime_version: ${{ needs.assemble.outputs.runtime_version }}
       shippable: ${{ needs.core.outputs.shippable }}
-      ref: ${{ steps.push_runtime.outputs.ref }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Prepare macOS build host
-        run: bash tools/bootstrap_build.sh
-      - uses: oras-project/setup-oras@v1
-        with:
-          version: 1.3.0
-      - name: Authenticate OCI registry
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-      - name: install nix
-        uses: DeterminateSystems/nix-installer-action@v23
-        with:
-          extra-conf: |
-            extra-platforms = x86_64-darwin
-      - name: Restore sysroot
-        run: bash tools/build/oci.sh pull sysroot "${{ needs.foundation.outputs.sysroot }}"
-      - name: Restore assembled
-        run: bash tools/build/oci.sh pull assembled "${{ needs.assemble.outputs.ref }}"
-      - name: Run strict runtime gates
-        run: bash tools/run_probes.sh
-      - name: Package verified runtime
-        run: bash tools/package_runtime.sh
-      - name: Publish runtime OCI layer
-        id: push_runtime
-        run: bash tools/build/oci.sh push runtime Libraries.tar.gz Libraries.tar.gz.sha256 WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt
-      - name: upload runtime
-        uses: actions/upload-artifact@v7
-        with:
-          name: whiskywine-gptk-libraries${{ env.KOSMICKRISP_ENABLED == 'true' && '-kosmickrisp-experimental' || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised'
-            || '' }}
-          path: |
-            Libraries.tar.gz
-            Libraries.tar.gz.sha256
-            WhiskyWineVersion.plist
-            RuntimeManifest.json
-            RuntimeNetworkVerification.txt
-          retention-days: 14
-      - name: Keep probe diagnostics
-        if: always()
-        run: |-
-          mkdir -p .build/logs
-          cp ./*.log .build/logs/ 2>/dev/null || true
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: runtime-probe-logs
-          path: .build/logs/
-          retention-days: 14
+      kosmickrisp: ${{ inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
+      opt: ${{ inputs.opt || 'standard' }}
+      artifact_name: whiskywine-gptk-libraries${{ (inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental') && '-kosmickrisp-experimental'
+        || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
   kosmickrisp-validation:
     name: KosmicKrisp / macOS 26 packaged runtime
     needs: build
@@ -540,6 +493,7 @@ jobs:
           build-args: |-
             SOURCE_REVISION=${{ github.sha }}
             RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}
+        id: image_sysroot
       - name: Fetch tools manifest by digest
         run: |-
           mkdir -p .build/images/tools
@@ -556,6 +510,7 @@ jobs:
           build-args: |-
             SOURCE_REVISION=${{ github.sha }}
             RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}
+        id: image_tools
       - name: Fetch payloads manifest by digest
         run: |-
           mkdir -p .build/images/payloads
@@ -572,6 +527,7 @@ jobs:
           build-args: |-
             SOURCE_REVISION=${{ github.sha }}
             RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}
+        id: image_payloads
       - name: Fetch core manifest by digest
         run: |-
           mkdir -p .build/images/core
@@ -588,6 +544,7 @@ jobs:
           build-args: |-
             SOURCE_REVISION=${{ github.sha }}
             RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}
+        id: image_core
       - name: Fetch runtime manifest by digest
         run: |-
           mkdir -p .build/images/runtime
@@ -604,3 +561,15 @@ jobs:
           build-args: |-
             SOURCE_REVISION=${{ github.sha }}
             RUNTIME_VERSION=${{ needs.build.outputs.runtime_version }}
+        id: image_runtime
+      - name: Compose and export development inputs with Dockerfile
+        run: |
+          docker buildx build -f docker/compose.Dockerfile --target assembly-inputs \
+            --build-arg "SYSROOT_IMAGE=${{ steps.registry.outputs.registry }}/sysroot-image@${{ steps.image_sysroot.outputs.digest }}" \
+            --build-arg "TOOLS_IMAGE=${{ steps.registry.outputs.registry }}/tools-image@${{ steps.image_tools.outputs.digest }}" \
+            --build-arg "CORE_IMAGE=${{ steps.registry.outputs.registry }}/core-image@${{ steps.image_core.outputs.digest }}" \
+            --build-arg "PAYLOADS_IMAGE=${{ steps.registry.outputs.registry }}/payloads-image@${{ steps.image_payloads.outputs.digest }}" \
+            --output type=local,dest=.build/composed .
+          for component in sysroot tools core payloads; do
+            python3 tools/build/archive.py verify ".build/composed/winecx/$component" "$component"
+          done

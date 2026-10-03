@@ -10,12 +10,46 @@ on:
         description: Full assembled OCI reference ending in @sha256:digest
         type: string
         required: true
+  workflow_call:
+    inputs:
+      sysroot_ref:
+        type: string
+        required: true
+      assembled_ref:
+        type: string
+        required: true
+      runtime_version:
+        type: string
+        default: ''
+      shippable:
+        type: string
+        default: ''
+      kosmickrisp:
+        type: boolean
+        default: false
+      opt:
+        type: string
+        default: standard
+      artifact_name:
+        type: string
+        default: validated-oci-runtime
+    outputs:
+      ref:
+        value: ${{ jobs.validate.outputs.ref }}
+      runtime_version:
+        value: ${{ inputs.runtime_version }}
+      shippable:
+        value: ${{ inputs.shippable }}
+      kosmickrisp:
+        value: ${{ inputs.kosmickrisp }}
 permissions:
   contents: read
   packages: write
 env:
   SYSROOT_REF: ${{ inputs.sysroot_ref }}
   ASSEMBLED_REF: ${{ inputs.assembled_ref }}
+  KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp == true }}
+  OPT_LEVEL: ${{ inputs.opt || 'standard' }}
 jobs:
   validate:
     runs-on: macos-26
@@ -50,7 +84,7 @@ jobs:
       - name: upload runtime
         uses: actions/upload-artifact@v7
         with:
-          name: validated-oci-runtime-${{ github.run_id }}
+          name: ${{ inputs.artifact_name || 'validated-oci-runtime' }}
           path: |
             Libraries.tar.gz
             Libraries.tar.gz.sha256
@@ -66,6 +100,8 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: standalone-runtime-probe-logs
+          name: ${{ inputs.artifact_name || 'validated-oci-runtime' }}-probe-logs
           path: .build/logs/
           retention-days: 14
+    outputs:
+      ref: ${{ steps.push_runtime.outputs.ref }}
