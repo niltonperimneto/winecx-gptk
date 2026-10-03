@@ -39,7 +39,12 @@ The main workflow uses these independent jobs:
   foundation, tools, payloads, core, and verified runtime.
 
 The reusable `validate.yml` workflow is used by the main pipeline and can also
-be dispatched against saved artifacts.
+be dispatched against saved artifacts. KosmicKrisp requires a Metal 4 device,
+not just a non-null Metal device. Set the repository variable
+`MACOS_GPU_RUNNER` to a suitable macOS 26 runner label for experimental
+assembly and GPU validation; compilation remains on the hosted builder. The
+OCI driver integration test reports unsupported hardware as blocked and skips
+its device test, while experimental assembly still requires the strict probe.
 
 The existing experimental packaged-runtime/readiness gates and canary publishing
 rules remain in place. Experimental and fast builds do not publish releases.
