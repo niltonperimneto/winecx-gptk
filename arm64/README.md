@@ -87,6 +87,81 @@ Evidence is under `~/Library/Caches/winecx-kosmickrisp-arm64-lane/`:
 `build.log`, `bundle/SOURCE.txt`, `host-probe.log`, `results.json`,
 `package-preflight.log` and `preflight.json`.
 
+### Supplied FEX and DXMT sources
+
+The `3Shain/dxmt` `ci/arm64x` branch has a successful CI run
+([35185728279](https://github.com/3Shain/dxmt/actions/runs/35185728279), head
+`7c8dee1c2d73415301ceb7d1fa810861cef4cd67`). Its
+`clang-release-arm64ec-windows-cross` artifact was downloaded locally.
+`llvm-readobj` identifies all six PE DLLs as `COFF-ARM64X`; `winemetal.so` is a
+native arm64 Mach-O library. It still links against native `winemac.so` and
+`ntdll.so`. Those dependencies and runtime compatibility have not been tested.
+The files remain in the test cache, outside installed runtimes.
+
+The supplied [FEX-2609 release](https://github.com/FEX-Emu/FEX/releases/tag/FEX-2609)
+has no prebuilt release assets. A checkout at
+`395b132f346b1a45def246d10c52245edba1ef02` was configured with Apple Clang.
+Configuration exited 1 at the platform check: `Unsupported system type Darwin`.
+The release supports Linux and Windows builds; its Windows translation DLLs
+are a separate build target from the native Unix helpers carried by this recipe.
+No FEX source was changed.
+
+DXMT's CI Wine dependency is also not a replacement base runtime: the
+[wine-11.2 release](https://github.com/3Shain/wine/releases/tag/wine-11.2)
+explicitly says it does not work yet and is intended for linking DXMT.
+An entitled native Wine loader and compatible macOS FEX integration remain
+required before Wine/FEX execution can be tested. Evidence is in
+`fex-configure.log` and `supplied-sources-assessment.json` beside the earlier logs.
+
+### Native FEX helper bootstrap
+
+The runtime recipe uses [dappermint/FEX](https://github.com/dappermint/FEX),
+whose `4efc3abc8aca8a0d3a8aca1f153ef6c4299f4426` commit provides macOS
+implementations of the Wine Unix helper callbacks. These can be built separately
+from the Linux/Windows-only top-level FEX project:
+
+```sh
+FEX_SRC=/path/to/dappermint-FEX bash arm64/build-fex-unixlib.sh /new/helper-output
+```
+
+The script compiles the unmodified helper source, records its source revision,
+includes its license and verifies the arm64 libraries' signatures. It deliberately
+creates a new output directory; it does not install into a runtime. This produces
+`libarm64ecfex.so` and `libwow64fex.so`, **not** the Windows translation engines
+`xtajit64.dll` and `xtajit.dll`. An entitled Wine loader remains required.
+
+Local validation built both helpers with Apple Clang and strict compiler warnings.
+Both load natively and pass eight callback checks each: hardware TSO enable/disable,
+unsupported kernel alignment control, mapped-page advice, unknown advice, VMA
+naming and shared-memory statistics operations. Their only dependencies are system
+libraries. Darwin's TSO and kernel alignment requests return `STATUS_NOT_SUPPORTED`;
+this does not establish translator execution or performance. Evidence is in
+`~/Library/Caches/winecx-kosmickrisp-arm64-lane/fex-helper-recipe/`, including
+`SOURCE.txt` and `callback-results.json`.
+
+The two PE translators were subsequently cross-built successfully from the same
+unmodified fork using upstream's `llvm-mingw-20260616-ucrt-macos-universal`
+toolchain. `libarm64ecfex.dll` reports `COFF-ARM64EC` and exports `BeginSimulation`
+and `DispatchJump`; `libwow64fex.dll` reports `COFF-ARM64` and exports
+`BTCpuSimulate`. Their imports are Wine's `ntdll.dll` and, for WOW64, `wow64.dll`.
+ARM64EC assembly produced five upstream warnings about use of X23/W23. The
+build succeeds, but no Wine translation execution or ABI compatibility is claimed.
+
+`build-fex-translators.sh` records the corresponding cross-build recipe:
+
+```sh
+FEX_SRC=/path/to/dappermint-FEX LLVM_MINGW=/path/to/llvm-mingw \
+    bash arm64/build-fex-translators.sh /new/translator-output
+```
+
+Initialize the source's required submodules first, as in the upstream CI action.
+The recipe preserves the engines' original filenames. Integrating them under
+Wine's `xtajit.dll`/`xtajit64.dll` names requires a runtime assembled against the
+matching Wine source and native Unix helpers. All four FEX components are now
+buildable locally; the signed entitled native loader and a complete matching
+Wine build remain missing. Build logs and PE inspection results are beside the
+earlier evidence under `fex-pe-arm64ec-*` and `fex-pe-wow64-*`.
+
 ## Pinned FEX build
 
 `build-fex-arm64.sh` builds all four FEX files from upstream
