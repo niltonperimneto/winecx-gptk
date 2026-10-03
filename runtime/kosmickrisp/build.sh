@@ -1,10 +1,17 @@
 #!/bin/bash
-# Build an isolated x86_64 loader + ICD for the Rosetta Wine host.
+# Build an isolated loader + ICD. KK_ARCH selects the architecture: x86_64
+# (default) for the Rosetta Wine host, arm64 for the native arm64 lane. A
+# process cannot mix the two, so the bundle must match the Wine Unix half.
 set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
 source "$script_dir/pins.env"
 work=${1:?usage: build.sh BUILD_DIRECTORY OUTPUT_DIRECTORY}
 output=${2:?usage: build.sh BUILD_DIRECTORY OUTPUT_DIRECTORY}
+arch=${KK_ARCH:-x86_64}
+case "$arch" in
+    x86_64|arm64) ;;
+    *) echo "KK_ARCH must be x86_64 or arm64, not $arch" >&2; exit 1 ;;
+esac
 mkdir -p "$work" "$output"
 work=$(cd "$work" && pwd -P)
 output=$(cd "$output" && pwd -P)
@@ -35,33 +42,43 @@ done
 checkout https://github.com/KhronosGroup/Vulkan-Loader.git "$VULKAN_LOADER_COMMIT" "$work/loader"
 checkout https://github.com/KhronosGroup/Vulkan-Headers.git "$VULKAN_HEADERS_COMMIT" "$work/headers"
 
-cmake -S "$work/recipe" -B "$work/driver-build" \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+# Per-architecture build directories: the recipe's Meson configuration and
+# the loader's CMake cache are architecture specific.
+driver_build="$work/driver-build-$arch"
+loader_build="$work/loader-build-$arch"
+cmake -S "$work/recipe" -B "$driver_build" \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$arch" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0
-cmake --build "$work/driver-build" --parallel "$(sysctl -n hw.ncpu)"
+cmake --build "$driver_build" --parallel "$(sysctl -n hw.ncpu)"
 cmake -S "$work/headers" -B "$work/headers-build" \
     -DCMAKE_INSTALL_PREFIX="$work/headers-install"
 cmake --install "$work/headers-build"
-cmake --fresh -S "$work/loader" -B "$work/loader-build" \
-    -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 \
-    -DCMAKE_SYSTEM_NAME=Darwin -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+# On an Apple Silicon host the x86_64 loader is a cross build: setting only
+# CMAKE_OSX_ARCHITECTURES left it picking the host's arm64 assembly.
+loader_cross=()
+if [ "$arch" = x86_64 ]; then
+    loader_cross=(-DCMAKE_SYSTEM_NAME=Darwin -DCMAKE_SYSTEM_PROCESSOR=x86_64)
+fi
+cmake --fresh -S "$work/loader" -B "$loader_build" \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$arch" \
+    ${loader_cross[@]+"${loader_cross[@]}"} \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 -DBUILD_TESTS=OFF \
     -DCMAKE_PREFIX_PATH="$work/headers-install" \
     -DVULKAN_HEADERS_INSTALL_DIR="$work/headers-install"
-cmake --build "$work/loader-build" --parallel "$(sysctl -n hw.ncpu)"
+cmake --build "$loader_build" --parallel "$(sysctl -n hw.ncpu)"
 
-cp -L "$work/driver-build/outputs/libvulkan_kosmickrisp.dylib" "$output/"
-cp -L "$work/loader-build/loader/libvulkan.1.dylib" "$output/"
+cp -L "$driver_build/outputs/libvulkan_kosmickrisp.dylib" "$output/"
+cp -L "$loader_build/loader/libvulkan.1.dylib" "$output/"
 # --prefer-static does not force Mesa's zlib fallback to build statically.
-# Bundle the exact target build, never the ARM64 Homebrew copy.
+# Bundle the exact target build, never the Homebrew copy.
 if otool -L "$output/libvulkan_kosmickrisp.dylib" | grep -q '@rpath/libz.1.dylib'; then
-    cp -L "$work/driver-build/externals/mesa/build-target/subprojects/zlib-1.3.1/libz.1.dylib" "$output/"
+    cp -L "$driver_build/externals/mesa/build-target/subprojects/zlib-1.3.1/libz.1.dylib" "$output/"
     chmod u+w "$output/libvulkan_kosmickrisp.dylib"
     install_name_tool -change '@rpath/libz.1.dylib' '@loader_path/libz.1.dylib' "$output/libvulkan_kosmickrisp.dylib"
 fi
 # Preserve the API version from the actual Mesa build. The ICD path is relative
 # to the manifest, not a Mach-O @loader_path expression.
-python3 - "$work/driver-build/outputs/kosmickrisp_mesa_icd.json" "$output/kosmickrisp_icd.json" <<'PY'
+python3 - "$driver_build/outputs/kosmickrisp_mesa_icd.json" "$output/kosmickrisp_icd.json" <<'PY'
 import json, sys
 with open(sys.argv[1]) as stream:
     manifest = json.load(stream)
@@ -71,10 +88,12 @@ with open(sys.argv[2], 'w') as stream:
     stream.write('\n')
 PY
 
-# Fail rather than silently shipping an arm64 Homebrew library or an unresolved
-# @rpath dependency. zlib is the only explicitly bundled target dependency.
+# Fail rather than silently shipping a library for the wrong architecture or
+# an unresolved @rpath dependency. zlib is the only explicitly bundled target
+# dependency.
 for library in "$output"/*.dylib; do
-    [ "$(lipo -archs "$library")" = x86_64 ]
+    [ "$(lipo -archs "$library")" = "$arch" ] || {
+        echo "$library is $(lipo -archs "$library"), not $arch" >&2; exit 1; }
     chmod u+w "$library"
     install_name_tool -id "@loader_path/$(basename "$library")" "$library"
     otool -L "$library" | tail -n +3 | while read -r dependency rest; do
@@ -100,6 +119,7 @@ if [ -f "$work/recipe/externals/mesa/subprojects/zlib-1.3.1/README" ]; then
     cp "$work/recipe/externals/mesa/subprojects/zlib-1.3.1/README" "$output/licenses/zlib.txt"
 fi
 cp "$script_dir/pins.env" "$output/SOURCE.txt"
+echo "ARCH=$arch" >> "$output/SOURCE.txt"
 for patch in "$script_dir"/patches/*.patch; do
     [ -e "$patch" ] || continue
     echo "PATCH=$(basename "$patch") $(shasum -a 256 "$patch" | cut -d' ' -f1)"
