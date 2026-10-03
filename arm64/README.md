@@ -201,6 +201,14 @@ reported for other macOS-hosted builds. Evidence is in `fex-arm64-build.log` and
 
 Known gaps: no x86 code has run through these files. Wine execution needs an
 arm64 Wine build and the entitled base runtime, and neither is available here.
+The entitlement is a hard requirement, not just packaging. A probe on macOS
+27.2 with SIP enabled reproduced arm64-1117's `free_pagezero`. Without the
+entitlement, `mach_vm_deallocate` of the 4 GiB pagezero reports success, but
+fixed `mmap`/`mach_vm_allocate` at `0x7ffe0000` (`KUSER_SHARED_DATA`) and
+`0x10000` still fail with "invalid address". An ad-hoc signature claiming
+`com.apple.developer.cross-architecture-support` is killed at launch (SIGKILL),
+because the entitlement is restricted. So a smoke run needs CrossOver's entitled
+`wine.app` or an Apple-issued provisioning profile for that entitlement.
 FEX on macOS has no hardware TSO switch, so x86 memory ordering
 stays on FEX's software path. 16 KiB pages (FEX issue #1221) do not affect the
 build, but runtime testing must cover them. ARM64EC assembly emits five
