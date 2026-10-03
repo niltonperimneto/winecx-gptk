@@ -244,6 +244,34 @@ clang -arch arm64 -o /tmp/pagezero_probe tests/pagezero_probe.c
 bash arm64/make-wine-app.sh /tmp/pagezero_probe /tmp/probe.app <profile> <identity-sha1>
 /tmp/probe.app/Contents/MacOS/wine    # must print "low 4GB usable"
 ```
+
+### Smoke run
+
+`smoke-fex.sh WINE_DIR WORK` builds `tests/x86_smoke.c` as x86_64 and i686
+and runs both in a fresh prefix. It passes only if each reports the arm64
+host (`IsWow64Process2` native `0xaa64`) and matches exact FNV-1a, SSE2,
+`sqrt` and exception-dispatch results. With `WINE_APP_PROFILE` and
+`WINE_APP_IDENTITY` set, it first wraps the tree's loader with
+`make-wine-app.sh`. Both test programs pass under the Rosetta x86_64 runtime,
+which confirms their expected values (there `native` reads `0x8664`).
+
+Without `/Volumes/Wine` or Nix, arm64-1117 builds with Homebrew's `bison`,
+`flex`, `pkg-config`, `freetype`, `gnutls` and `molten-vk`. Put the keg-only
+`bison` and `flex` and the shared llvm-mingw first on `PATH`, add
+`LDFLAGS=-L$(brew --prefix molten-vk)/lib`, and use the configure options in
+`build-arm64-unix.sh`. Then:
+
+```sh
+make install-lib DESTDIR=<stage>
+bash arm64/install-fex.sh <stage>/opt/whiskywine <fex-bundle>
+LLVM_MINGW=<llvm-mingw> bash arm64/smoke-fex.sh <stage>/opt/whiskywine <work>
+```
+
+Result on 2026-10-03, without a profile: arm64-1117 (`c8ef487`) built cleanly
+and `wine --version` reports `wine-11.17`. Both programs stop at the same
+point, before FEX loads: Wine logs `released the pagezero`, then
+`failed to map the shared user data: c0000017` at `0x7ffe0000`. This matches
+the probe. Logs are in `smoke-run/` in the cache directory above.
 FEX on macOS has no hardware TSO switch, so x86 memory ordering
 stays on FEX's software path. 16 KiB pages (FEX issue #1221) do not affect the
 build, but runtime testing must cover them. ARM64EC assembly emits five
