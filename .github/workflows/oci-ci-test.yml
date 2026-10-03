@@ -18,7 +18,7 @@ jobs:
   restore-driver:
     name: Restore driver and test relocation
     needs: graphics
-    runs-on: macos-26
+    runs-on: ${{ vars.MACOS_GPU_RUNNER || 'macos-26' }}
     permissions:
       contents: read
       packages: read
@@ -43,14 +43,15 @@ jobs:
           cp -R payload/kosmickrisp "$RUNNER_TEMP/relocated driver/bundle"
           /usr/bin/clang -arch x86_64 -Wall -Wextra -Werror tests/dlopenall.c -o "$RUNNER_TEMP/relocated driver/dlopenall"
           "$RUNNER_TEMP/relocated driver/dlopenall" "$RUNNER_TEMP/relocated driver/bundle/"*.dylib
-      - name: Inspect Metal device availability
+      - name: Inspect Metal 4 device availability
         id: metal
         run: |
           system_profiler SPDisplaysDataType
-          available=$(/usr/bin/swift -e 'import Metal; print(MTLCreateSystemDefaultDevice() == nil ? "false" : "true")')
+          /usr/bin/swift -e 'import Metal; for device in MTLCopyAllDevices() { print("device=\(device.name) metal4=\(device.supportsFamily(.metal4))") }'
+          available=$(/usr/bin/swift -e 'import Metal; print(MTLCopyAllDevices().contains { $0.supportsFamily(.metal4) } ? "true" : "false")')
           echo "available=$available" >> "$GITHUB_OUTPUT"
           if [ "$available" = false ]; then
-            echo 'Metal device unavailable on this runner; GPU validation is blocked.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Metal 4 device unavailable; GPU validation is blocked, not passed.' >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Validate KosmicKrisp device creation
         if: steps.metal.outputs.available == 'true'
