@@ -51,9 +51,31 @@ system trace would show how often it happens per frame in a given game.
 
 ## the whole stack runs under rosetta
 
-structural. wine, the driver's cpu work (turning vulkan commands into metal)
-and dxvk all run as translated x86_64 code. the arm64 lane is the long-term
-fix; this lane is x86_64 only.
+measured. wine, the driver's cpu work (turning vulkan commands into metal)
+and dxvk all run as translated x86_64 code, because rosetta translates whole
+processes and the wine unix half is x86_64. the same driver (same mesa commit
+and patches, same recipe) built once natively for arm64 and once for x86_64,
+driven by one small vulkan benchmark built both ways, three warm runs each:
+
+| driver cpu work | native arm64 | x86_64 under rosetta | cost |
+|---|---|---|---|
+| pipeline creation, metal cache warm, 120 distinct pipelines | 0.44-0.48 ms each | 0.80-0.86 ms each | ~1.9x |
+| recording 20,000 draws (push constants + draw) | 343-363 ns/draw | 790-810 ns/draw | ~2.3x |
+| submit + wait for those draws | 286-299 ns/draw | 368-418 ns/draw | ~1.35x (partly gpu) |
+| pipeline creation, metal cache cold | ~167 ms | ~174 ms | none: metal's compiler is a native service |
+
+so rosetta roughly halves the driver's cpu throughput, which matters in
+draw-heavy, cpu-bound scenes; first-time shader compiles are unaffected.
+mesa's disk cache was disabled for the pipeline numbers, and metal's own
+cache was warmed per architecture first (alternating architectures evicted
+it).
+
+the fix is the arm64 lane (`arm64/`: native wine unix half, arm64ec, fex):
+`KK_ARCH=arm64 runtime/kosmickrisp/build.sh` builds a native bundle for it.
+the game's x86 code, and dxvk unless built as arm64ec, then runs under fex
+instead of rosetta, and fex is generally slower than rosetta for x86 code, so
+the net effect per game needs measuring: driver-bound games should gain,
+games bound by their own x86 logic may not.
 
 ## settings to try without patches
 
@@ -82,4 +104,4 @@ fix; this lane is x86_64 only.
 | `VK_EXT_graphics_pipeline_library` in kosmickrisp | large driver feature | removes compile stutter |
 | descriptor buffer / descriptor heap support | large | lower cpu cost per draw in dxvk 3.x |
 | fewer render pass splits for emulated paths | medium to large | less bandwidth per frame in games that hit them |
-| arm64 lane | structural | no rosetta for driver and wine |
+| arm64 lane + `KK_ARCH=arm64` | structural | ~2x driver cpu throughput; game x86 code under fex instead |
