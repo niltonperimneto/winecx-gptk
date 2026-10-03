@@ -149,5 +149,23 @@ else:
 
 
 
+class OCICacheKeyTests(unittest.TestCase):
+    def test_foundation_and_tools_track_their_own_dependencies(self):
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('build_cache_key', ROOT / 'tools/build/cache_key.py')
+        keys = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(keys)
+        with patch.object(keys.subprocess, 'check_output', return_value=b'Apple toolchain fixture'), \
+             patch.dict(keys.os.environ, {'NIXPKGS_REV': 'nix-a', 'WINECX_COMMIT': 'wine-a'}):
+            sysroot = keys.key('sysroot')
+            native = keys.key('tools')
+            with patch.dict(keys.os.environ, {'WINECX_COMMIT': 'wine-b'}):
+                self.assertEqual(sysroot, keys.key('sysroot'))
+                self.assertNotEqual(native, keys.key('tools'))
+            with patch.dict(keys.os.environ, {'NIXPKGS_REV': 'nix-b'}):
+                self.assertNotEqual(sysroot, keys.key('sysroot'))
+                self.assertNotEqual(native, keys.key('tools'))
+
+
 if __name__ == '__main__':
     unittest.main()
