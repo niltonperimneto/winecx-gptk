@@ -1,6 +1,6 @@
 /* Loader/ICD smoke test shared by the x86_64 host and Wine PE builds.
  * Uses real Vulkan headers so Features2/pNext queries retain the correct ABI.
- * This proves enumeration and basic device creation, plus one clear/present
+ * This checks device creation and exact compute readback, plus presentation
  * with --present on Windows. It does not establish DXVK compatibility.
  * Missing optional features are reported only.
  */
@@ -25,8 +25,8 @@
 
 #ifdef _WIN32
 #include "kosmickrisp_present.h"
-#include "kosmickrisp_compute.h"
 #endif
+#include "kosmickrisp_compute.h"
 
 int main(int argc, char **argv)
 {
@@ -126,7 +126,7 @@ int main(int argc, char **argv)
         if (!queues) return 1;
         vkGetPhysicalDeviceQueueFamilyProperties(devices[i], &queue_count, queues);
         uint32_t family = 0;
-        VkQueueFlags required_flags = VK_QUEUE_GRAPHICS_BIT | (present ? VK_QUEUE_COMPUTE_BIT : 0);
+        VkQueueFlags required_flags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
         while (family < queue_count && (queues[family].queueFlags & required_flags) != required_flags) ++family;
         free(queues);
         if (family == queue_count) { fprintf(stderr, "no graphics queue\n"); return 1; }
@@ -144,8 +144,8 @@ int main(int argc, char **argv)
         CHECK(vkCreateDevice(devices[i], &device_info, NULL, &device));
         PFN_vkDestroyDevice destroy = (PFN_vkDestroyDevice)vkGetDeviceProcAddr(device, "vkDestroyDevice");
         if (!destroy) return 1;
+        if (compute_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
 #ifdef _WIN32
-        if (present && compute_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
         if (present && present_frame(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
 #endif
         destroy(device, NULL);
