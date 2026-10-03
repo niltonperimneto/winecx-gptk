@@ -62,7 +62,7 @@ for patch in "$script_dir"/fex/patches/*.patch; do
     git -C "$src" apply --index "$patch"
 done
 # The test binary submodules are large and only used by Linux test suites.
-git -C "$src" config -f .gitmodules --get-regexp '^submodule\..*\.path$' | while read -r key path; do
+git -C "$src" config -f .gitmodules --get-regexp '^submodule\..*\.path$' | while read -r _ path; do
     case "$path" in External/fex-*-tests-bins|External/fex-posixtest-bins) continue ;; esac
     git -C "$src" submodule update --init --depth=1 -- "$path"
 done
