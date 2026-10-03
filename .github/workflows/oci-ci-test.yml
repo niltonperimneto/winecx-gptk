@@ -72,3 +72,14 @@ jobs:
           compression-level: 0
           retention-days: 7
           if-no-files-found: error
+  checks:
+    name: OCI transport unit tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Ensure zstd
+        run: command -v zstd >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y zstd)
+      - name: Run build and runtime helper tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
