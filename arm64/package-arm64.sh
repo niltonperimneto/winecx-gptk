@@ -74,6 +74,11 @@ for f in "$U"/*.so; do
 done
 [ "$leaks" = 0 ] || { echo "nix store references left, not packaging"; exit 1; }
 
+# Opt-in only: the supplied driver must match the native Wine Unix half.
+if [ -n "${KOSMICKRISP_BUNDLE:-}" ]; then
+    bash "$(dirname "$0")/install-kosmickrisp.sh" "$W" "$KOSMICKRISP_BUNDLE"
+fi
+
 echo "== sign"
 find "$U" -maxdepth 1 \( -name '*.so' -o -name '*.dylib' \) -exec codesign -f -s - {} \; 2>/dev/null
 codesign -f -s - "$W/bin/wineserver"

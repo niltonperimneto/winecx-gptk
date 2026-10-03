@@ -28,6 +28,65 @@ order:
 wine-mono comes from the upstream `wine-mono-<ver>-arm64.tar.xz` release, the
 version in `dlls/mscoree/mscoree_private.h`.
 
+## Experimental KosmicKrisp package
+
+The native Wine Unix half requires an arm64 loader and driver. Build the bundle
+with `KK_ARCH=arm64`, then opt into packaging it:
+
+```sh
+KK_ARCH=arm64 bash runtime/kosmickrisp/build.sh /path/to/kk-build /path/to/kk-bundle
+bash arm64/build-arm64-unix.sh all
+KOSMICKRISP_BUNDLE=/path/to/kk-bundle bash arm64/package-arm64.sh <new-version> <base-runtime>
+```
+
+`install-kosmickrisp.sh` checks the native win32u architecture and its
+`CX_LIBVULKAN` override, checks the bundle architecture, signatures and
+its dylib dependency closure, and installs the arm64 launcher as
+`Wine/bin/wine-kosmickrisp`. The launcher invokes `wine` through `arch -arm64`
+and selects the bundled ICD using the CrossOver loader override. Windows
+executable translation remains the runtime's FEX responsibility.
+
+`.github/workflows/kosmickrisp-arm64.yml` provides dispatch-only packaging on a
+self-hosted runner labeled `winecx-arm64`. It uses the provisioned upstream
+`/Volumes/Wine` sources, build, llvm-mingw, Nix dependencies, wine-mono tarball,
+and base runtime required by the existing recipe. Allocate a new version for
+every dispatch. It uploads an experimental artifact and does not publish it.
+The build directory must already correspond to the intended arm64 Wine source
+revision: the underlying recipe reuses its existing configure state.
+
+This lane has launcher and packaging-guard tests using stand-ins, plus a
+native driver probe with exact compute readback. Native Wine,
+FEX-to-Vulkan calls, surface creation, game rendering and performance have not
+been validated for this package. A driver-only host result cannot establish
+those outcomes. The arm64 workflow has not been executed. The branch is
+prepared on top of the upstream KosmicKrisp PR-series tree; these changes have
+not been submitted as an upstream PR or merged by dappermint.
+
+
+### Local validation — 2026-10-03
+
+A fresh `KK_ARCH=arm64` build on macOS 27.2 / Apple A18 Pro completed from the
+pins above. The driver, loader and bundled zlib are arm64 and their signatures
+verify. A native arm64 probe ran from a path containing spaces, selected driver
+ID 28, created a device, and passed exact compute-shader readback. It reported
+Vulkan 1.4.363, `geometryShader=1` and `fillModeNonSolid=1`. Transform feedback
+remains absent. The shared probe also compiles for both existing PE targets.
+
+All 13 launcher/packaging unit tests, shell syntax checks and workflow lint
+passed. These unit tests use stand-in Wine and inspection tools. The dispatch
+job now runs the real native driver probe before attempting Wine packaging.
+
+Full Wine/FEX execution is blocked locally: installed Wine runtimes 4.7.54 and
+4.7.71 have x86_64 Unix modules; `/Volumes/Wine`, Nix and the
+`whisky-arm64-5.1.1` base runtime are unavailable. A controlled packaging attempt
+with an empty runtime root failed before creating a staging directory, as
+expected. No installed runtime was modified. This does not test Win32 surfaces,
+PE translation, DXVK through native Wine, or game rendering.
+
+Evidence is under `~/Library/Caches/winecx-kosmickrisp-arm64-lane/`:
+`build.log`, `bundle/SOURCE.txt`, `host-probe.log`, `results.json`,
+`package-preflight.log` and `preflight.json`.
+
 ## Pinned FEX build
 
 `build-fex-arm64.sh` builds all four FEX files from upstream
