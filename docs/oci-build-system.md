@@ -38,6 +38,9 @@ The main workflow uses these independent jobs:
 - `oci-images`: use Docker Buildx on Linux to publish transport images of the
   foundation, tools, payloads, core, and verified runtime.
 
+The reusable `validate.yml` workflow is used by the main pipeline and can also
+be dispatched against saved artifacts.
+
 The existing experimental packaged-runtime/readiness gates and canary publishing
 rules remain in place. Experimental and fast builds do not publish releases.
 Apple's D3DMetal payload continues to be supplied by the application's GPTK
@@ -89,7 +92,9 @@ not on untrusted fork pull requests.
 Dispatch `build.yml` with the existing `opt`, `kosmickrisp`, and `runtime_version`
 inputs. Set `rebuild_all: true` to rebuild cache layers. KosmicKrisp can also be
 prebuilt through `kosmickrisp.yml`; changes under `runtime/kosmickrisp/` trigger
-that workflow directly. To test new probes against an existing assembly,
+that workflow directly. Driver construction checks relocation and dynamic
+linkage without requiring a GPU; real device enumeration remains a strict
+experimental assembly/validation gate. To test new probes against an existing assembly,
 dispatch `validate.yml` with its saved sysroot and assembled digest references.
 Standalone validation uploads a verified artifact and never publishes a release.
 
