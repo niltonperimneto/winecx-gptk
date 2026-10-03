@@ -1,0 +1,71 @@
+name: Validate saved OCI runtime
+on:
+  workflow_dispatch:
+    inputs:
+      sysroot_ref:
+        description: Full sysroot OCI reference ending in @sha256:digest
+        type: string
+        required: true
+      assembled_ref:
+        description: Full assembled OCI reference ending in @sha256:digest
+        type: string
+        required: true
+permissions:
+  contents: read
+  packages: write
+env:
+  SYSROOT_REF: ${{ inputs.sysroot_ref }}
+  ASSEMBLED_REF: ${{ inputs.assembled_ref }}
+jobs:
+  validate:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare macOS build host
+        run: bash tools/bootstrap_build.sh
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+      - name: Authenticate OCI registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: install nix
+        uses: DeterminateSystems/nix-installer-action@v23
+        with:
+          extra-conf: |
+            extra-platforms = x86_64-darwin
+      - name: Restore sysroot
+        run: bash tools/build/oci.sh pull sysroot "$SYSROOT_REF"
+      - name: Restore assembled
+        run: bash tools/build/oci.sh pull assembled "$ASSEMBLED_REF"
+      - name: Run strict runtime gates
+        run: bash tools/run_probes.sh
+      - name: Package verified runtime
+        run: bash tools/package_runtime.sh
+      - name: Publish runtime OCI layer
+        id: push_runtime
+        run: bash tools/build/oci.sh push runtime Libraries.tar.gz Libraries.tar.gz.sha256 WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt
+      - name: upload runtime
+        uses: actions/upload-artifact@v7
+        with:
+          name: validated-oci-runtime-${{ github.run_id }}
+          path: |
+            Libraries.tar.gz
+            Libraries.tar.gz.sha256
+            WhiskyWineVersion.plist
+            RuntimeManifest.json
+            RuntimeNetworkVerification.txt
+          retention-days: 14
+      - name: Keep probe diagnostics
+        if: always()
+        run: |-
+          mkdir -p .build/logs
+          cp ./*.log .build/logs/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: standalone-runtime-probe-logs
+          path: .build/logs/
+          retention-days: 14
