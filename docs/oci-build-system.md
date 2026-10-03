@@ -190,5 +190,6 @@ shellcheck -S warning -e SC1091 tools/*.sh tools/build/*.sh
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-A full clean CI build is required to exercise Nix imports, private source
-checkout, all macOS compilation/probes, GHCR transfers, and Docker publication.
+The full first CI build, real GHCR transfers, macOS probes, and Docker
+publication have been exercised. See [CI test results](oci-ci-results.md) for
+run links, timings, and the hosted Metal 4 limitation.
