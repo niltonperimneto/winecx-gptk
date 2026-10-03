@@ -5,6 +5,7 @@
 # carried over from the previous arm64 runtime: crossover's entitled wine.app
 # (the soft pagezero), our FEX, DXMT's arm64ec winemetal/d3d11, and the dylib
 # closure staged beside the unix modules. wine-mono is unpacked from upstream.
+# FEX_BUNDLE=<dir> takes FEX from build-fex-arm64.sh instead.
 #
 # usage: package-arm64.sh <version> [base-runtime]
 set -euo pipefail
@@ -13,13 +14,14 @@ VERSION="${1:?version, e.g. 5.1.0}"
 BASE_ID="${2:-whisky-arm64-5.1.1}"
 B="${B:-/Volumes/Wine/localdev/build-arm64-1117}"
 MONO="${MONO:-/Volumes/Wine/scratch/wine-mono-11.3.0-arm64.tar.xz}"
-RUNTIMES="$HOME/Library/Application Support/com.dappermint.WhiskyPreview/Runtimes"
+RUNTIMES="${RUNTIMES_ROOT:-$HOME/Library/Application Support/com.dappermint.WhiskyPreview/Runtimes}"
 BASE="$RUNTIMES/$BASE_ID"
 OUT="$RUNTIMES/whisky-arm64-$VERSION"
-STAGE="/Volumes/Wine/localdev/stage-arm64-$VERSION"
+STAGE="${STAGE:-/Volumes/Wine/localdev/stage-arm64-$VERSION}"
 
 [ -d "$BASE/Wine" ] || { echo "no base runtime at $BASE"; exit 1; }
 [ ! -e "$OUT" ] || { echo "$OUT exists, remove it first"; exit 1; }
+[ ! -e "$OUT.tmp" ] || { echo "$OUT.tmp exists from an earlier package attempt"; exit 1; }
 
 echo "== install"
 rm -rf "$STAGE"
@@ -35,8 +37,15 @@ rm -f "$U/wine"
 ditto "$BU/wine.app" "$U/wine.app"
 ln -s wine.app/Contents/MacOS/wine "$U/wine"
 cp -c "$BU"/*.dylib "$U/"
-cp -c "$BU/libarm64ecfex.so" "$BU/libwow64fex.so" "$BU/winemetal.so" "$U/"
-cp -c "$BP/xtajit.dll" "$BP/xtajit64.dll" "$BP/winemetal.dll" "$P/"
+cp -c "$BU/winemetal.so" "$U/"
+cp -c "$BP/winemetal.dll" "$P/"
+# Opt-in: FEX from build-fex-arm64.sh instead of the base runtime's copy.
+if [ -n "${FEX_BUNDLE:-}" ]; then
+    bash "$(dirname "$0")/install-fex.sh" "$W" "$FEX_BUNDLE"
+else
+    cp -c "$BU/libarm64ecfex.so" "$BU/libwow64fex.so" "$U/"
+    cp -c "$BP/xtajit.dll" "$BP/xtajit64.dll" "$P/"
+fi
 ditto "$BASE/DXMT" "$OUT.tmp/DXMT"
 
 echo "== binaries"

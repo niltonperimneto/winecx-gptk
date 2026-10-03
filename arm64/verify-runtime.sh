@@ -13,12 +13,13 @@ eval "$('/Applications/Whisky Preview.app/Contents/Resources/WhiskyCmd' shellenv
 export WINEPREFIX="$PFX" WINESERVER="$RT/bin/wineserver" WINEDEBUG="err+all,fixme-all"
 "$RT/bin/wineserver" -k 2>/dev/null
 
+[ ! -f "$RT/lib/fex/SOURCE.txt" ] || { echo "== FEX"; cat "$RT/lib/fex/SOURCE.txt"; }
 echo "== wineboot -u"
 /usr/bin/timeout 180 "$RT/bin/wine" wineboot -u > "$LOG-boot.log" 2>&1; echo "boot exit=$?"
 "$RT/bin/wineserver" -w
 echo "mono in prefix: $(ls "$PFX/drive_c/windows/mono" 2>/dev/null | tr '\n' ' ')"
 echo "mscoree: $(strings -a "$PFX/drive_c/windows/system32/mscoree.dll" 2>/dev/null | grep -m1 -o 'Wine builtin DLL')"
-for f in xtajit64.dll winemetal.dll lsteamclient.dll; do printf "%s " "$f"; [ -e "$PFX/drive_c/windows/system32/$f" ] && echo ok || echo MISSING; done
+for f in xtajit64.dll xtajit.dll winemetal.dll lsteamclient.dll; do printf "%s " "$f"; [ -e "$PFX/drive_c/windows/system32/$f" ] && echo ok || echo MISSING; done
 
 echo "== .net"
 printf 'class P{static void Main(){System.Console.WriteLine("dotnet ok "+System.Environment.Version+" "+System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);}}' > "$PFX/drive_c/hello.cs"

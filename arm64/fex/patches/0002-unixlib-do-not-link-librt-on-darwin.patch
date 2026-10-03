@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Nilton Perim Neto <niltonperimneto@gmail.com>
+Date: Sat, 3 Oct 2026 11:39:14 -0300
+Subject: [PATCH 2/2] Windows/UnixLib: do not link librt on macOS
+
+macOS has no librt; shm_open and friends are part of libSystem, so the
+link fails on Darwin with "ld: library 'rt' not found". Linux is
+unchanged.
+
+Signed-off-by: Nilton Perim Neto <niltonperimneto@gmail.com>
+---
+ Source/Windows/UnixLib/CMakeLists.txt | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/Source/Windows/UnixLib/CMakeLists.txt b/Source/Windows/UnixLib/CMakeLists.txt
+index 37eda6a..13255ff 100644
+--- a/Source/Windows/UnixLib/CMakeLists.txt
++++ b/Source/Windows/UnixLib/CMakeLists.txt
+@@ -6,7 +6,10 @@ include(GNUInstallDirs)
+ function(CreateLib TargetName LibName)
+   add_library(${TargetName} SHARED FEXUnixLib.cpp)
+   set_target_properties(${TargetName} PROPERTIES OUTPUT_NAME ${LibName} PREFIX "lib" SUFFIX ".so")
+-  target_link_libraries(${TargetName} PRIVATE rt)
++  if (NOT APPLE)
++    # shm_open lives in libc on macOS, which has no librt.
++    target_link_libraries(${TargetName} PRIVATE rt)
++  endif()
+   install(TARGETS ${TargetName} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Runtime)
+ endfunction()
+ 
+-- 
+2.54.0 (Apple Git-157)
+
