@@ -61,7 +61,7 @@ jobs:
         id: restore_kosmickrisp
         run: bash tools/build/oci.sh restore kosmickrisp
         if: (toJSON(inputs.enabled) != 'false') && (true)
-      - name: Build and host-probe KosmicKrisp
+      - name: Build and verify KosmicKrisp linkage
         if: (toJSON(inputs.enabled) != 'false') && (steps.restore_kosmickrisp.outputs.hit != 'true')
         run: |-
           bash tools/build_kosmickrisp.sh

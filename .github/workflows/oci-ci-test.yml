@@ -15,3 +15,47 @@ jobs:
     with:
       enabled: true
       rebuild_all: false
+  restore-driver:
+    name: Restore driver and test relocation
+    needs: graphics
+    runs-on: macos-26
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Bootstrap macOS
+        run: bash tools/bootstrap_build.sh
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+      - name: Login to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Restore driver by digest
+        env:
+          DRIVER_REF: ${{ needs.graphics.outputs.ref }}
+        run: bash tools/build/oci.sh pull kosmickrisp "$DRIVER_REF"
+      - name: Verify fresh-runner linkage in a relocated directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/relocated driver"
+          cp -R payload/kosmickrisp "$RUNNER_TEMP/relocated driver/bundle"
+          /usr/bin/clang -arch x86_64 -Wall -Wextra -Werror tests/dlopenall.c -o "$RUNNER_TEMP/relocated driver/dlopenall"
+          "$RUNNER_TEMP/relocated driver/dlopenall" "$RUNNER_TEMP/relocated driver/bundle/"*.dylib
+      - name: Inspect Metal device availability
+        id: metal
+        run: |
+          system_profiler SPDisplaysDataType
+          available=$(/usr/bin/swift -e 'import Metal; print(MTLCreateSystemDefaultDevice() == nil ? "false" : "true")')
+          echo "available=$available" >> "$GITHUB_OUTPUT"
+          if [ "$available" = false ]; then
+            echo 'Metal device unavailable on this runner; GPU validation is blocked.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Validate KosmicKrisp device creation
+        if: steps.metal.outputs.available == 'true'
+        run: |
+          unset VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
+          VK_DRIVER_FILES="$RUNNER_TEMP/relocated driver/bundle/kosmickrisp_icd.json" \
+            "$RUNNER_TEMP/relocated driver/bundle/tests/host-probe" \
+            "$RUNNER_TEMP/relocated driver/bundle/libvulkan.1.dylib"
