@@ -5,6 +5,12 @@ cp -R payload/kosmickrisp Libraries/Wine/lib/kosmickrisp
 mkdir -p Libraries/Wine/lib/kosmickrisp/tests
 test -x Libraries/Wine/lib/kosmickrisp/tests/host-probe
 install -m 755 runtime/kosmickrisp/wine-kosmickrisp Libraries/Wine/bin/wine-kosmickrisp
+# Keep real device enumeration strict when assembling an experimental runtime.
+unset VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
+VK_DRIVER_FILES="$PWD/Libraries/Wine/lib/kosmickrisp/kosmickrisp_icd.json" \
+  Libraries/Wine/lib/kosmickrisp/tests/host-probe \
+  "$PWD/Libraries/Wine/lib/kosmickrisp/libvulkan.1.dylib" \
+  2>&1 | tee Libraries/Wine/lib/kosmickrisp/host-probe.txt
 probe_dir="$RUNNER_TEMP/kosmickrisp-pe"
 mkdir -p "$probe_dir"
 for target in x86_64 i686; do

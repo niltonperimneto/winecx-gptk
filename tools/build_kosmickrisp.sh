@@ -16,7 +16,7 @@ cp -R payload/kosmickrisp "$probe_dir/driver"
 /usr/bin/clang -arch x86_64 -Wall -Wextra -Werror \
   -I"$RUNNER_TEMP/kosmickrisp-build/headers/include" \
   tests/kosmickrisp_probe.c -o "$probe_dir/host-probe"
-unset VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
-VK_DRIVER_FILES="$probe_dir/driver/kosmickrisp_icd.json" \
-  "$probe_dir/host-probe" "$probe_dir/driver/libvulkan.1.dylib" \
-  2>&1 | tee payload/kosmickrisp/host-probe.txt
+# Artifact construction proves relocation, linkage, and codesigning. GPU
+# enumeration belongs to runtime validation on a Metal-capable machine.
+/usr/bin/clang -arch x86_64 -Wall -Wextra -Werror tests/dlopenall.c -o "$probe_dir/dlopenall"
+"$probe_dir/dlopenall" "$probe_dir/driver/"*.dylib | tee payload/kosmickrisp/link-probe.txt
