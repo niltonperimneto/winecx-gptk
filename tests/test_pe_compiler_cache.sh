@@ -26,9 +26,7 @@ for target in x86_64 i686; do
     for attempt in 1 2; do
       echo "$driver compilation $attempt"
       rm -f "$object"
-      "$driver" -target "$target-windows" -fuse-ld=lld --no-default-config \
-        -isystem "$PWD/llvm-mingw-20240619-ucrt-macos-universal/$target-w64-mingw32/include" \
-        -O2 -c "$input" -o "$object"
+      "$driver" -O2 -c "$input" -o "$object"
       test -s "$object"
     done
   done
