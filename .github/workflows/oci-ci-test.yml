@@ -62,3 +62,13 @@ jobs:
           VK_DRIVER_FILES="$RUNNER_TEMP/relocated driver/bundle/kosmickrisp_icd.json" \
             "$RUNNER_TEMP/relocated driver/bundle/tests/host-probe" \
             "$RUNNER_TEMP/relocated driver/bundle/libvulkan.1.dylib"
+      - name: Retain the verified OCI layer for hardware testing
+        uses: actions/upload-artifact@v7
+        with:
+          name: kosmickrisp-oci-test-layer
+          path: |-
+            ${{ runner.temp }}/oci-kosmickrisp/layer.tar.zst
+            ${{ runner.temp }}/oci-kosmickrisp/metadata.json
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
