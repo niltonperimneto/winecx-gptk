@@ -115,60 +115,21 @@ required before Wine/FEX execution can be tested. Evidence is in
 
 ### Native FEX helper bootstrap
 
-The runtime recipe uses [dappermint/FEX](https://github.com/dappermint/FEX),
-whose `4efc3abc8aca8a0d3a8aca1f153ef6c4299f4426` commit provides macOS
-implementations of the Wine Unix helper callbacks. These can be built separately
-from the Linux/Windows-only top-level FEX project:
-
-```sh
-FEX_SRC=/path/to/dappermint-FEX bash arm64/build-fex-unixlib.sh /new/helper-output
-```
-
-The script compiles the unmodified helper source, records its source revision,
-includes its license and verifies the arm64 libraries' signatures. It deliberately
-creates a new output directory; it does not install into a runtime. This produces
-`libarm64ecfex.so` and `libwow64fex.so`, **not** the Windows translation engines
-`xtajit64.dll` and `xtajit.dll`. An entitled Wine loader remains required.
-
-Local validation built both helpers with Apple Clang and strict compiler warnings.
-Both load natively and pass eight callback checks each: hardware TSO enable/disable,
-unsupported kernel alignment control, mapped-page advice, unknown advice, VMA
-naming and shared-memory statistics operations. Their only dependencies are system
-libraries. Darwin's TSO and kernel alignment requests return `STATUS_NOT_SUPPORTED`;
-this does not establish translator execution or performance. Evidence is in
-`~/Library/Caches/winecx-kosmickrisp-arm64-lane/fex-helper-recipe/`, including
-`SOURCE.txt` and `callback-results.json`.
-
-The two PE translators were subsequently cross-built successfully from the same
-unmodified fork using upstream's `llvm-mingw-20260616-ucrt-macos-universal`
-toolchain. `libarm64ecfex.dll` reports `COFF-ARM64EC` and exports `BeginSimulation`
-and `DispatchJump`; `libwow64fex.dll` reports `COFF-ARM64` and exports
-`BTCpuSimulate`. Their imports are Wine's `ntdll.dll` and, for WOW64, `wow64.dll`.
-ARM64EC assembly produced five upstream warnings about use of X23/W23. The
-build succeeds, but no Wine translation execution or ABI compatibility is claimed.
-
-`build-fex-translators.sh` records the corresponding cross-build recipe:
-
-```sh
-FEX_SRC=/path/to/dappermint-FEX LLVM_MINGW=/path/to/llvm-mingw \
-    bash arm64/build-fex-translators.sh /new/translator-output
-```
-
-Initialize the source's required submodules first, as in the upstream CI action.
-The recipe preserves the engines' original filenames. Integrating them under
-Wine's `xtajit.dll`/`xtajit64.dll` names requires a runtime assembled against the
-matching Wine source and native Unix helpers. All four FEX components are now
-buildable locally; the signed entitled native loader and a complete matching
-Wine build remain missing. Build logs and PE inspection results are beside the
-earlier evidence under `fex-pe-arm64ec-*` and `fex-pe-wow64-*`.
+The first macOS FEX builds came from dappermint/FEX `4efc3abc`, using two
+unpinned scripts (in history at `1297731`). Its Unix helpers built natively
+with Apple clang, and passed eight callback checks each. Its PE translators
+cross-built with llvm-mingw 20260616: `COFF-ARM64EC` and `COFF-ARM64`,
+importing only Wine's `ntdll.dll` (and `wow64.dll` for WoW64). The pinned
+build below replaces both scripts. Its evidence is under
+`fex-helper-recipe/`, `fex-pe-arm64ec-*` and `fex-pe-wow64-*` in the cache
+directory above.
 
 ## Pinned FEX build
 
 `build-fex-arm64.sh` builds all four FEX files from upstream
 [FEX-2609](https://github.com/FEX-Emu/FEX/releases/tag/FEX-2609)
 (`395b132f346b1a45def246d10c52245edba1ef02`) plus the patches in `fex/patches`,
-then packages them opt-in. It supersedes `build-fex-unixlib.sh` and
-`build-fex-translators.sh`, which build an unpinned dappermint/FEX checkout.
+then packages them opt-in.
 
 ```sh
 bash arm64/build-fex-arm64.sh /path/to/fex-work /path/to/fex-bundle
