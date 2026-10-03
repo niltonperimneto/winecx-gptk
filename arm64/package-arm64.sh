@@ -5,7 +5,8 @@
 # carried over from the previous arm64 runtime: crossover's entitled wine.app
 # (the soft pagezero), our FEX, DXMT's arm64ec winemetal/d3d11, and the dylib
 # closure staged beside the unix modules. wine-mono is unpacked from upstream.
-# FEX_BUNDLE=<dir> takes FEX from build-fex-arm64.sh instead.
+# FEX_BUNDLE=<dir> takes FEX from build-fex-arm64.sh instead, and
+# WINE_APP_PROFILE=<profile> WINE_APP_IDENTITY=<sha1> signs our own wine.app.
 #
 # usage: package-arm64.sh <version> [base-runtime]
 set -euo pipefail
@@ -33,8 +34,16 @@ P="$W/lib/wine/aarch64-windows"
 echo "== carry over from $BASE_ID"
 BU="$BASE/Wine/lib/wine/aarch64-unix"
 BP="$BASE/Wine/lib/wine/aarch64-windows"
-rm -f "$U/wine"
-ditto "$BU/wine.app" "$U/wine.app"
+# Opt-in: our own loader in a wine.app signed under an Apple-issued profile
+# for the cross-architecture entitlement, instead of CrossOver's.
+if [ -n "${WINE_APP_PROFILE:-}" ]; then
+    bash "$(dirname "$0")/make-wine-app.sh" "$U/wine" "$U/wine.app" "$WINE_APP_PROFILE" \
+        "${WINE_APP_IDENTITY:?set WINE_APP_IDENTITY to the signing identity SHA-1}" ntdll.so=../../../ntdll.so
+    rm -f "$U/wine"
+else
+    rm -f "$U/wine"
+    ditto "$BU/wine.app" "$U/wine.app"
+fi
 ln -s wine.app/Contents/MacOS/wine "$U/wine"
 cp -c "$BU"/*.dylib "$U/"
 cp -c "$BU/winemetal.so" "$U/"

@@ -209,6 +209,41 @@ fixed `mmap`/`mach_vm_allocate` at `0x7ffe0000` (`KUSER_SHARED_DATA`) and
 `com.apple.developer.cross-architecture-support` is killed at launch (SIGKILL),
 because the entitlement is restricted. So a smoke run needs CrossOver's entitled
 `wine.app` or an Apple-issued provisioning profile for that entitlement.
+The same kill happens when an Apple Development identity signs with the
+entitlement but no profile.
+
+### Signing our own loader
+
+`make-wine-app.sh` wraps an arm64 executable in a `wine.app` that is signed
+with the entitlement, embedding the provisioning profile. Before signing, it
+checks that the profile grants the entitlement, is for macOS, has not expired,
+names an explicit App ID, was issued for the signing certificate, and covers
+this Mac. A mismatch fails there with a reason, instead of as a kill at exec.
+`package-arm64.sh` uses it when `WINE_APP_PROFILE` and `WINE_APP_IDENTITY`
+(the identity's SHA-1) are set. It wraps the freshly built loader and adds
+`Contents/MacOS/ntdll.so -> ../../../ntdll.so`, because the loader looks for
+`ntdll.so` beside its resolved path. Otherwise it still carries CrossOver's
+`wine.app`.
+
+Getting the profile is up to Apple and the team's Account Holder. Apple's
+public documentation does not list this entitlement, so the request may have
+to go through Apple directly rather than the Capability Requests tab:
+
+1. Register an explicit macOS App ID (for example `org.example.wine`) and
+   request the cross-architecture support capability for it.
+2. Register this Mac under Devices, using the provisioning UDID from
+   `system_profiler SPHardwareDataType | grep 'Provisioning UDID'`.
+3. Create a macOS development profile for that App ID, with the Apple
+   Development certificate (`security find-identity -v -p codesigning`) and
+   this Mac.
+
+Test the profile with the probe before building Wine:
+
+```sh
+clang -arch arm64 -o /tmp/pagezero_probe tests/pagezero_probe.c
+bash arm64/make-wine-app.sh /tmp/pagezero_probe /tmp/probe.app <profile> <identity-sha1>
+/tmp/probe.app/Contents/MacOS/wine    # must print "low 4GB usable"
+```
 FEX on macOS has no hardware TSO switch, so x86 memory ordering
 stays on FEX's software path. 16 KiB pages (FEX issue #1221) do not affect the
 build, but runtime testing must cover them. ARM64EC assembly emits five

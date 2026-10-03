@@ -170,7 +170,12 @@ class PackageFexTests(unittest.TestCase):
         # Stand-in for `build-arm64-unix.sh install` with DESTDIR=$STAGE.
         write_tool(self.scripts, "build-arm64-unix.sh", 'set -e; W="${MAKEFLAGS_EXTRA#DESTDIR=}/opt/whiskywine"\n'
                    'mkdir -p "$W/bin" "$W/include" "$W/lib/wine/aarch64-unix" "$W/lib/wine/aarch64-windows"\n'
-                   'touch "$W/bin/wineserver" "$W/lib/wine/aarch64-unix/ntdll.so" "$W/lib/wine/aarch64-windows/ntdll.dll"')
+                   'touch "$W/bin/wineserver" "$W/lib/wine/aarch64-unix/ntdll.so" "$W/lib/wine/aarch64-windows/ntdll.dll"\n'
+                   'printf "#!/bin/bash\\necho built-loader\\n" > "$W/lib/wine/aarch64-unix/wine"\n'
+                   'chmod +x "$W/lib/wine/aarch64-unix/wine"')
+        # Stand-in for make-wine-app.sh: its own checks are covered by test_wine_app.py.
+        write_tool(self.scripts, "make-wine-app.sh", 'set -e; printf "%s\\n" "$@" > "$MAKE_WINE_APP_LOG"\n'
+                   'mkdir -p "$2/Contents/MacOS"; cp "$1" "$2/Contents/MacOS/wine"')
         base = self.runtimes / "whisky-arm64-5.1.1"
         unix = base / "Wine/lib/wine/aarch64-unix"
         windows = base / "Wine/lib/wine/aarch64-windows"
@@ -220,6 +225,31 @@ class PackageFexTests(unittest.TestCase):
             self.assertEqual((self.packaged / "lib/wine" / name).read_bytes(), (self.bundle / name).read_bytes(), name)
         self.assertEqual((self.packaged / "lib/fex/SOURCE.txt").read_text(), "FEX_COMMIT=test\n")
         self.assertEqual((self.packaged / "lib/wine/aarch64-unix/winemetal.so").read_text(), "base")
+
+    def test_default_packaging_carries_crossover_loader(self):
+        result = self.package()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("wine-test", result.stdout)
+        base = self.runtimes / "whisky-arm64-5.1.1/Wine/lib/wine/aarch64-unix/wine.app/Contents/MacOS/wine"
+        self.assertEqual((self.packaged / "lib/wine/aarch64-unix/wine.app/Contents/MacOS/wine").read_text(), base.read_text())
+
+    def test_wine_app_profile_signs_built_loader(self):
+        log = self.root / "make-wine-app.log"
+        result = self.package(WINE_APP_PROFILE="/profiles/wine.provisionprofile", WINE_APP_IDENTITY="A" * 40,
+                              MAKE_WINE_APP_LOG=str(log))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        arguments = log.read_text().splitlines()
+        self.assertTrue(arguments[0].endswith("/lib/wine/aarch64-unix/wine"))
+        self.assertTrue(arguments[1].endswith("/lib/wine/aarch64-unix/wine.app"))
+        self.assertEqual(arguments[2:], ["/profiles/wine.provisionprofile", "A" * 40, "ntdll.so=../../../ntdll.so"])
+        unix = self.packaged / "lib/wine/aarch64-unix"
+        self.assertIn("built-loader", result.stdout)
+        self.assertIn("echo built-loader", (unix / "wine.app/Contents/MacOS/wine").read_text())
+        self.assertEqual(os.readlink(unix / "wine"), "wine.app/Contents/MacOS/wine")
+
+    def test_wine_app_profile_needs_identity(self):
+        self.assertNotEqual(self.package(WINE_APP_PROFILE="/profiles/wine.provisionprofile").returncode, 0)
+        self.assertFalse((self.runtimes / "whisky-arm64-9.9.9").exists())
 
     def test_bad_fex_bundle_stops_packaging(self):
         (self.bundle / SO_FILES[0]).unlink()
