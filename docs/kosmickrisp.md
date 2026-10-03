@@ -42,3 +42,47 @@ loads `CX_LIBVULKAN` as the host vulkan library while
 `VK_ICD_FILENAMES`/`VK_LOADER_DRIVERS_*`. `wined3d` here selects no direct3d
 implementation for dxvk or a native vulkan program; it only unlocks the
 override. whisky can set the same variables per program.
+
+## Rosetta fallback branch
+
+`kk/08-rosetta` keeps the x86_64 runtime available while native arm64 Wine/FEX
+porting continues separately. The launcher explicitly uses
+`/usr/bin/arch -x86_64` and clears `WINE_VULKAN_LIBRARY` along with inherited
+ICD selection. Rosetta translates the Wine Unix host and the x86_64 driver on
+Apple Silicon. The Metal API remains the graphics backend; FEX is not required
+for this lane. Windows 32-bit programs use this runtime's existing WoW64 support.
+
+To add the bundle to a staged copy of a compatible CrossOver Wine runtime:
+
+```sh
+bash runtime/kosmickrisp/build.sh /path/to/kk-build /path/to/kk-bundle
+bash runtime/kosmickrisp/install-rosetta.sh /path/to/staged/Wine /path/to/kk-bundle
+WINEPREFIX=/path/to/test-prefix /path/to/staged/Wine/bin/wine-kosmickrisp program.exe
+```
+
+The installer verifies x86_64 Wine binaries, the `CX_LIBVULKAN` override,
+bundle architecture, signatures, dependency closure and relative ICD path
+before installing. It refuses an existing KosmicKrisp installation. Rosetta
+must already be available on Apple Silicon. The dispatch-only CI lane uses this
+installer and continues testing both PE architectures with native Vulkan and
+upstream DXVK. DXVK test DLLs remain beside the probes, outside runtime defaults.
+
+### Local validation — 2026-10-03
+
+A fresh pinned x86_64 driver build was installed into an isolated clone of
+`winecx-gptk-4.7.71` (Wine 11.18), relocated into a path containing spaces.
+Rosetta availability was confirmed with `sysctl.proc_translated=1`. Installed
+runtimes were not modified. The fresh test prefix booted successfully.
+
+Both x86_64 and i686 probes selected KosmicKrisp driver ID 28 on Apple A18 Pro,
+reported `geometryShader=1` and `fillModeNonSolid=1`, and passed exact compute
+readback plus windowed, resized, borderless and restored presentation. Upstream
+DXVK 3.1.1 created D3D9 devices and D3D11 devices at feature level 11_1 for both
+architectures. Driver signatures, the three launcher tests, installer rejection
+of an arm64 bundle and existing installation, shell syntax and workflow lint
+passed. The workflow itself was not dispatched. Transform feedback remains
+absent; these device tests do not establish game compatibility or performance.
+
+The runnable staged Wine directory is
+`~/Library/Caches/winecx-kosmickrisp-rosetta/relocated runtime/Wine`.
+Logs, source pins and `validation.json` are in the parent cache directory.

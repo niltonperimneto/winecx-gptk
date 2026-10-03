@@ -928,8 +928,7 @@ jobs:
         run: |
           # beside wine rather than in lib/external, so nothing picks it up
           # unless a program is started through wine-kosmickrisp
-          cp -R payload/kosmickrisp Libraries/Wine/lib/kosmickrisp
-          install -m 755 runtime/kosmickrisp/wine-kosmickrisp Libraries/Wine/bin/wine-kosmickrisp
+          bash runtime/kosmickrisp/install-rosetta.sh Libraries/Wine payload/kosmickrisp
 
       - name: verify the tree is relocatable
         run: |

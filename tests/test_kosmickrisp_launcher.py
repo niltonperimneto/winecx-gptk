@@ -1,6 +1,7 @@
 """Exercise launcher isolation without starting Wine or requiring a GPU."""
 import json
 import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ import tempfile
 import unittest
 
 
+@unittest.skipUnless(platform.system() == "Darwin", "Requires macOS arch and Rosetta")
 class LauncherTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="kosmickrisp relocated ")
@@ -23,10 +25,13 @@ class LauncherTests(unittest.TestCase):
             (self.bundle / name).touch()
         # A fake wine64 records the environment and argument boundaries.
         wine = self.bin / "wine64"
-        wine.write_text('''#!/usr/bin/env python3
+        wine.write_text('''#!/bin/bash
+export FAKE_WINE_ARCH=$(/usr/bin/uname -m)
+exec python3 - "$@" <<'PY'
 import json, os, sys
 print(json.dumps({"args": sys.argv[1:], "env": dict(os.environ)}))
 sys.exit(int(os.environ.get("FAKE_WINE_EXIT", "0")))
+PY
 ''')
         wine.chmod(0o755)
 
@@ -34,7 +39,8 @@ sys.exit(int(os.environ.get("FAKE_WINE_EXIT", "0")))
         env = dict(os.environ, WINEPREFIX="prefix with spaces",
                    CX_ACTIVE_GRAPHICS_BACKEND="dxvk", VK_DRIVER_FILES="foreign.json",
                    VK_ICD_FILENAMES="old.json", VK_ADD_DRIVER_FILES="additional.json",
-                   VK_LOADER_DRIVERS_SELECT="*Molten*", VK_LOADER_DRIVERS_DISABLE="*kosmic*")
+                   VK_LOADER_DRIVERS_SELECT="*Molten*", VK_LOADER_DRIVERS_DISABLE="*kosmic*",
+                   WINE_VULKAN_LIBRARY="foreign-vulkan.dylib")
         env.update(extra)
         return subprocess.run(["bash", str(self.bin / "wine-kosmickrisp"),
                                "game with spaces.exe", "", "--argument=$literal"],
@@ -46,12 +52,13 @@ sys.exit(int(os.environ.get("FAKE_WINE_EXIT", "0")))
         report = json.loads(result.stdout)
         self.assertEqual(report["args"], ["game with spaces.exe", "", "--argument=$literal"])
         env = report["env"]
+        self.assertEqual(env["FAKE_WINE_ARCH"], "x86_64")
         self.assertEqual(Path(env["CX_LIBVULKAN"]).resolve(), self.bundle / "libvulkan.1.dylib")
         self.assertEqual(Path(env["VK_DRIVER_FILES"]).resolve(), self.bundle / "kosmickrisp_icd.json")
         # win32u only honours CX_LIBVULKAN under this backend value
         self.assertEqual(env["CX_ACTIVE_GRAPHICS_BACKEND"], "wined3d")
         self.assertEqual(env["WINEPREFIX"], "prefix with spaces")
-        for key in ("VK_ICD_FILENAMES", "VK_ADD_DRIVER_FILES", "VK_LOADER_DRIVERS_SELECT", "VK_LOADER_DRIVERS_DISABLE"):
+        for key in ("VK_ICD_FILENAMES", "VK_ADD_DRIVER_FILES", "VK_LOADER_DRIVERS_SELECT", "VK_LOADER_DRIVERS_DISABLE", "WINE_VULKAN_LIBRARY"):
             self.assertNotIn(key, env)
 
     def test_missing_component_fails_before_wine(self):
