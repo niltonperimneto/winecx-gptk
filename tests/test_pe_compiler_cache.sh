@@ -10,9 +10,8 @@ export PATH="$PWD/ccache-bin:$PATH"
 ccache --zero-stats
 cat > .build/pe-cache-test/probe.cpp <<'CPP'
 #include <windows.h>
-#include <atomic>
-std::atomic<unsigned> counter{0};
-extern "C" unsigned probe() { return counter.fetch_add(sizeof(HWND)); }
+volatile LONG counter = 0;
+extern "C" LONG probe() { return InterlockedIncrement(&counter) + sizeof(HWND); }
 CPP
 for target in x86_64 i686; do
   for compiler in gcc clang g++ clang++; do
@@ -28,6 +27,7 @@ for target in x86_64 i686; do
       echo "$driver compilation $attempt"
       rm -f "$object"
       "$driver" -target "$target-windows" -fuse-ld=lld --no-default-config \
+        -isystem "$PWD/llvm-mingw-20240619-ucrt-macos-universal/$target-w64-mingw32/include" \
         -O2 -c "$input" -o "$object"
       test -s "$object"
     done
