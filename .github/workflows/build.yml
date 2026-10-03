@@ -211,7 +211,7 @@ jobs:
         id: push_core
         run: bash tools/build/oci.sh push core staging
   assemble:
-    runs-on: macos-26
+    runs-on: ${{ (inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental') && vars.MACOS_GPU_RUNNER || 'macos-26' }}
     timeout-minutes: 90
     permissions:
       contents: read
@@ -283,7 +283,7 @@ jobs:
     name: KosmicKrisp / macOS 26 packaged runtime
     needs: build
     if: needs.build.outputs.kosmickrisp == 'true'
-    runs-on: macos-26
+    runs-on: ${{ vars.MACOS_GPU_RUNNER || 'macos-26' }}
     timeout-minutes: 20
     permissions:
       contents: read
