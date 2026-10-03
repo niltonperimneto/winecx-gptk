@@ -37,6 +37,6 @@ fi
 {
   echo "### ccache"
   echo '```'
-  ccache -s
+  ccache -s | tee /dev/stderr
   echo '```'
 } >> "$GITHUB_STEP_SUMMARY"

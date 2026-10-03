@@ -83,3 +83,31 @@ jobs:
         run: command -v zstd >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y zstd)
       - name: Run build and runtime helper tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+  pe-cache:
+    name: Real PE compiler cache coverage
+    runs-on: macos-26
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Bootstrap macOS tools
+        run: bash tools/bootstrap_build.sh
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+      - name: Authenticate GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Fetch the already-built pinned compiler toolchain
+        env:
+          SYSROOT_REF: ghcr.io/niltonperimneto/winecx-gptk/sysroot@sha256:a168ed635d6a0152eb096f7821c165bf7e96215a403f978d47ae2c798712f992
+        run: |
+          mkdir -p .build/toolchain-fixture
+          oras pull "$SYSROOT_REF" --output .build/toolchain-fixture
+          python3 tools/build/archive.py verify .build/toolchain-fixture sysroot
+          zstd -dc .build/toolchain-fixture/layer.tar.zst | python3 tools/build/archive.py check-tar
+          zstd -dc .build/toolchain-fixture/layer.tar.zst | tar -xf - llvm-mingw-20240619-ucrt-macos-universal
+      - name: Verify real C and C++ cache hits for both PE architectures
+        run: bash tests/test_pe_compiler_cache.sh
