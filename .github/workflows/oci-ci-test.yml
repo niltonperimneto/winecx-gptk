@@ -48,6 +48,8 @@ jobs:
         run: |
           system_profiler SPDisplaysDataType
           /usr/bin/swift -e 'import Metal; for device in MTLCopyAllDevices() { print("device=\(device.name) metal4=\(device.supportsFamily(.metal4))") }'
+          # $0 is Swift's closure parameter.
+          # shellcheck disable=SC2016
           available=$(/usr/bin/swift -e 'import Metal; print(MTLCopyAllDevices().contains { $0.supportsFamily(.metal4) } ? "true" : "false")')
           echo "available=$available" >> "$GITHUB_OUTPUT"
           if [ "$available" = false ]; then
