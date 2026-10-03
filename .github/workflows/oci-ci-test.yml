@@ -84,7 +84,7 @@ jobs:
       - name: Run build and runtime helper tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
   pe-cache:
-    name: Real PE compiler alias cache coverage
+    name: Real Windows PE compiler cache coverage
     runs-on: macos-26
     permissions:
       contents: read
