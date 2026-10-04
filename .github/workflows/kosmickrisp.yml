@@ -1,0 +1,74 @@
+name: Build KosmicKrisp OCI layer
+on:
+  workflow_dispatch:
+    inputs:
+      rebuild_all:
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+      - feat/kosmickrisp-experimental
+    paths:
+      - runtime/kosmickrisp/**
+      - tools/build_kosmickrisp.sh
+      - .github/workflows/kosmickrisp.yml
+  workflow_call:
+    inputs:
+      enabled:
+        type: boolean
+        default: true
+      rebuild_all:
+        type: boolean
+        default: false
+    outputs:
+      ref:
+        value: ${{ jobs.graphics.outputs.ref }}
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: kosmickrisp-oci-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  REBUILD_ALL: ${{ inputs.rebuild_all == true }}
+  KOSMICKRISP_ENABLED: 'true'
+jobs:
+  graphics:
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.restore_kosmickrisp.outputs.ref || steps.push_kosmickrisp.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+        if: (toJSON(inputs.enabled) != 'false') && (true)
+      - name: Prepare macOS build host
+        run: bash tools/bootstrap_build.sh
+        if: (toJSON(inputs.enabled) != 'false') && (true)
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+        if: (toJSON(inputs.enabled) != 'false') && (true)
+      - name: Authenticate OCI registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf "%s" "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        if: (toJSON(inputs.enabled) != 'false') && (true)
+      - name: Look up kosmickrisp OCI layer
+        id: restore_kosmickrisp
+        run: bash tools/build/oci.sh restore kosmickrisp
+        if: (toJSON(inputs.enabled) != 'false') && (true)
+      - name: Build and verify KosmicKrisp linkage
+        if: (toJSON(inputs.enabled) != 'false') && (steps.restore_kosmickrisp.outputs.hit != 'true')
+        run: |-
+          bash tools/build_kosmickrisp.sh
+          mkdir -p payload/kosmickrisp/tests
+          cp "$RUNNER_TEMP/kosmickrisp relocated/host-probe" payload/kosmickrisp/tests/
+          cp -R "$RUNNER_TEMP/kosmickrisp-build/headers/include" payload/kosmickrisp/headers
+      - name: Publish kosmickrisp OCI layer
+        id: push_kosmickrisp
+        if: (toJSON(inputs.enabled) != 'false') && (steps.restore_kosmickrisp.outputs.hit != 'true')
+        run: bash tools/build/oci.sh push kosmickrisp payload/kosmickrisp
