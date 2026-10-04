@@ -6,6 +6,16 @@ The build workflow now runs automatically on pushes to
 even if the checkbox is left off. Experimental artifacts never reach the
 release/catalog publishing job.
 
+The hosted macOS 26 image exposes an Apple Paravirtual Metal device, which
+could not enumerate a Vulkan device with KosmicKrisp. CI now compiles a small Metal device probe before the
+KosmicKrisp build. When Metal is unavailable or virtualized, it still builds and audits the
+runtime artifact, then records a notice and skips GPU execution and the separate
+validation/readiness jobs. Skipped GPU jobs are **not** evidence of runtime or
+migration readiness. On a GPU-capable runner, probe failures stop the build
+instead of being hidden by `tee`, and validation logs are uploaded even on
+failure. A physical Apple Silicon macOS 26 runner is needed to complete the
+full gate. See the [CI failure investigation](kosmickrisp-ci-failure-2026-09-29.md).
+
 ## Checks
 
 1. **Build:** build the pinned x86_64 ICD, loader, and patched Wine on the hosted
@@ -21,7 +31,9 @@ release/catalog publishing job.
    override is present. No legacy `CX_LIBVULKAN` fallback is set.
 4. Run both 64-bit and 32-bit Windows probes through the packaged launcher.
    Require KosmicKrisp driver ID 28, device creation, a deterministic compute
-   shader with exact CPU readback, and swapchain recreation/presentation in
+   shader with exact CPU readback, geometry rendering and guarded buffer/image
+   side effects, adjacency without GS, tessellation-to-GS primitive IDs, and
+   swapchain recreation/presentation in
    windowed, resized, borderless-fullscreen, and restored modes. This does not
    test exclusive fullscreen or general shader conformance.
 5. Execute upstream DXVK 3.1.1 D3D9/D3D11 initialization probes for both PE
@@ -33,15 +45,15 @@ release/catalog publishing job.
    test cannot make this gate green while DXVK or game requirements are unmet.
 
 The runtime check can pass while migration readiness fails. With the currently
-pinned Mesa driver, geometry shaders and transform feedback are absent, and
-stock DXVK initialization fails locally. The selected Hades test remains
+patched Mesa driver, geometry shaders are exposed, but `fillModeNonSolid` and
+transform feedback remain absent. Stock DXVK initialization still fails locally. The selected Hades test remains
 blocked until its installation and gameplay harness are provisioned. This expected red readiness result keeps the missing
 migration requirements visible without hiding successful runtime work.
 
 Each subprocess has a timeout. Probe logs, source pins, capabilities, durations,
 and `results.json` are uploaded as `kosmickrisp-validation-results`, including on
-failure. Prefix contents and downloaded game/DXVK binaries are excluded from
-that diagnostic artifact. The build's existing probe logs remain available too.
+failure. The Wine prefix sits outside the diagnostics directory, and the upload
+lists only result files and logs. Game/DXVK binaries are excluded. The build's existing probe logs remain available too.
 
 ## Configure the game benchmark
 
@@ -112,6 +124,25 @@ glslangValidator -V --target-env vulkan1.0 --vn kosmickrisp_compute_spv \
   tests/kosmickrisp_compute.comp -o tests/kosmickrisp_compute_spv.h
 ```
 
+The geometry shader fixtures can be regenerated with the same glslang tool:
+
+```sh
+for stage in vert tesc tese geom frag; do
+  glslangValidator -V --target-env vulkan1.0 --vn "kk_$stage" \
+    "tests/kosmickrisp_geometry/draw.$stage" \
+    -o "tests/kosmickrisp_geometry/${stage}_spv.h"
+done
+```
+
+Geometry invocations may be replayed under Vulkan's
+[shader execution rules](https://docs.vulkan.org/spec/latest/chapters/shaders.html#shaders-geometry-execution).
+The fixture records raw invocation counts, but does not require exactly one
+invocation per primitive. An atomic bitset guards the counted buffer/image
+updates so they occur once per input primitive (or input patch with tessellation).
+The test checks exact green RGBA8 pixels, the primitive-ID mask, the guarded
+counts, per-ID image-store values, and the minimum raw invocation count. It also requires zero geometry
+side effects in the adjacency case without a GS.
+
 The extended GPU probes passed locally on macOS 27.2 through the existing Wine
-runtime. That does not replace the clean macOS 26 job or establish that the new
-patched Wine artifact has passed CI. See [local results](kosmickrisp-test-results.md).
+runtime. That does not replace execution on a physical macOS 26 runner or
+establish that the new patched Wine artifact has passed GPU validation. See [local results](kosmickrisp-test-results.md).

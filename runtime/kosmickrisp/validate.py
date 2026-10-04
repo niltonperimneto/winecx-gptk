@@ -64,7 +64,8 @@ def parse_capabilities(text):
             key, separator, value = word.partition("=")
             if separator and key in ("geometryShader", "tessellationShader", "shaderInt64", "fillModeNonSolid",
                                      "shaderInt8", "descriptorIndexing", "scalarBlockLayout",
-                                     "synchronization2", "maxPushConstantsSize", "api"):
+                                     "synchronization2", "maxPushConstantsSize", "api",
+                                     "conformance", "fillModeNonSolid"):
                 fields[key] = value
     fields["extensions"] = extensions
     return fields
@@ -87,7 +88,10 @@ def main():
                   "game": {"status": "blocked", "reason": "no pinned game benchmark configured"},
                   "shader_correctness": {"status": "blocked", "reason": "compute readback not yet run"}}}
     checks = report["checks"]
-    env = dict(os.environ, WINEPREFIX=str(output / "prefix"), WINEDEBUG="-all",
+    # Keep Wine's z: symlink out of the diagnostics tree. Artifact upload tools
+    # can traverse it even when a glob tries to exclude the prefix.
+    prefix = output.with_name(output.name + "-prefix")
+    env = dict(os.environ, WINEPREFIX=str(prefix), WINEDEBUG="-all",
                WINEDLLOVERRIDES="mscoree,mshtml=")
     for key in ("CX_LIBVULKAN", "CX_ACTIVE_GRAPHICS_BACKEND", "WINE_VULKAN_LIBRARY",
                 "VK_ICD_FILENAMES", "VK_ADD_DRIVER_FILES", "VK_DRIVER_FILES",
@@ -99,6 +103,9 @@ def main():
         ok = code not in (0, 124) if expected_failure else code == 0
         ok = ok and all(marker in text for marker in required)
         checks[name] = {"status": "passed" if ok else "failed", "exit_code": code, "seconds": elapsed}
+        if not ok:
+            checks[name]["missing_markers"] = [marker for marker in required if marker not in text]
+            print(f"::error::{name} exited {code}; missing markers: {checks[name]['missing_markers']}; log: {name}.log")
         return text
 
     try:
@@ -113,7 +120,11 @@ def main():
         report["sources"] = (bundle / "SOURCE.txt").read_text()
         check("hardware", ["system_profiler", "SPDisplaysDataType"])
         env["VK_DRIVER_FILES"] = str(bundle / "kosmickrisp_icd.json")
-        markers = ("driver=KosmicKrisp id=28", "KosmicKrisp device creation passed")
+        markers = ("driver=KosmicKrisp id=28", "fillModeNonSolid=1",
+                   "KosmicKrisp device creation passed",
+                   "geometry rendering and side-effect readback passed",
+                   "adjacency-without-gs rendering and side-effect readback passed",
+                   "tessellation-geometry rendering and side-effect readback passed")
         check("host", [bundle / "tests/host-probe", bundle / "libvulkan.1.dylib"], markers)
 
         # This fails if the new patch was omitted, even if a global ICD happened
@@ -133,7 +144,7 @@ def main():
             report.setdefault("capabilities", {})[target] = parse_capabilities(text)
         if all(checks[f"wine-{target}"]["status"] == "passed" for target in ("x86_64", "i686")):
             report["migration"]["shader_correctness"] = {
-                "status": "passed", "reason": "deterministic compute readback only; not general shader conformance"}
+                "status": "passed", "reason": "deterministic compute, geometry, adjacency and tessellation readback; not general shader conformance"}
         caps = report["capabilities"]["x86_64"]
         missing = []
         # DXVK 3.x refuses the whole adapter without fillModeNonSolid.
@@ -141,8 +152,11 @@ def main():
             missing.append("fillModeNonSolid")
         if caps.get("geometryShader") != "1":
             missing.append("geometryShader")
+        if caps.get("fillModeNonSolid") != "1":
+            missing.append("fillModeNonSolid")
+        optional_missing = []
         if "VK_EXT_transform_feedback" not in caps["extensions"]:
-            missing.append("VK_EXT_transform_feedback")
+            optional_missing.append("VK_EXT_transform_feedback")
         report["migration"]["dxvk"]["known_missing"] = missing
         # Run stock DXVK with native-only overrides in isolated application dirs.
         # Keeping both the DLLs and EXE there prevents fallback to the shipped fork.
@@ -169,14 +183,15 @@ def main():
         dxvk_ok = not missing and all(result["status"] == "passed" for result in dxvk_results.values())
         report["migration"]["dxvk"] = {
             "status": "passed" if dxvk_ok else "blocked", "version": version,
-            "known_missing": missing, "probes": dxvk_results,
+            "known_missing": missing, "optional_missing": optional_missing,
+            "probes": dxvk_results,
             "reason": ("missing: " + ", ".join(missing)) if missing else
                 "D3D9/D3D11 initialization plus known-feature screen; game coverage is a separate gate"}
         report["migration"]["game"] = run_game(args.game_config, wine / "bin/wine-kosmickrisp", env, output, run_probe)
     except Exception as error:
         checks["validation"] = {"status": "failed", "reason": str(error)}
     finally:
-        if (output / "prefix").exists():
+        if prefix.exists():
             try:
                 run_probe([str(wine / "bin/wineserver"), "-k"], env, output / "cleanup.log", timeout=15)
             except OSError:
