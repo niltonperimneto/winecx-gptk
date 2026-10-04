@@ -1,0 +1,86 @@
+name: experimental arm64 KosmicKrisp package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New experimental runtime version; must not already exist on the runner"
+        required: true
+        type: string
+      base_runtime:
+        description: "Provisioned arm64 runtime carrying the entitled loader, FEX and DXMT"
+        default: whisky-arm64-5.1.1
+        required: true
+        type: string
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kosmickrisp-arm64
+  cancel-in-progress: false
+
+jobs:
+  package:
+    # The upstream arm64 recipe depends on this machine's /Volumes/Wine
+    # sources/toolchains and a provisioned base runtime, not a hosted runner.
+    runs-on: [self-hosted, macOS, ARM64, winecx-arm64]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: validate inputs and run launcher tests
+        env:
+          VERSION: ${{ inputs.version }}
+          BASE_ID: ${{ inputs.base_runtime }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$BASE_ID" =~ ^whisky-arm64-[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(uname -m)" = arm64
+          python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: build native loader and driver
+        run: |
+          brew install cmake ninja pkg-config llvm spirv-tools spirv-llvm-translator libclc python@3.13
+          "$(brew --prefix python@3.13)/bin/python3.13" -m venv "$RUNNER_TEMP/kk-arm64-python"
+          source "$RUNNER_TEMP/kk-arm64-python/bin/activate"
+          python3 -m pip install meson==1.9.1 mako==1.3.10 packaging==25.0 PyYAML==6.0.3
+          llvm_prefix=$(brew --prefix llvm)
+          export PATH="$llvm_prefix/bin:$PATH"
+          KK_ARCH=arm64 bash runtime/kosmickrisp/build.sh "$RUNNER_TEMP/kk-arm64-build" "$RUNNER_TEMP/kk-arm64-bundle"
+      - name: probe native driver from a relocated path
+        run: |
+          mkdir -p arm64-artifact "$RUNNER_TEMP/kk arm64 relocated"
+          cp -R "$RUNNER_TEMP/kk-arm64-bundle" "$RUNNER_TEMP/kk arm64 relocated/driver"
+          /usr/bin/clang -arch arm64 -O2 -Wall -Wextra -Werror \
+            -I"$RUNNER_TEMP/kk-arm64-build/headers-install/include" \
+            tests/kosmickrisp_probe.c -o "$RUNNER_TEMP/kk arm64 relocated/host-probe"
+          unset VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
+          VK_DRIVER_FILES="$RUNNER_TEMP/kk arm64 relocated/driver/kosmickrisp_icd.json" \
+            "$RUNNER_TEMP/kk arm64 relocated/host-probe" \
+            "$RUNNER_TEMP/kk arm64 relocated/driver/libvulkan.1.dylib" \
+            2>&1 | tee arm64-artifact/host-probe.log
+      - name: package with upstream arm64 recipe
+        env:
+          VERSION: ${{ inputs.version }}
+          BASE_ID: ${{ inputs.base_runtime }}
+        run: |
+          # Build all modules before installing: install alone may leave an
+          # existing Wine build using stale objects.
+          bash arm64/build-arm64-unix.sh all
+          KOSMICKRISP_BUNDLE="$RUNNER_TEMP/kk-arm64-bundle" \
+            STAGE="$RUNNER_TEMP/kk-arm64-stage" \
+            bash arm64/package-arm64.sh "$VERSION" "$BASE_ID"
+          runtime="$HOME/Library/Application Support/com.dappermint.WhiskyPreview/Runtimes/whisky-arm64-$VERSION"
+          mkdir -p arm64-artifact
+          tar -czf arm64-artifact/runtime.tar.gz -C "$runtime" .
+          shasum -a 256 arm64-artifact/runtime.tar.gz > arm64-artifact/runtime.tar.gz.sha256
+          cp "$runtime/Wine/lib/kosmickrisp/SOURCE.txt" arm64-artifact/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: whisky-arm64-kosmickrisp-experimental-${{ inputs.version }}
+          path: arm64-artifact/
+          retention-days: 14
