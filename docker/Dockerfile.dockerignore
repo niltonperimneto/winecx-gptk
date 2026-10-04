@@ -1,0 +1,13 @@
+*
+!sysroot/
+!sysroot/**
+!tools/
+!tools/**
+!payloads/
+!payloads/**
+!kosmickrisp/
+!kosmickrisp/**
+!core/
+!core/**
+!runtime/
+!runtime/**
