@@ -1,0 +1,14 @@
+#!/bin/bash
+# Select the bundled driver for an existing WineCX runtime that supports
+# CX_LIBVULKAN. The CI-built Wine instead uses wine-kosmickrisp.
+set -euo pipefail
+wine_bin=$(cd -- "$(dirname -- "$0")" && pwd -P)
+bundle="$wine_bin/../lib/kosmickrisp"
+for required in libvulkan.1.dylib libvulkan_kosmickrisp.dylib kosmickrisp_icd.json; do
+    [ -f "$bundle/$required" ] || { echo "Missing KosmicKrisp component: $required" >&2; exit 1; }
+done
+export CX_LIBVULKAN="$bundle/libvulkan.1.dylib"
+export CX_ACTIVE_GRAPHICS_BACKEND=wined3d
+export VK_DRIVER_FILES="$bundle/kosmickrisp_icd.json"
+unset WINE_VULKAN_LIBRARY VK_ICD_FILENAMES VK_ADD_DRIVER_FILES VK_LOADER_DRIVERS_SELECT VK_LOADER_DRIVERS_DISABLE
+exec "$wine_bin/wine64" "$@"

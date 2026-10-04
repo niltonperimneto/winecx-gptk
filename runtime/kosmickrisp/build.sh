@@ -20,31 +20,50 @@ python3 -c 'import sys; assert sys.version_info >= (3, 10), "Mesa requires Pytho
 
 checkout() {
     local url=$1 revision=$2 directory=$3
-    if [ ! -d "$directory/.git" ]; then
+    if [ ! -e "$directory/.git" ]; then
         git init "$directory"
         git -C "$directory" remote add origin "$url"
     fi
-    git -C "$directory" fetch --depth=1 origin "$revision"
+    if [ -n "$(git -C "$directory" status --porcelain --ignore-submodules=all)" ]; then
+        echo "Local changes in $directory; refusing to change the checkout" >&2
+        return 1
+    fi
+    if [ "$(git -C "$directory" rev-parse HEAD 2>/dev/null || true)" = "$revision" ]; then
+        return 0
+    fi
+    git -C "$directory" fetch --depth=1 "$url" "$revision"
     git -C "$directory" checkout --detach FETCH_HEAD
     [ "$(git -C "$directory" rev-parse HEAD)" = "$revision" ]
 }
 checkout https://github.com/shadexternals/mesa-kosmickrisp.git "$KOSMICKRISP_BUILD_COMMIT" "$work/recipe"
-git -C "$work/recipe" submodule update --init --recursive --depth=1
-[ "$(git -C "$work/recipe/externals/mesa" rev-parse HEAD)" = "$KOSMICKRISP_MESA_COMMIT" ]
-# Local driver changes on top of the pinned Mesa. Reset first so a reused work
-# directory never carries an earlier application; a patch that no longer
-# applies fails the build.
-git -C "$work/recipe/externals/mesa" reset --hard --quiet "$KOSMICKRISP_MESA_COMMIT"
-for patch in "$script_dir"/patches/*.patch; do
-    [ -e "$patch" ] || continue
-    git -C "$work/recipe/externals/mesa" apply --index "$patch"
-done
+
+# Use upstream Mesa rather than the recipe's independently maintained fork.
+# Leave an already pinned tree to apply_patch.py, which validates its full state.
+if [ -n "${KOSMICKRISP_MESA_URL:-}" ]; then
+    if [ "$(git -C "$work/recipe/externals/mesa" rev-parse HEAD 2>/dev/null || true)" != "$KOSMICKRISP_MESA_COMMIT" ]; then
+        checkout "$KOSMICKRISP_MESA_URL" "$KOSMICKRISP_MESA_COMMIT" "$work/recipe/externals/mesa"
+    fi
+    if [ -f "$script_dir/apply_patch.py" ] && [ -n "${KOSMICKRISP_MESA_PATCH:-}" ]; then
+        python3 "$script_dir/apply_patch.py" "$work/recipe/externals/mesa" \
+            "$script_dir/patches/$KOSMICKRISP_MESA_PATCH" \
+            "$KOSMICKRISP_MESA_COMMIT" "$KOSMICKRISP_MESA_PATCH_SHA256"
+    fi
+else
+    git -C "$work/recipe" submodule update --init --recursive --depth=1
+    [ "$(git -C "$work/recipe/externals/mesa" rev-parse HEAD)" = "$KOSMICKRISP_MESA_COMMIT" ]
+    git -C "$work/recipe/externals/mesa" reset --hard --quiet "$KOSMICKRISP_MESA_COMMIT"
+    for patch in "$script_dir"/patches/*.patch; do
+        [ -e "$patch" ] || continue
+        git -C "$work/recipe/externals/mesa" apply --index "$patch"
+    done
+fi
+
 checkout https://github.com/KhronosGroup/Vulkan-Loader.git "$VULKAN_LOADER_COMMIT" "$work/loader"
 checkout https://github.com/KhronosGroup/Vulkan-Headers.git "$VULKAN_HEADERS_COMMIT" "$work/headers"
 
 # Per-architecture build directories: the recipe's Meson configuration and
 # the loader's CMake cache are architecture specific.
-driver_build="$work/driver-build-$arch"
+driver_build="$work/driver-build-$arch-${KOSMICKRISP_BUILD_COMMIT}-${KOSMICKRISP_MESA_COMMIT}"
 loader_build="$work/loader-build-$arch"
 cmake -S "$work/recipe" -B "$driver_build" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$arch" \
@@ -68,6 +87,10 @@ cmake --fresh -S "$work/loader" -B "$loader_build" \
 cmake --build "$loader_build" --parallel "$(sysctl -n hw.ncpu)"
 
 cp -L "$driver_build/outputs/libvulkan_kosmickrisp.dylib" "$output/"
+if [ -f "$script_dir/weak_dispatch.py" ] && [ -d "$driver_build/externals/mesa/build-target/src" ]; then
+    python3 "$script_dir/weak_dispatch.py" \
+        "$driver_build/externals/mesa/build-target/src" "$output/optional-dispatch.json" || true
+fi
 cp -L "$loader_build/loader/libvulkan.1.dylib" "$output/"
 # --prefer-static does not force Mesa's zlib fallback to build statically.
 # Bundle the exact target build, never the Homebrew copy.
@@ -124,11 +147,13 @@ for patch in "$script_dir"/patches/*.patch; do
     [ -e "$patch" ] || continue
     echo "PATCH=$(basename "$patch") $(shasum -a 256 "$patch" | cut -d' ' -f1)"
 done >> "$output/SOURCE.txt"
+mkdir -p "$output/patches"
+for patch in "$script_dir"/patches/*.patch; do
+    [ -e "$patch" ] || continue
+    cp "$patch" "$output/patches/"
+done
 {
     /usr/bin/clang --version
     cmake --version
-    meson --version
-    python3 --version
-    brew list --versions llvm spirv-tools spirv-llvm-translator libclc python@3.13
-    python3 -m pip freeze
+    "$work/driver-build-$arch-${KOSMICKRISP_BUILD_COMMIT}-${KOSMICKRISP_MESA_COMMIT}/externals/mesa/subprojects/subprojects/bin/meson" --version 2>/dev/null || meson --version
 } > "$output/BUILD-TOOLS.txt"

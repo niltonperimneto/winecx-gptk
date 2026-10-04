@@ -33,7 +33,13 @@ Use a fresh prefix without application-local Vulkan shims for capability tests.
 ## Build inputs and package layout
 
 `runtime/kosmickrisp/pins.env` pins the shadexternals cross-build recipe, its
-Mesa fork/submodule revision, Khronos Vulkan loader, and Vulkan headers. This
+upstream Mesa revision (independent of the recipe submodule), Khronos Vulkan
+loader, and Vulkan headers. It also
+pins the complete six-commit [Mesa MR !44786](https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/44786)
+geometry-shader patch at `0741187d341de5b3df969f8d67024e6ba261ddcf`, including
+a SHA-256 digest. Mesa is pinned to `fe554882e4f06cdd2579a77b37b04de605111a28`
+(main as fetched on 2026-09-29), and the recipe to
+`bac93e022479af8e53f608b355aab7ce4f235c9b`. This
 uses the recipe's separate native compiler-tools build and x86_64 target build;
 an arm64 ICD cannot be loaded by this Wine host. The deployment target is 26.0.
 Python 3.13 is selected explicitly; Mesa requires at least 3.10. Python build
@@ -41,13 +47,28 @@ packages are versioned in the workflow. Homebrew build dependencies
 and the runner's Xcode are not immutable; `BUILD-TOOLS.txt` records the tool
 versions. This is not yet a fully reproducible toolchain.
 
+[LunarG reports Vulkan 1.4 conformance for KosmicKrisp](https://www.lunarg.com/kosmickrisp-achieves-vulkan-1-4-conformance-on-apple-silicon/).
+The selected upstream source reports CTS conformance version `1.4.6.2`.
+Our x86_64 build with the additional geometry patch is a custom build: the
+reported version and smoke tests do not constitute a fresh CTS submission or
+certify this particular Wine/Rosetta configuration. The separate DXVK gates
+remain in force.
+
+The patch helper checks both the base revision and patch digest, applies to a
+pristine source tree, and recognizes an exactly patched tree on subsequent runs.
+It rejects staged, untracked, or incompatible local changes without resetting
+files. The driver build path includes the recipe, Mesa, and patch identities so
+ExternalProject stamps cannot reuse a different patched build. Use a fresh build
+root when testing this integration against another local Mesa checkout.
+
 The self-contained directory `Wine/lib/kosmickrisp/` contains:
 
 - `libvulkan.1.dylib`: the Khronos loader.
 - `libvulkan_kosmickrisp.dylib`: the Mesa driver.
 - `kosmickrisp_icd.json`: the generated manifest, with a relative library path.
 - `libz.1.dylib`: the x86_64 zlib fallback dependency when used by Mesa.
-- Source pins, build-tool versions, license notices, and successful probe logs.
+- Source pins, the attributed upstream patch in `patches/`, build-tool versions,
+  license notices, and probe logs.
 
 The build requires x86_64 libraries, rewrites their install IDs, and signs and
 verifies them. Apart from the explicitly bundled zlib, it rejects non-system
@@ -60,15 +81,20 @@ runtime dependency, bundle and validate it explicitly before relaxing that gate.
 The workflow first copies the bundle into a different path containing spaces
 and runs an x86_64 host probe under Rosetta. After packaging Wine, it compiles
 and runs the same probe as both x86_64 and i686 Windows executables. Each probe
-requires the KosmicKrisp driver ID and a successful graphics-device creation.
-The Windows probes also use `--present` to verify compute-shader readback and
-present in windowed, resized, borderless-fullscreen, and restored modes.
+requires the KosmicKrisp driver ID, Vulkan 1.4 or newer, and a successful
+graphics-device creation. It also records the driver-reported CTS conformance
+version; this is metadata, not a CTS run of our build.
+All probes require deterministic compute and geometry rendering/readback,
+adjacency draws without a geometry shader, tessellation-to-geometry primitive
+IDs, and guarded buffer/image side effects. The Windows probes also use
+`--present` to present in windowed, resized, borderless-fullscreen, and restored modes.
 It records API version, selected Features2 fields, push-constant limits, device
 extensions, and transform-feedback features when available. Missing optional
 features are reported, not converted to successful DXVK compatibility claims.
 
 These probes do not establish general visual/shader correctness or game
-performance. See [local test results](kosmickrisp-test-results.md).
+performance. See [local test results](kosmickrisp-test-results.md) and the
+[latest Mesa update validation](kosmickrisp-mesa-update.md).
 The remaining migration gates are:
 
 1. Complete a clean macOS 26 CI build and review the host and Wine probe logs.
