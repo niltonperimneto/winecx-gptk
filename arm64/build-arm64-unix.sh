@@ -32,7 +32,7 @@ nix shell nixpkgs#bison nixpkgs#flex nixpkgs#pkg-config --command bash -c '
   set -eu
   if [ ! -f Makefile ]; then
     echo "== configure"
-    "'"$SRC"'/configure" --enable-archs=arm64ec,aarch64 --disable-tests \
+    "'"$SRC"'/configure" --enable-archs=arm64ec,aarch64,i386 --disable-tests \
       --without-x --without-wayland --without-oss --without-alsa --without-pulse \
       --without-sane --without-usb --without-v4l2 --without-pcap --without-capi \
       --without-opencl --without-cups --prefix=/opt/whiskywine > configure.out 2>&1 || {
