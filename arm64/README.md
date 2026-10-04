@@ -272,6 +272,31 @@ and `wine --version` reports `wine-11.17`. Both programs stop at the same
 point, before FEX loads: Wine logs `released the pagezero`, then
 `failed to map the shared user data: c0000017` at `0x7ffe0000`. This matches
 the probe. Logs are in `smoke-run/` in the cache directory above.
+
+### FEX translation check in an arm64 Linux VM
+
+Linux has no pagezero restriction, so the translators can be tested there
+before the macOS loader is solved. The PE files are the same on both hosts;
+only the UnixLib is the Linux build. On 2026-10-03, in a Lima `vz` Fedora 44
+aarch64 VM (4 KiB pages), the setup was:
+- upstream Wine 11.17 (`36b6a2c`), built with llvm-mingw 20260616
+  (`ucrt-ubuntu-22.04-aarch64`) and `--enable-archs=arm64ec,aarch64,i386`;
+- `xtajit64.dll` and `xtajit.dll` copied from `fex-arm64-bundle/`, with
+  sha256 identical to the bundle;
+- FEX's Linux UnixLib, built from the same patched FEX-2609 source.
+
+Both programs passed in a fresh prefix: the x86_64 build under ARM64EC
+(`xtajit64.dll`) and the i686 build under WoW64 (`xtajit.dll`). Each reported
+native `0xaa64` and matched every expected value. Logs are in `vm-smoke/` in
+the cache directory.
+
+Two things this turned up:
+- Without `i386` in `--enable-archs`, Wine has no `syswow64\ntdll.dll`, and
+  every 32-bit program fails with `c0000135`. `build-arm64-unix.sh` now
+  builds the i386 half.
+- Upstream Wine builds a stub `xtajit64.dll` that only logs
+  `x64 emulation not implemented`. Reinstalling Wine overwrites FEX's copy, so
+  install FEX after Wine, as `package-arm64.sh` does.
 FEX on macOS has no hardware TSO switch, so x86 memory ordering
 stays on FEX's software path. 16 KiB pages (FEX issue #1221) do not affect the
 build, but runtime testing must cover them. ARM64EC assembly emits five
