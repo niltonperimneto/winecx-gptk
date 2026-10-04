@@ -1,79 +1,87 @@
 # winecx-gptk
 
-ci build of a gptk-capable wine runtime for the [frankea/Whisky](https://github.com/frankea/Whisky) fork: codeweavers' crossover 26.3 wine changes, rebased onto upstream wine 11.16.
+CI build of a Game Porting Toolkit (GPTK / D3DMetal) capable Wine runtime for the [frankea/Whisky](https://github.com/frankea/Whisky) ecosystem: CodeWeavers' CrossOver 26.3 Wine changes, rebased onto upstream Wine 11.16/11.17, carrying series 4.7 up through **canary 4.7.51**.
 
-why: apple's game porting toolkit / d3dmetal payload only executes on crossover-derived wine builds, it patches their unixcall internals at load time. details in [frankea/Whisky#163](https://github.com/frankea/Whisky/issues/163), importer app-side in [frankea/Whisky#164](https://github.com/frankea/Whisky/pull/164).
+> [!NOTE]
+> For a comprehensive, detailed breakdown of all features, architecture shifts, and optimizations introduced since this repository was forked from `dappermint`, see the [Evolution & Changes Guide](docs/FORK-CHANGES.md).
 
-the source tree is the [`wine1116` branch of niltonperimneto/winecx](https://github.com/niltonperimneto/winecx/tree/wine1116): crossover 26.3's diff (221 files against its wine 11.0 base) merged onto wine 11.15 via a synthetic three-way, then carried to 11.16 the same way, with every local patch committed in the tree itself. `patches/` in this repo is empty on purpose; the apply step is a guarded no-op. this fork is now the authoritative source for the stable runtime; the workflow pins an exact commit so branch movement cannot change an existing build.
+## Why This Runtime Exists
 
-what runs on it, measured on an m5: steam's ui end to end, d3d12 through d3dmetal at feature level 12_2 (binding tier 3, sm 6.6), dxvk d3d11, msync, and the media stack.
+Apple's Game Porting Toolkit / `D3DMetal` payload only executes on CrossOver-derived Wine builds because it patches their internal Unix call dispatch at load time (details in [frankea/Whisky#163](https://github.com/frankea/Whisky/issues/163), client-side loader in [frankea/Whisky#164](https://github.com/frankea/Whisky/pull/164)).
 
-An opt-in [experimental KosmicKrisp build](docs/kosmickrisp-experimental.md) adds
-an x86_64 Vulkan loader/ICD and a dedicated launcher. It retains the existing
-default stack and DXVK payload; experimental builds do not publish releases.
+The source tree is based on the `wine1116` / `wine1117` branch of [niltonperimneto/winecx](https://github.com/niltonperimneto/winecx): CrossOver 26.3's diff merged onto upstream Wine via synthetic three-way rebasing, with platform patches committed directly in the tree. The workflow pins exact, immutable commits so branch movement cannot silently alter build outputs.
 
-what the workflow does:
+**What runs on it:** Steam UI end-to-end (Chromium CEF embedded views), D3D12 through D3DMetal at Feature Level 12_2 (binding tier 3, SM 6.6), D3D11 via Relay12 or DXVK/DXMT, msync, and the full Media Foundation / Quartz decoding stack.
 
-- clones winecx at the pinned commit, builds the unix half for x86_64 under rosetta
-- PE half via mingw-w64 gcc (not llvm-mingw: an llvm-built `kernelbase.dll` stalls steam's CM login, found by module bisection), `--enable-archs=i386,x86_64`
-- freetype, gnutls, gstreamer and friends come from pinned nixpkgs x86_64-darwin and are bundled flat into `Wine/lib` with `@loader_path` rewrites, so the tree relocates; moltenvk from khronos' own release
-- wine-mono and wine-gecko go in extracted, the same form and the same place the stock whisky engine puts them
-- packages a whisky `Libraries.tar.gz` with `gptkCapable` set in the version plist
+---
 
-gates that refuse to ship a bad tree, each one added after that exact thing shipped silently:
+## Key Subsystems & Major Advancements
 
-- **relocatability.** every Mach-O file is swept for absolute non-system references. a dylib whose own id is a `/nix/store` path cannot be dlopened off the builder, which cost fonts, vulkan and tls for seven builds without a single error message.
-- **every bundled library dlopens.** the closure is loaded file by file on the builder with the store paths masked; this caught the libiconv split (`_iconv` vs `_libiconv`) that had silently killed the whole media stack.
-- **the runtime opens a window and media foundation has decoders.** `wine --version` passes on runtimes that cannot create a window.
-- **the i386 half is non-empty.** a 64-bit-only tree cannot load `syswow64\ntdll.dll`, so every 32-bit program dies with `c0000135`.
-- **the PE half is stripped.** gcc emits DWARF and nothing removes it; `ntdll.dll` is 3.0MB unstripped against the stock engine's 0.7MB, and everything still runs.
+### 1. Relay12 D3D11On12 Subsystem
+Direct3D 11 can now execute on top of D3DMetal via [niltonperimneto/relay12](https://github.com/niltonperimneto/relay12). Process-selective routing rules (`RELAY12_EXPERIMENTAL_FRAME`, `RELAY12_EXPERIMENTAL_FRAME_APPS`, `RELAY12_EXPERIMENTAL_FRAME_SKIP`) ensure game binaries route D3D11On12 to D3DMetal while shielding Steam WebHelper and CEF processes from illegal interposition.
 
-## reproducibility
+### 2. High-Performance GPTK Video & D3D12 Shim
+* **Tight Alignment Reporting**: Resolves resource allocation alignment in [gptk-video/d3d12shim.c](gptk-video/d3d12shim.c), preventing D3DMetal crashes on strict memory boundaries.
+* **Zero-Copy Barriers**: Preserves and passes through barrier batches over 32 elements without copying or latency overhead.
+* **Per-Device YUV Blit PSOs**: Tracks pipeline state objects and color-conversion buffers per `ID3D12Device` in [gptk-video/yuvblit.h](gptk-video/yuvblit.h), eliminating texture leaks across video device recreation.
 
-everything the build consumes is pinned in-tree:
+### 3. Dual Vulkan Tracks: MoltenVK + Experimental KosmicKrisp
+* **Default Stack**: Ships MoltenVK 1.4.2 alongside `dxvk-macOS-async` and DXMT 0.80.
+* **Experimental Track ([docs/kosmickrisp-experimental.md](docs/kosmickrisp-experimental.md))**: Ingests Mesa's KosmicKrisp Vulkan 1.4 driver over Metal via the Khronos Vulkan Loader.
+  - **Rosetta 16 KiB Memory Budget Fix**: Carries [runtime/kosmickrisp/patches/0002-...](runtime/kosmickrisp/patches/0002-util-use-the-host-page-size-for-available-memory-on-.patch) to report true host memory to `VK_EXT_memory_budget`.
+  - **fillModeNonSolid Polygon Emulation**: Maps `VkPolygonMode` to Metal triangle fill modes, enabling stock upstream DXVK 3.1.1 to initialize D3D9 and D3D11 (FL 11_1) devices.
+  - **Geometry Shaders via Poly**: Lowers geometry pipeline stages into NIR compute passes.
 
-| input | pinned by |
-|---|---|
-| winecx sources | `WINECX_COMMIT` in the workflow env |
-| nixpkgs | `NIXPKGS_REV` in the workflow env, a rev not a branch |
-| moltenvk, dxvk | version + sha256 in the workflow |
-| dxmt canary | upstream commit, successful workflow run, and artifact sha256 in the workflow |
-| wine-mono, wine-gecko | sha256 table in the workflow, checked after download; the versions are read out of winecx's `dlls/appwiz.cpl/addons.c` and the build stops if an unpinned version appears |
+### 4. Overhauled Modular Build & OCI Layer Caching
+Replaced the monolithic build workflow with a 4-tier lifecycle pipeline and standalone tools in [tools/](tools/):
+* **Layered OCI Caching ([docs/oci-build-system.md](docs/oci-build-system.md))**: Caches `sysroot` (Nixpkgs x86_64), `tools` (native Wine build tools), `payloads` (DXVK/DXMT/Mono/Gecko), and `driver` (KosmicKrisp Mesa).
+* **Fast Developer Iteration**: Incremental Wine core compilation with `ccache` drops turnaround times from 50+ minutes to **3–5 minutes**.
 
-builds run on a self-hosted runner by default (warm ccache, ~15 min); the `hosted` dispatch input is the clean-room check and what releases should come from when provenance matters more than turnaround.
+### 5. Native ARM64 & FEX Research Lane ([arm64/](arm64/))
+Provides scripts and patches preparing for life after Rosetta 2: native `arm64-apple-darwin` Wine Unix half, FEX-Emu JIT execution, and Apple Silicon virtual address space (low 4GB pagezero) analysis.
 
-## notable changes carried in the tree
+---
 
-**ntdll: don't call a foreign personality routine as an SEH handler.** `virtual_unwind()` leaves `LDR_DATA_TABLE_ENTRY *module` uninitialised and `LdrFindEntryForAddress` does not touch it on failure, so for a fault in Mach-O code the "personality routine in system library" guard reads garbage and never fires; wine then calls a libunwind personality routine as a windows exception handler and recurses to stack death. still present upstream as of wine 11.16, applied at the moved location there.
+## Quality Gates & Verification
 
-**winemac: host cross-process metal layers over CAContext.** wine 11.x grew CALayerHost cross-process swapchains upstream; what it still lacks is child windows and win32 state mirroring for hosted layers, which is what steam's chromium needs. the gpu process renders into another process's child windows; the owner hosts the published tree and re-derives hidden state and z-order from the win32 windows on every WindowPosChanged. without the mirroring, chromium's hidden standby surface covers the live one with one stale black frame, which shows up as a fully rendered steam library under a black layer.
+Every runtime build is gated against strict automated validation:
 
-**d3dkmt: adapter identity and segment sizes.** five more KMTQAITYPEs answered honestly from vulkan (adapter type, physical adapter count, pci address, adapter guid, segment sizes), placed above crossover's WDDM 2.7 hack so its fallthrough keeps reaching `default` for non-d3dmetal backends.
+* **Relocatability Sweep**: Every Mach-O binary is swept for absolute store references; install names are rewritten to `@loader_path`.
+* **dlopen Closure Validation**: Every bundled dylib is loaded with store paths masked via [tests/dlopenall.c](tests/dlopenall.c).
+* **Window Creation & Media Probes**: Headless probes confirm the runtime can open a hosted Cocoa window and Media Foundation decoders function.
+* **Architecture Integrity**: Verifies non-empty i386 WoW64 slices and stripped PE binaries.
+* **Hardware & GPU Probes**: Synthetic Vulkan compute readbacks ([tests/kosmickrisp_probe.c](tests/kosmickrisp_probe.c)) and recording D3D12 interposer checks ([tests/d3d12shim.c](tests/d3d12shim.c)).
 
-**upstream fixes taken ahead of their release.** the 11.15 lane carried eight commits from wine master as cherry-picks; all eight landed in 11.16 and were dropped at that rebase. the one currently carried is the winegstreamer non-fixed-caps video pool fix, which is not in 11.16.
+---
 
-## what happens when rosetta goes
+## Reproducibility & Pins
 
-this runtime is x86_64. it runs on apple silicon through rosetta 2, which apple
-has said is largely discontinued in macOS 28. everything here has that shelf
-life, and so does the apple payload it exists to host: d3dmetal ships x86_64
-only, so the d3d12 work, the video interposers and the metalfx bridges cannot
-follow the runtime to arm64 unless apple builds them for it.
+All inputs are strictly pinned in-tree:
 
-the successor is an arm64 runtime running x86 games under FEX, and it already
-works: our own FEX build executes both 64-bit and 32-bit x86 windows code on an
-arm64 mac. what it cannot do is host that process by itself. wine needs the low
-4GB of address space, arm64 reserves all of it as a mandatory pagezero, and the
-only way out is `com.apple.developer.cross-architecture-support`, an entitlement
-apple grants at its own discretion. crossover's arm64 build carries it. a
-self-signed binary carrying the same string is refused at exec.
+| Input | Pin Location |
+| :--- | :--- |
+| **WineCX Sources** | `WINECX_COMMIT` in [tools/build/pins.env](tools/build/pins.env) |
+| **Nixpkgs x86_64-darwin** | `NIXPKGS_REV` in [tools/build/pins.env](tools/build/pins.env) |
+| **MoltenVK & DXVK** | Version + SHA-256 in [tools/build/pins.env](tools/build/pins.env) |
+| **DXMT Canary** | Commit + Release Tag + SHA-256 in [tools/build/pins.env](tools/build/pins.env) |
+| **Relay12** | Commit + Release Tag + SHA-256 in [tools/build/pins.env](tools/build/pins.env) |
+| **KosmicKrisp & Mesa** | Revisions & patch digests in [runtime/kosmickrisp/pins.env](runtime/kosmickrisp/pins.env) |
+| **Wine-Mono & Gecko** | Verified against WineCX `dlls/appwiz.cpl/addons.c` |
 
-so the ceiling on this project is not engineering. anyone can write the code and
-we have. whether it reaches users is apple's decision, and worth knowing before
-you build a library around any of this.
+---
 
-## history
+## Documentation Index
 
-the wine 10 line (crossover 25.1, series 4.3) proved d3dmetal executes on a self-built runtime and carried the first version of the cross-process bridge as four patches; the wine 11.0 line (crossover 26.3) collapsed them to one. both era tips are tagged, [`lane/wine10-cx25`](../../tree/lane/wine10-cx25) and [`lane/wine11.0-cx26`](../../tree/lane/wine11.0-cx26), and the old `patches/` files are browsable in those trees.
-
-Build architecture and local iteration: [OCI build system](docs/oci-build-system.md).
+* **Fork Evolution**: [docs/FORK-CHANGES.md](docs/FORK-CHANGES.md)
+* **Build Architecture**:
+  - [Build System Overhaul Plan](docs/build-system-plan.md)
+  - [OCI Layer Caching Guide](docs/oci-build-system.md)
+  - [CI Execution Benchmarks](docs/oci-ci-results.md)
+* **KosmicKrisp & Vulkan**:
+  - [KosmicKrisp Migration Plan](docs/kosmickrisp-plan.md)
+  - [Experimental Driver Architecture](docs/kosmickrisp-experimental.md)
+  - [Performance & Memory Budget Analysis](docs/kosmickrisp-performance.md)
+  - [Validation Results & Hades Testing](docs/kosmickrisp-test-results.md)
+  - [Rosetta Deployment Guide](docs/kosmickrisp.md)
+* **Direct3D & DDI Testing**: [docs/DDI-CONCURRENCY-TESTING.md](docs/DDI-CONCURRENCY-TESTING.md)
+* **Native ARM64 / FEX Track**: [arm64/README.md](arm64/README.md)
