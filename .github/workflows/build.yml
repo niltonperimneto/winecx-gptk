@@ -336,7 +336,7 @@ jobs:
   publish:
     name: publish the runtime release
     needs: build
-    if: github.ref == 'refs/heads/main' && needs.build.outputs.kosmickrisp != 'true' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
+    if: github.ref == 'refs/heads/main' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: write

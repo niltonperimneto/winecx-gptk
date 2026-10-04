@@ -1,14 +1,93 @@
+diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
+index 1daead2e..c58d7843 100644
 --- a/dlls/win32u/vulkan.c
 +++ b/dlls/win32u/vulkan.c
-@@ -3075,6 +3075,11 @@
-     else
-         ERR( "Using %s\n", libvulkan );
+@@ -27,6 +27,7 @@
+ #include <dlfcn.h>
+ #include <pthread.h>
+ #include <unistd.h>
++#include <limits.h>
  
-+    /* Opt-in host loader for the experimental KosmicKrisp runtime launcher.
-+     * Keep the normal CrossOver backend selection unchanged when unset. */
-+    if (getenv( "WINE_VULKAN_LIBRARY" ) && *getenv( "WINE_VULKAN_LIBRARY" ))
-+        libvulkan = getenv( "WINE_VULKAN_LIBRARY" );
+ #include "ntstatus.h"
+ #include "win32u_private.h"
+@@ -3072,20 +3073,72 @@ static void vulkan_init_once(void)
+     VkResult res;
+     const char *libvulkan, *graphics_backend;
+ 
+-    /* CW HACK 25909: Allow specifying libvulkan */
+-    if (!(libvulkan = getenv( "CX_LIBVULKAN" )) ||
+-        !(graphics_backend = getenv( "CX_ACTIVE_GRAPHICS_BACKEND" )) ||
+-        strcmp( graphics_backend, "wined3d" ))
+-        libvulkan = SONAME_LIBVULKAN;
+-    else
+-        ERR( "Using %s\n", libvulkan );
++#ifdef __APPLE__
++    static char kk_lib[PATH_MAX];
++    static char kk_icd[PATH_MAX];
++#endif
 +
++    libvulkan = NULL;
+ 
+-    /* Opt-in host loader for the experimental KosmicKrisp runtime launcher.
+-     * Keep the normal CrossOver backend selection unchanged when unset. */
+     if (getenv( "WINE_VULKAN_LIBRARY" ) && *getenv( "WINE_VULKAN_LIBRARY" ))
+         libvulkan = getenv( "WINE_VULKAN_LIBRARY" );
++    else if (getenv( "CX_LIBVULKAN" ) && *getenv( "CX_LIBVULKAN" ) &&
++             (graphics_backend = getenv( "CX_ACTIVE_GRAPHICS_BACKEND" )) &&
++             !strcmp( graphics_backend, "wined3d" ))
++        libvulkan = getenv( "CX_LIBVULKAN" );
++    else
++    {
++#ifdef __APPLE__
++        /* KosmicKrisp supersedes MoltenVK when present in the runtime bundle */
++        Dl_info dli;
++        if (dladdr( (void *)vulkan_init_once, &dli ) && dli.dli_fname)
++        {
++            char path[PATH_MAX];
++            char *slash;
++            if (strlen( dli.dli_fname ) < sizeof(path))
++            {
++                strcpy( path, dli.dli_fname );
++                if ((slash = strrchr( path, '/' ))) *slash = 0; /* strip /win32u.so */
++                if ((slash = strrchr( path, '/' ))) *slash = 0; /* strip /x86_64-unix */
++                if ((slash = strrchr( path, '/' ))) *slash = 0; /* strip /wine -> .../lib */
++
++                snprintf( kk_lib, sizeof(kk_lib), "%s/kosmickrisp/libvulkan.1.dylib", path );
++                snprintf( kk_icd, sizeof(kk_icd), "%s/kosmickrisp/kosmickrisp_icd.json", path );
++
++                if (!access( kk_lib, R_OK ) && !access( kk_icd, R_OK ))
++                {
++                    if (!getenv( "VK_DRIVER_FILES" ))
++                    {
++                        unsetenv( "VK_ICD_FILENAMES" );
++                        unsetenv( "VK_ADD_DRIVER_FILES" );
++                        unsetenv( "VK_LOADER_DRIVERS_SELECT" );
++                        unsetenv( "VK_LOADER_DRIVERS_DISABLE" );
++                        setenv( "VK_DRIVER_FILES", kk_icd, 0 );
++                    }
++                    libvulkan = kk_lib;
++                }
++            }
++        }
++#endif
++        if (!libvulkan)
++            libvulkan = SONAME_LIBVULKAN;
++    }
+ 
      if (!(vulkan_handle = dlopen( libvulkan, RTLD_NOW )))
++    {
++#ifdef __APPLE__
++        if (libvulkan == kk_lib && strcmp( SONAME_LIBVULKAN, "" ))
++        {
++            ERR( "Failed to load KosmicKrisp %s (%s), falling back to MoltenVK %s\n",
++                 kk_lib, dlerror(), SONAME_LIBVULKAN );
++            libvulkan = SONAME_LIBVULKAN;
++            vulkan_handle = dlopen( libvulkan, RTLD_NOW );
++        }
++#endif
++    }
++
++    if (!vulkan_handle)
      {
          ERR( "Failed to load %s: %s\n", libvulkan, dlerror() );
+         return;
