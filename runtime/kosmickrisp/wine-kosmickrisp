@@ -12,6 +12,15 @@ bundle="$wine_bin/../lib/kosmickrisp"
 for required in libvulkan.1.dylib libvulkan_kosmickrisp.dylib kosmickrisp_icd.json; do
     [ -f "$bundle/$required" ] || { echo "Missing KosmicKrisp component: $required" >&2; exit 1; }
 done
+# Bottle-local defaults; explicit overrides and disable switches win.
+if [ -n "${WINEPREFIX:-}" ]; then
+    cache_root="$WINEPREFIX/ShaderCaches/kosmickrisp"
+    if mkdir -p "$cache_root/mesa" "$cache_root/dxvk"; then
+        cache_root=$(cd -- "$cache_root" && pwd -P)
+        export MESA_SHADER_CACHE_DIR="${MESA_SHADER_CACHE_DIR:-$cache_root/mesa}"
+        export DXVK_SHADER_CACHE_PATH="${DXVK_SHADER_CACHE_PATH:-Z:$cache_root/dxvk}"
+    fi
+fi
 export CX_LIBVULKAN="$bundle/libvulkan.1.dylib"
 export CX_ACTIVE_GRAPHICS_BACKEND=wined3d
 export VK_DRIVER_FILES="$bundle/kosmickrisp_icd.json"
