@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Validate the downloaded runtime, with bounded probes and durable evidence."""
+from shader_cache import validate as validate_shader_cache
+
 import argparse
 import hashlib
 import json
@@ -65,7 +67,7 @@ def parse_capabilities(text):
             if separator and key in ("geometryShader", "tessellationShader", "shaderInt64",
                                      "shaderInt8", "descriptorIndexing", "scalarBlockLayout",
                                      "synchronization2", "maxPushConstantsSize", "api",
-                                     "conformance", "fillModeNonSolid"):
+                                     "conformance", "fillModeNonSolid", "graphicsPipelineLibrary"):
                 fields[key] = value
     fields["extensions"] = extensions
     return fields
@@ -120,12 +122,20 @@ def main():
         report["sources"] = (bundle / "SOURCE.txt").read_text()
         check("hardware", ["system_profiler", "SPDisplaysDataType"])
         env["VK_DRIVER_FILES"] = str(bundle / "kosmickrisp_icd.json")
+        env["KOSMICKRISP_TEST_GPL"] = "1"
         markers = ("driver=KosmicKrisp id=28", "fillModeNonSolid=1",
+                   "graphicsPipelineLibrary=1", "GPL mode=1", "GPL mode=2", "GPL mode=3",
                    "KosmicKrisp device creation passed",
                    "geometry rendering and side-effect readback passed",
                    "adjacency-without-gs rendering and side-effect readback passed",
-                   "tessellation-geometry rendering and side-effect readback passed")
+                   "tessellation-geometry rendering and side-effect readback passed",
+                   "geometry-wireframe rendering and side-effect readback passed")
         check("host", [bundle / "tests/host-probe", bundle / "libvulkan.1.dylib"], markers)
+
+        report["shader_cache"] = validate_shader_cache(
+            bundle / "tests/host-probe", bundle / "libvulkan.1.dylib",
+            bundle / "kosmickrisp_icd.json", output / "shader-cache")
+        checks["shader-cache"] = {"status": "passed"}
 
         # This fails if the new patch was omitted, even if a global ICD happened
         # to let positive probes work. No CrossOver legacy loader override is set.
@@ -144,7 +154,7 @@ def main():
             report.setdefault("capabilities", {})[target] = parse_capabilities(text)
         if all(checks[f"wine-{target}"]["status"] == "passed" for target in ("x86_64", "i686")):
             report["migration"]["shader_correctness"] = {
-                "status": "passed", "reason": "deterministic compute, geometry, adjacency and tessellation readback; not general shader conformance"}
+                "status": "passed", "reason": "deterministic compute, geometry, adjacency, tessellation and wireframe readback; not general shader conformance"}
         caps = report["capabilities"]["x86_64"]
         missing = []
         if caps.get("geometryShader") != "1":

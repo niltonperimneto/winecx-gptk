@@ -64,5 +64,46 @@ sys.exit(int(os.environ.get("FAKE_WINE_EXIT", "0")))
         self.assertEqual(self.run_launcher(FAKE_WINE_EXIT="17").returncode, 17)
 
 
+class DXVKCacheLauncherTests(unittest.TestCase):
+    def setUp(self):
+        LauncherTests.setUp(self)
+        source = Path(__file__).resolve().parents[1] / "runtime/kosmickrisp/wine-kosmickrisp-dxvk"
+        shutil.copy(source, self.bin / source.name)
+        for lane in ("x64", "x32"):
+            directory = self.root / "DXVK3" / lane
+            directory.mkdir(parents=True)
+            (directory / "d3d11.dll").touch()
+        helper = self.root / "Wine/share/kosmickrisp"
+        helper.mkdir(parents=True)
+        (helper / "dxvk-prefix.py").touch()
+        self.prefix = self.root / "prefix with spaces"
+        self.prefix.mkdir()
+        (self.prefix / ".winecx-kosmickrisp-dxvk.json").touch()
+
+    def launch(self, **extra):
+        env = dict(os.environ, WINEPREFIX=str(self.prefix))
+        for key in ("DXVK_SHADER_CACHE_PATH", "MESA_SHADER_CACHE_DIR"):
+            env.pop(key, None)
+        env.update(extra)
+        process = subprocess.run(["bash", str(self.bin / "wine-kosmickrisp-dxvk"), "game.exe"],
+                                 env=env, text=True, capture_output=True, check=True)
+        return json.loads(process.stdout)["env"]
+
+    def test_persistent_cache_paths_in_relocated_prefix(self):
+        env = self.launch()
+        root = self.prefix / "ShaderCaches/kosmickrisp"
+        self.assertEqual(env["DXVK_SHADER_CACHE_PATH"], "Z:" + str(root / "dxvk"))
+        self.assertEqual(env["MESA_SHADER_CACHE_DIR"], str(root / "mesa"))
+        self.assertTrue((root / "dxvk").is_dir())
+        self.assertTrue((root / "mesa").is_dir())
+
+    def test_user_cache_paths_and_disable_switch_survive(self):
+        custom = {"DXVK_SHADER_CACHE_PATH": "C:/Custom cache", "MESA_SHADER_CACHE_DIR": "/custom mesa",
+                  "DXVK_SHADER_CACHE": "0", "MESA_SHADER_CACHE_DISABLE": "true"}
+        env = self.launch(**custom)
+        for key, value in custom.items():
+            self.assertEqual(env[key], value)
+
+
 if __name__ == "__main__":
     unittest.main()

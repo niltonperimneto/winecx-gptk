@@ -23,6 +23,13 @@ esac
     echo "Install DXVK first: WINEPREFIX=... $0 --install-prefix" >&2
     exit 1
 }
+# Keep compiler caches with the bottle; explicit environment overrides win.
+cache_root="$prefix/ShaderCaches/kosmickrisp"
+if mkdir -p "$cache_root/dxvk" "$cache_root/mesa"; then
+    cache_root=$(cd -- "$cache_root" && pwd -P)
+    export DXVK_SHADER_CACHE_PATH="${DXVK_SHADER_CACHE_PATH:-Z:$cache_root/dxvk}"
+    export MESA_SHADER_CACHE_DIR="${MESA_SHADER_CACHE_DIR:-$cache_root/mesa}"
+fi
 export CX_LIBVULKAN="$bundle/libvulkan.1.dylib"
 export CX_ACTIVE_GRAPHICS_BACKEND=wined3d
 export VK_DRIVER_FILES="$bundle/kosmickrisp_icd.json"

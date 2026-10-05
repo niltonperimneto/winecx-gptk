@@ -252,6 +252,11 @@ jobs:
               "$probe_dir/host-probe" "$probe_dir/driver/libvulkan.1.dylib" \
               2>&1 | tee payload/kosmickrisp/host-probe.txt
             grep -qx 'fillModeNonSolid=1' payload/kosmickrisp/host-probe.txt
+            python3 runtime/kosmickrisp/shader_cache.py \
+              --probe "$probe_dir/host-probe" \
+              --loader "$probe_dir/driver/libvulkan.1.dylib" \
+              --icd "$probe_dir/driver/kosmickrisp_icd.json" \
+              --output payload/kosmickrisp/shader-cache-validation
           else
             echo 'Metal device unavailable; host probe deferred' | tee payload/kosmickrisp/host-probe.txt
           fi
@@ -1109,7 +1114,7 @@ jobs:
               -o "Libraries/Wine/lib/kosmickrisp/tests/d3d9-$target.exe"
             if [ '${{ steps.metal.outputs.available }}' = true ]; then
               set -o pipefail
-              WINEPREFIX="$RUNNER_TEMP/kosmickrisp-prefix" WINEDEBUG=-all \
+              KOSMICKRISP_TEST_GPL=1 WINEPREFIX="$RUNNER_TEMP/kosmickrisp-prefix" WINEDEBUG=-all \
                 Libraries/Wine/bin/wine-kosmickrisp "$probe_dir/$target.exe" --present \
                 2>&1 | tee "Libraries/Wine/lib/kosmickrisp/wine-$target-probe.txt"
             else
@@ -1639,6 +1644,8 @@ jobs:
             kosmickrisp-results/summary.md
             kosmickrisp-results/*.log
             kosmickrisp-results/dxvk-*/*.log
+            kosmickrisp-results/shader-cache/*.log
+            kosmickrisp-results/shader-cache/result.json
           if-no-files-found: error
           retention-days: 30
 

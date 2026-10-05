@@ -4,8 +4,67 @@
 #include "kosmickrisp_geometry/tesc_spv.h"
 #include "kosmickrisp_geometry/tese_spv.h"
 
+/* Exercise four independently created GPL subsets, then link an executable.
+ * mode 1: no retain/LTO flags; mode 2: retained NIR and LTO;
+ * mode 3: first link vertex-input + pre-raster into another library. */
+static VkResult gpl_pipeline(PFN_vkCreateGraphicsPipelines create,
+    PFN_vkDestroyPipeline destroy, VkDevice device,
+    const VkGraphicsPipelineCreateInfo *full, unsigned mode, VkPipeline *pipeline)
+{
+    VkPipeline libraries[4] = {0}, combined = VK_NULL_HANDLE;
+    VkGraphicsPipelineLibraryFlagsEXT subsets[] = {
+        VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT,
+        VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT,
+        VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT,
+        VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT };
+    VkResult result = VK_SUCCESS;
+    for (unsigned i = 0; i < 4; ++i) {
+        VkGraphicsPipelineLibraryCreateInfoEXT part = {
+            .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT, .flags = subsets[i] };
+        VkGraphicsPipelineCreateInfo info = *full;
+        info.pNext = &part;
+        info.flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
+        if (mode == 2) info.flags |= VK_PIPELINE_CREATE_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT;
+        if (i != 0) { info.pVertexInputState = NULL; info.pInputAssemblyState = NULL; }
+        if (i != 1) { info.pTessellationState = NULL; info.pViewportState = NULL; info.pRasterizationState = NULL; }
+        if (i != 2) info.pDepthStencilState = NULL;
+        if (i != 3) info.pColorBlendState = NULL;
+        if (i < 2) info.pMultisampleState = NULL;
+        info.stageCount = i == 1 ? full->stageCount - 1 : i == 2 ? 1 : 0;
+        info.pStages = i == 1 ? full->pStages : i == 2 ? &full->pStages[full->stageCount - 1] : NULL;
+        if (i == 0 || i == 3) info.layout = VK_NULL_HANDLE;
+        if (i == 0) info.renderPass = VK_NULL_HANDLE;
+        result = create(device, VK_NULL_HANDLE, 1, &info, NULL, &libraries[i]);
+        if (result != VK_SUCCESS) goto done;
+    }
+    VkPipelineLibraryCreateInfoKHR link = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR,
+        .libraryCount = 4, .pLibraries = libraries };
+    VkGraphicsPipelineCreateInfo info = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &link, .layout = full->layout };
+    if (mode == 3) {
+        link.libraryCount = 2;
+        info.flags = VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
+        result = create(device, VK_NULL_HANDLE, 1, &info, NULL, &combined);
+        if (result != VK_SUCCESS) goto done;
+        link.libraryCount = 3;
+        VkPipeline nested[] = { combined, libraries[2], libraries[3] };
+        link.pLibraries = nested;
+        info.flags = 0;
+        result = create(device, VK_NULL_HANDLE, 1, &info, NULL, pipeline);
+    } else {
+        info.flags = mode == 2 ? VK_PIPELINE_CREATE_LINK_TIME_OPTIMIZATION_BIT_EXT : 0;
+        result = create(device, VK_NULL_HANDLE, 1, &info, NULL, pipeline);
+    }
+done:
+    if (combined) destroy(device, combined, NULL);
+    for (unsigned i = 0; i < 4; ++i) if (libraries[i]) destroy(device, libraries[i], NULL);
+    return result;
+}
+
 static int geometry_readback(PFN_vkGetInstanceProcAddr gipa, PFN_vkGetDeviceProcAddr gdpa,
-    VkInstance instance, VkPhysicalDevice physical, VkDevice device, uint32_t family)
+    VkInstance instance, VkPhysicalDevice physical, VkDevice device, uint32_t family, unsigned gpl_mode)
 {
     RESOLVE(vkGetPhysicalDeviceMemoryProperties);
 #define DEVICE_PROC(name) PFN_##name name = (PFN_##name)gdpa(device, #name); if (!name) return 1
@@ -166,8 +225,8 @@ static int geometry_readback(PFN_vkGetInstanceProcAddr gipa, PFN_vkGetDeviceProc
     VkQueue queue;
     vkGetDeviceQueue(device, family, 0, &queue);
     int failed = 0;
-    const char *names[] = { "geometry", "adjacency-without-gs", "tessellation-geometry" };
-    for (unsigned test = 0; test < 3; ++test) {
+    const char *names[] = { "geometry", "adjacency-without-gs", "tessellation-geometry", "geometry-wireframe" };
+    for (unsigned test = 0; test < 4; ++test) {
         memset(mapped, 0, 512);
         VkPipelineShaderStageCreateInfo selected[5];
         unsigned count = 0;
@@ -177,13 +236,18 @@ static int geometry_readback(PFN_vkGetInstanceProcAddr gipa, PFN_vkGetDeviceProc
         selected[count++] = stages[4];
         assembly.topology = test == 2 ? VK_PRIMITIVE_TOPOLOGY_PATCH_LIST :
             test == 1 ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        raster.polygonMode = test == 3 ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
         VkGraphicsPipelineCreateInfo pipeline_info = { .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
             .stageCount = count, .pStages = selected, .pVertexInputState = &vertex, .pInputAssemblyState = &assembly,
             .pTessellationState = test == 2 ? &tess : NULL, .pViewportState = &viewport_info,
             .pRasterizationState = &raster, .pMultisampleState = &samples, .pColorBlendState = &color,
             .layout = layout, .renderPass = render_pass };
         VkPipeline pipeline;
-        CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline));
+        if (gpl_mode) {
+            CHECK(gpl_pipeline(vkCreateGraphicsPipelines, vkDestroyPipeline, device, &pipeline_info, gpl_mode, &pipeline));
+        } else {
+            CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline));
+        }
         VkCommandBufferAllocateInfo command_allocate = { .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
             .commandPool = command_pool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1 };
         VkCommandBuffer command;
@@ -210,9 +274,9 @@ static int geometry_readback(PFN_vkGetInstanceProcAddr gipa, PFN_vkGetDeviceProc
         vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 0, NULL);
-        uint32_t adjacency = test == 1;
+        uint32_t adjacency = test == 3 ? 2 : test == 1;
         vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 4, &adjacency);
-        vkCmdDraw(command, 6, 1, 0, 0);
+        vkCmdDraw(command, test == 3 ? 3 : 6, 1, 0, 0);
         vkCmdEndRenderPass(command);
         VkMemoryBarrier after = { .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
             .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -235,26 +299,36 @@ static int geometry_readback(PFN_vkGetInstanceProcAddr gipa, PFN_vkGetDeviceProc
         CHECK(vkQueueWaitIdle(queue));
         int case_failed = 0;
         const unsigned char *pixels = mapped;
+        unsigned green_pixels = 0;
         for (unsigned i = 0; i < 64; ++i) {
-            if (pixels[i*4] != 0 || pixels[i*4+1] != 255 || pixels[i*4+2] != 0 || pixels[i*4+3] != 255) {
+            int green = pixels[i*4] == 0 && pixels[i*4+1] == 255 &&
+                pixels[i*4+2] == 0 && pixels[i*4+3] == 255;
+            int red = pixels[i*4] == 255 && pixels[i*4+1] == 0 &&
+                pixels[i*4+2] == 0 && pixels[i*4+3] == 255;
+            green_pixels += green;
+            if ((!green && test != 3) || (!green && !red)) {
                 fprintf(stderr, "%s pixel %u: %u,%u,%u,%u\n", names[test], i,
                     pixels[i*4], pixels[i*4+1], pixels[i*4+2], pixels[i*4+3]);
                 case_failed = 1;
                 break;
             }
         }
+        if (test == 3 && (!green_pixels || pixels[(3*8+4)*4] != 255 ||
+                         pixels[(3*8+4)*4+1] != 0)) {
+            fprintf(stderr, "wireframe must render edges and leave the triangle interior clear\n");
+            case_failed = 1;
+        }
         const uint32_t *counters = (const uint32_t *)((const char *)mapped + 256);
-        unsigned expected_calls = test == 1 ? 0 : 2;
-        unsigned minimum_invocations = test == 1 ? 0 : test == 2 ? 12 : 2;
-        unsigned expected_ids = test == 1 ? 0 : 3;
+        unsigned expected_calls = test == 1 ? 0 : test == 2 ? 12 : test == 3 ? 1 : 2;
+        unsigned expected_ids = test == 1 ? 0 : test == 3 ? 1 : 3;
         if (counters[0] != expected_calls || counters[1] != expected_ids || counters[4] != expected_calls ||
-            counters[2] < minimum_invocations || (test == 1 && counters[2] != 0)) {
+            counters[2] != expected_calls) {
             fprintf(stderr, "%s side effects: calls=%u ids=0x%x image=%u expected=%u/0x%x/%u\n",
                 names[test], counters[0], counters[1], counters[4], expected_calls, expected_ids, expected_calls);
             case_failed = 1;
         }
         for (unsigned i = 0; i < 2; ++i) {
-            uint32_t expected = test == 1 ? 0 : (0xc0de0000u | i);
+            uint32_t expected = test == 1 || (test == 3 && i == 1) ? 0 : (0xc0de0000u | i);
             if (counters[5+i] != expected) {
                 fprintf(stderr, "%s image store [%u]: 0x%x expected 0x%x\n",
                     names[test], i, counters[5+i], expected);

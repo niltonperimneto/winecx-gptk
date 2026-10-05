@@ -1,8 +1,9 @@
 # KosmicKrisp local test results — 2026-09-27
 
-The experimental x86_64 bundle builds and passes basic Vulkan device creation
-and Win32 presentation tests on this machine. Upstream DXVK remains blocked by
-missing geometry shaders and transform feedback.
+The experimental x86_64 bundle builds and passes Vulkan shader/readback and
+Win32 presentation tests on this machine. The MR !44786 follow-up below adds
+geometry shaders; upstream DXVK remains blocked by non-solid fill and transform
+feedback. Earlier results below describe the unpatched baseline.
 
 ## Environment and scope
 
@@ -104,3 +105,58 @@ Evidence is retained locally in
 `~/Library/Caches/winecx-kosmickrisp-test/hades-startup/`: `result.json`,
 `diagnostic.log`, `startup-mscoree.log`, and the isolated prefix's Hades.log.
 The hosted CI runner still needs its own provisioned installation and harness.
+
+
+## Mesa MR !44786 integration (2026-09-28)
+
+Integrated all six upstream commits through
+`0741187d341de5b3df969f8d67024e6ba261ddcf` as an attributed vendored patch.
+The patch applies cleanly to the existing Mesa `8b06c1fef1` pin, without changing
+the `a82cadb14c` recipe pin. Its SHA-256 is
+`fd87dd137cb92e27c9e93b364df46ec550b4b55f5d09d1839c14ebbaa8e36038`.
+Both the patch and its provenance are included in the bundle.
+
+Built in a fresh work directory, separate from the independently updated local
+shadexternals cache. The source patch helper also recognized the built source as
+already patched. All 34 Python tests passed, including corruption, wrong-base,
+staged/unstaged/untracked-change rejection and idempotence tests.
+
+| Check | Result |
+|---|---|
+| Fresh x86_64 driver/loader build, signatures and dependency audit | Passed |
+| Host probe under Rosetta from a relocated path with spaces | Passed |
+| x86_64 and i686 Wine compute readback | Passed |
+| Geometry rendering: exact 8x8 RGBA8 image | Passed on host and both PE architectures |
+| Triangle adjacency without a geometry shader | Passed on host and both PE architectures |
+| Tessellation to geometry: two patch IDs, exact image | Passed on host and both PE architectures |
+| Guarded buffer/image atomics and per-ID image stores | Passed on host and both PE architectures |
+| Windowed, resized, borderless fullscreen and restored presentation | Passed on both PE architectures |
+| DXVK 2.4 and 3.1.1, D3D9/D3D11, both architectures | Initialization failed |
+| Hades Vulkan startup | Loaded Tartarus, then clean exit 0 after 90.69 seconds |
+
+The driver reports `geometryShader=1`, `fillModeNonSolid=0`, and no
+`VK_EXT_transform_feedback`. DXVK 3.1.1 explicitly logs rejection for missing
+`fillModeNonSolid`, followed by no adapters found. The CI fixture remains DXVK
+2.4; the local 3.1.1 run is additional evidence, not a change of runtime default.
+
+An initial test incorrectly assumed geometry shaders execute exactly once per
+primitive. It observed six raw invocations for two triangles and 36 for twelve
+tessellated triangles. Vulkan permits repeated invocations, so this alone is not
+a driver defect. The corrected fixture uses an atomic bitset to guard each
+logical update and verifies exactly two buffer/image updates and ID mask `0x3`.
+Raw invocation counts remain in the logs. See the
+[shader execution rules](https://docs.vulkan.org/spec/latest/chapters/shaders.html#shaders-geometry-execution).
+
+Hades used the existing Wine 4.7.51 (`wine-11.17`) runtime, the harness-owned
+`kk-prefix`, and the legacy loader override. The NVAPI disable workaround was
+retained. The driver path in the loader log identifies the new bundle. The game
+log records starting a new game, loading Tartarus, pause/exit screens, profile
+writes, and orderly shutdown. This is startup evidence; no screenshot comparison,
+combat/audio acceptance, or frame-time benchmark was collected for this run.
+`gameplay_verified` remains false. The installed runtime was not replaced.
+
+Evidence is under `~/Library/Caches/winecx-kosmickrisp-mr44786/`:
+`build.log`, `bundle/`, `host.log`, `wine-x86_64.log`, `wine-i686.log`,
+`dxvk-2.4/`, `dxvk-3.1.1/`, and `hades/`. The initial counter diagnostic logs are
+retained separately. This macOS 27.2 run does not replace the macOS 26 packaged
+Wine CI gate, and it does not establish DXVK or full gameplay readiness.

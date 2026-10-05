@@ -33,6 +33,7 @@ int main(int argc, char **argv)
     setvbuf(stdout, NULL, _IONBF, 0);
     PFN_vkGetInstanceProcAddr gipa;
     int present = 0;
+    int gpl_test = getenv("KOSMICKRISP_TEST_GPL") != NULL;
 #ifdef _WIN32
     present = argc == 2 && !strcmp(argv[1], "--present");
     HMODULE module = LoadLibraryA("vulkan-1.dll");
@@ -91,8 +92,10 @@ int main(int argc, char **argv)
             return 1;
         }
         ++found;
+        VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT gpl = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT };
         VkPhysicalDeviceVulkan13Features f13 = {
-            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, .pNext = &gpl };
         VkPhysicalDeviceVulkan12Features f12 = {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &f13 };
         VkPhysicalDeviceFeatures2 features = {
@@ -106,6 +109,11 @@ int main(int argc, char **argv)
             features.features.geometryShader, features.features.tessellationShader,
             features.features.shaderInt64);
         printf("fillModeNonSolid=%u\n", features.features.fillModeNonSolid);
+        printf("graphicsPipelineLibrary=%u\n", gpl.graphicsPipelineLibrary);
+        if (gpl_test && !gpl.graphicsPipelineLibrary) {
+            fprintf(stderr, "GPL test requires graphicsPipelineLibrary\n");
+            return 1;
+        }
         printf("descriptorIndexing=%u scalarBlockLayout=%u shaderInt8=%u synchronization2=%u\n",
             f12.descriptorIndexing, f12.scalarBlockLayout, f12.shaderInt8, f13.synchronization2);
 
@@ -142,25 +150,34 @@ int main(int argc, char **argv)
         VkDeviceQueueCreateInfo queue = { .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
             .queueFamilyIndex = family, .queueCount = 1, .pQueuePriorities = &priority };
         if (!features.features.geometryShader || !features.features.tessellationShader ||
-            !features.features.vertexPipelineStoresAndAtomics) {
-            fprintf(stderr, "geometry readback requires geometry/tessellation/vertex stores features\n");
+            !features.features.vertexPipelineStoresAndAtomics || !features.features.fillModeNonSolid) {
+            fprintf(stderr, "geometry readback requires geometry/tessellation/vertex stores/non-solid fill features\n");
             return 1;
         }
         VkPhysicalDeviceFeatures enabled = { .geometryShader = VK_TRUE, .tessellationShader = VK_TRUE,
-            .vertexPipelineStoresAndAtomics = VK_TRUE };
+            .vertexPipelineStoresAndAtomics = VK_TRUE, .fillModeNonSolid = VK_TRUE };
         VkDeviceCreateInfo device_info = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
             .queueCreateInfoCount = 1, .pQueueCreateInfos = &queue, .pEnabledFeatures = &enabled };
-        const char *swapchain_extension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
-        if (present) {
-            device_info.enabledExtensionCount = 1;
-            device_info.ppEnabledExtensionNames = &swapchain_extension;
+        const char *device_extensions[3];
+        if (present) device_extensions[device_info.enabledExtensionCount++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+        if (gpl_test) {
+            device_extensions[device_info.enabledExtensionCount++] = VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME;
+            device_extensions[device_info.enabledExtensionCount++] = VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME;
+            device_info.pNext = &gpl;
         }
+        device_info.ppEnabledExtensionNames = device_extensions;
         VkDevice device;
         CHECK(vkCreateDevice(devices[i], &device_info, NULL, &device));
         PFN_vkDestroyDevice destroy = (PFN_vkDestroyDevice)vkGetDeviceProcAddr(device, "vkDestroyDevice");
         if (!destroy) return 1;
         if (compute_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
-        failed |= geometry_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family);
+        failed |= geometry_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family, 0);
+        if (gpl_test) {
+            for (unsigned mode = 1; mode <= 3; ++mode) {
+                printf("GPL mode=%u\n", mode);
+                failed |= geometry_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family, mode);
+            }
+        }
 #ifdef _WIN32
         if (present && present_frame(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
 #endif
