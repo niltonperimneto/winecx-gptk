@@ -1,0 +1,139 @@
+diff --git a/src/kosmickrisp/util/kk_dispatch_cmd_gen.py b/src/kosmickrisp/util/kk_dispatch_cmd_gen.py
+index 562e277ec5d..94d1cf1efa5 100644
+--- a/src/kosmickrisp/util/kk_dispatch_cmd_gen.py
++++ b/src/kosmickrisp/util/kk_dispatch_cmd_gen.py
+@@ -35,6 +35,29 @@ from mako.template import Template
+ # '{file_without_suffix}_depend_files'.
+ from vk_entrypoints import get_entrypoints_from_xml
+ 
++PREWARM_COMMANDS = frozenset({
++    'CmdBindPipeline',
++    'CmdBindShadersEXT',
++    'CmdBeginRendering',
++    'CmdBeginRenderPass',
++    'CmdBeginRenderPass2',
++    'CmdNextSubpass',
++    'CmdNextSubpass2',
++    'CmdSetPrimitiveTopology',
++    'CmdSetRasterizationSamplesEXT',
++    'CmdSetSampleMaskEXT',
++    'CmdSetAlphaToCoverageEnableEXT',
++    'CmdSetAlphaToOneEnableEXT',
++    'CmdSetLogicOpEXT',
++    'CmdSetLogicOpEnableEXT',
++    'CmdSetColorBlendEnableEXT',
++    'CmdSetColorBlendEquationEXT',
++    'CmdSetColorBlendAdvancedEXT',
++    'CmdSetColorWriteMaskEXT',
++    'CmdSetColorWriteEnableEXT',
++    'CmdSetRenderingAttachmentLocations',
++})
++
+ TEMPLATE_H = Template(COPYRIGHT + """\
+ /* This file generated from ${filename}, don't edit directly. */
+ 
+@@ -48,6 +71,7 @@ extern "C" {
+ #endif
+ 
+ extern struct vk_device_dispatch_table kk_device_cmd_trampolines;
++extern struct vk_device_dispatch_table kk_device_cmd_prewarm_dispatch_table;
+ 
+ #ifdef __cplusplus
+ }
+@@ -84,6 +108,9 @@ ${e.prefixed_name('kk_cmd_tramp')}(${e.decl_params()})
+     }
+ 
+     dev->vk.dispatch_table.${e.name}(${e.call_params()});
++    % if e.name in prewarm_commands:
++    kk_cmd_prewarm_pipeline(cmd);
++    % endif
+     if (!cmd->one_time_submit) {
+       vk_cmd_enqueue_device_entrypoints.${e.name}(${e.call_params()});
+     }
+@@ -108,6 +135,47 @@ ${e.prefixed_name('kk_cmd_tramp')}(${e.decl_params()})
+   % endif
+ % endfor
+ 
++% for e in entrypoints:
++  % if not e.is_device_entrypoint() or e.alias or e.params[0].type != 'VkCommandBuffer' or not e.name.startswith('Cmd'):
++    <% continue %>
++  % endif
++  % if e.guard is not None:
++#ifdef ${e.guard}
++  % endif
++static VKAPI_ATTR ${e.return_type} VKAPI_CALL
++${e.prefixed_name('kk_cmd_prewarm_tramp')}(${e.decl_params()})
++{
++    VK_FROM_HANDLE(kk_cmd_buffer, cmd, ${e.params[0].name});
++    struct kk_device *dev = kk_cmd_buffer_device(cmd);
++  % if e.return_type == 'void':
++    dev->vk.dispatch_table.${e.name}(${e.call_params()});
++    % if e.name in prewarm_commands:
++    kk_cmd_prewarm_pipeline(cmd);
++    % endif
++  % else:
++    return dev->vk.dispatch_table.${e.name}(${e.call_params()});
++  % endif
++}
++  % if e.guard is not None:
++#endif
++  % endif
++% endfor
++
++struct vk_device_dispatch_table kk_device_cmd_prewarm_dispatch_table = {
++% for e in entrypoints:
++  % if not e.is_device_entrypoint() or e.alias or e.params[0].type != 'VkCommandBuffer' or not e.name.startswith('Cmd'):
++    <% continue %>
++  % endif
++  % if e.guard is not None:
++#ifdef ${e.guard}
++  % endif
++    .${e.name} = ${e.prefixed_name('kk_cmd_prewarm_tramp')},
++  % if e.guard is not None:
++#endif
++  % endif
++% endfor
++};
++
+ struct vk_device_dispatch_table kk_device_cmd_trampolines = {
+ % for e in entrypoints:
+   % if not e.is_device_entrypoint() or e.alias or e.params[0].type != 'VkCommandBuffer' or not e.name.startswith('Cmd'):
+@@ -144,10 +212,12 @@ def main():
+         if args.out_h:
+             with open(args.out_h, 'w', encoding='utf-8') as f:
+                 f.write(TEMPLATE_H.render(entrypoints=entrypoints,
++                                          prewarm_commands=PREWARM_COMMANDS,
+                                           filename=os.path.basename(__file__)))
+         if args.out_c:
+             with open(args.out_c, 'w', encoding='utf-8') as f:
+                 f.write(TEMPLATE_C.render(entrypoints=entrypoints,
++                                          prewarm_commands=PREWARM_COMMANDS,
+                                           filename=os.path.basename(__file__)))
+     except Exception:
+         # In the event there's an error, this imports some helpers from mako
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index b67f586b227..fa548fcf723 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -524,7 +524,7 @@ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+    dev->vk.shader_ops = &kk_device_shader_ops;
+    dev->mtl_handle = pdev->mtl_dev_handle;
+    dev->vk.command_buffer_ops = &kk_cmd_buffer_ops;
+-   dev->vk.command_dispatch_table = &dev->vk.dispatch_table;
++   dev->vk.command_dispatch_table = &kk_device_cmd_prewarm_dispatch_table;
+    dev->vk.get_timestamp = kk_get_timestamp;
+ 
+    /* Create a new Metal pipeline compiler for the device */
+diff --git a/src/kosmickrisp/vulkan/kk_queue.c b/src/kosmickrisp/vulkan/kk_queue.c
+index 5509318ffa0..1ccadf1a83f 100644
+--- a/src/kosmickrisp/vulkan/kk_queue.c
++++ b/src/kosmickrisp/vulkan/kk_queue.c
+@@ -138,7 +138,7 @@ rerecord_and_commit_cmd_buffer(struct kk_queue *queue,
+       goto release;
+ 
+    vk_cmd_queue_execute(&cmd->vk.cmd_queue, rerecord_handle,
+-                        &dev->vk.dispatch_table);
++                        dev->vk.command_dispatch_table);
+ 
+    result = kk_EndCommandBuffer(rerecord_handle);
+    if (result != VK_SUCCESS)

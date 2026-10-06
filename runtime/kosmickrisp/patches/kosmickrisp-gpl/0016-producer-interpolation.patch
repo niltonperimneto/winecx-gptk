@@ -1,0 +1,36 @@
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 509f885166b501d0f61f942f5a9eb7c18ec90cef..b08257fb031e1f72aa53bb6e331aa294d7e5183c 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -785,6 +785,17 @@ kk_lower_nir(struct kk_device *dev, nir_shader *nir, bool emulated_stage,
+    if (nir->info.io_lowered)
+       return;
+ 
++   if (nir->info.stage == MESA_SHADER_GEOMETRY ||
++       (!emulated_stage && (nir->info.stage == MESA_SHADER_VERTEX ||
++                            nir->info.stage == MESA_SHADER_TESS_EVAL))) {
++      nir_foreach_variable_with_modes(var, nir, nir_var_shader_out) {
++         var->data.interpolation = INTERP_MODE_NONE;
++         var->data.centroid = false;
++         var->data.sample = false;
++      }
++      nir_validate_shader(nir, "KK independent producer interpolation");
++   }
++
+    if (KK_DEBUG(FORCE_ROBUSTNESS))
+       rs = &rs_all_supported;
+ 
+@@ -2054,8 +2065,12 @@ kk_compile_shaders(struct vk_device *device, uint32_t shader_count,
+ 
+    bool has_fs = infos[shader_count - 1u].stage == MESA_SHADER_FRAGMENT;
+    bool partition = state && !(has_fs && shader_count > 1u);
++   bool has_gs_producer = has_fs && shader_count > 1u &&
++                          infos[shader_count - 2u].stage == MESA_SHADER_GEOMETRY;
+ 
+-   if (KK_DEBUG(PARTITION) && state && has_fs && shader_count > 1u) {
++   if ((KK_DEBUG(PARTITION) || has_gs_producer ||
++        (state && kk_state_needs_link(state))) &&
++       state && has_fs && shader_count > 1u) {
+       result = kk_compile_shaders(device, shader_count - 1u, infos, state,
+                                   enabled_features, pAllocator, shaders_out);
+       if (result != VK_SUCCESS)

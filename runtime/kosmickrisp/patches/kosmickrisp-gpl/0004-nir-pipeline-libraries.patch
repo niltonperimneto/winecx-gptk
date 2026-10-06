@@ -1,0 +1,137 @@
+diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
+index 37f565d7c0af1deb64781586699121e30e57396d..ef62b129104ff38eeafc950d1df939de0203d836 100644
+--- a/src/kosmickrisp/vulkan/kk_physical_device.c
++++ b/src/kosmickrisp/vulkan/kk_physical_device.c
+@@ -144,6 +144,8 @@ kk_get_device_extensions(const struct kk_instance *instance,
+       /* Optional extensions */
+       .KHR_calibrated_timestamps = true,
+       .KHR_deferred_host_operations = true,
++      .KHR_pipeline_library = true,
++      .EXT_graphics_pipeline_library = true,
+       .KHR_maintenance7 = true,
+       .KHR_maintenance8 = true,
+       .KHR_maintenance9 = true,
+@@ -336,6 +338,7 @@ kk_get_device_features(
+       .inlineUniformBlock = true,
+       .maintenance4 = true,
+       .pipelineCreationCacheControl = true,
++      .graphicsPipelineLibrary = true,
+       .privateData = true,
+       .robustImageAccess = true,
+       .shaderDemoteToHelperInvocation = true,
+@@ -799,8 +802,8 @@ kk_get_device_properties(
+       .minImportedHostPointerAlignment = os_page_size,
+ 
+       /* VK_EXT_graphics_pipeline_library */
+-      .graphicsPipelineLibraryFastLinking = true,
+-      .graphicsPipelineLibraryIndependentInterpolationDecoration = true,
++      .graphicsPipelineLibraryFastLinking = false,
++      .graphicsPipelineLibraryIndependentInterpolationDecoration = false,
+ 
+       /* VK_KHR_line_rasterization */
+       .lineSubPixelPrecisionBits = 8,
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index b909a12376c74def214bfe9f482254b49eacbe80..8513a12353e860bfa6fe97ff73638e49495e1aa9 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -2050,6 +2050,7 @@ static const struct vk_shader_ops kk_shader_ops = {
+ };
+ 
+ const struct vk_device_shader_ops kk_device_shader_ops = {
++   .graphics_pipeline_needs_full_state = true,
+    .get_nir_options = kk_get_nir_options,
+    .get_spirv_options = kk_get_spirv_options,
+    .preprocess_nir = kk_preprocess_nir,
+diff --git a/src/vulkan/runtime/vk_pipeline.c b/src/vulkan/runtime/vk_pipeline.c
+index d134e226736d6d79d7f7861c41ee048c10224800..b2affe551070810c36934c33beedd32e85c78219 100644
+--- a/src/vulkan/runtime/vk_pipeline.c
++++ b/src/vulkan/runtime/vk_pipeline.c
+@@ -1335,6 +1335,8 @@ vk_get_graphics_pipeline_compile_info(struct vk_graphics_pipeline_compile_info *
+       vk_graphics_pipeline_create_flags(pCreateInfo);
+ 
+    info->retain_precomp =
++      (device->shader_ops->graphics_pipeline_needs_full_state &&
++       (pipeline_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR)) ||
+       (pipeline_flags &
+        VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT) != 0;
+ 
+@@ -1506,9 +1508,10 @@ vk_get_graphics_pipeline_compile_info(struct vk_graphics_pipeline_compile_info *
+     * GPL optimized link.)
+     */
+    info->optimize =
+-      !device->disable_lto &&
++      device->shader_ops->graphics_pipeline_needs_full_state ||
++      (!device->disable_lto &&
+       (libs_info == NULL ||
+-       (pipeline_flags & VK_PIPELINE_CREATE_2_LINK_TIME_OPTIMIZATION_BIT_EXT));
++       (pipeline_flags & VK_PIPELINE_CREATE_2_LINK_TIME_OPTIMIZATION_BIT_EXT)));
+ 
+    /* Partition the shaders. Whenever pipelines are used,
+     * vertex/geometry/fragment stages are always specified together, so should
+@@ -1564,6 +1567,11 @@ vk_get_graphics_pipeline_compile_info(struct vk_graphics_pipeline_compile_info *
+    _mesa_blake3_final(&blake3_ctx, layout_blake3);
+ 
+    const struct vk_device_shader_ops *ops = device->shader_ops;
++   /* Partial libraries have no render target or vertex input state to hash. */
++   if (ops->graphics_pipeline_needs_full_state &&
++       (pipeline_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR))
++      return;
++
+    for (uint32_t p = 0; p < info->part_count; p++) {
+       /* Don't try to re-compile any fast-link shaders */
+       if (!info->optimize && info->stages[info->partition[p]].shader != NULL)
+@@ -1626,7 +1634,9 @@ vk_graphics_pipeline_compile_shaders(struct vk_device *device,
+    const struct vk_device_shader_ops *ops = device->shader_ops;
+    VkResult result;
+ 
+-   if (compile_info->stage_count == 0)
++   if (compile_info->stage_count == 0 ||
++       (ops->graphics_pipeline_needs_full_state &&
++        (pipeline_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR)))
+       return VK_SUCCESS;
+ 
+    /* If we're linking, throw away any previously compiled shaders as they
+@@ -1891,6 +1901,8 @@ vk_graphics_pipeline_get_executable_properties(
+       *executable_count = 0;
+       for (uint32_t i = 0; i < gfx_pipeline->stage_count; i++) {
+          struct vk_shader *shader = gfx_pipeline->stages[i].shader;
++         if (shader == NULL)
++            continue;
+ 
+          uint32_t shader_exec_count = 0;
+          result = shader->ops->get_executable_properties(device, shader,
+@@ -1904,6 +1916,8 @@ vk_graphics_pipeline_get_executable_properties(
+       *executable_count = 0;
+       for (uint32_t i = 0; i < gfx_pipeline->stage_count; i++) {
+          struct vk_shader *shader = gfx_pipeline->stages[i].shader;
++         if (shader == NULL)
++            continue;
+ 
+          uint32_t shader_exec_count = arr_len - *executable_count;
+          result = shader->ops->get_executable_properties(device, shader,
+@@ -1926,6 +1940,8 @@ vk_graphics_pipeline_executable_shader(struct vk_device *device,
+ {
+    for (uint32_t i = 0; i < gfx_pipeline->stage_count; i++) {
+       struct vk_shader *shader = gfx_pipeline->stages[i].shader;
++      if (shader == NULL)
++         continue;
+ 
+       uint32_t shader_exec_count = 0;
+       shader->ops->get_executable_properties(device, shader,
+diff --git a/src/vulkan/runtime/vk_shader.h b/src/vulkan/runtime/vk_shader.h
+index bdf576810871aa433f506fca8a825dec1e2ed98d..e22f7f4ecf72bb73dc43926b1ec41e2aa3da81c0 100644
+--- a/src/vulkan/runtime/vk_shader.h
++++ b/src/vulkan/runtime/vk_shader.h
+@@ -222,6 +222,12 @@ vk_shader_destroy(struct vk_device *device,
+ }
+ 
+ struct vk_device_shader_ops {
++   /** Defer library compilation until all graphics stages and state are known.
++    * Libraries retain preprocessed NIR, even without RETAIN_LINK_TIME_INFO.
++    * Drivers using this must not advertise graphicsPipelineLibraryFastLinking.
++    */
++   bool graphics_pipeline_needs_full_state;
++
+    /** Retrieves a NIR compiler options struct
+     *
+     * NIR compiler options are only allowed to vary based on physical device,

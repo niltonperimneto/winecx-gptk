@@ -1,0 +1,227 @@
+diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
+index f0a831258d0832bd44af9279dc34f6aea7613e75..8d39aa759617c73ea8f51fcbacd3a7346bcaed45 100644
+--- a/src/kosmickrisp/vulkan/kk_physical_device.c
++++ b/src/kosmickrisp/vulkan/kk_physical_device.c
+@@ -1012,7 +1012,7 @@ kk_physical_device_init_pipeline_cache(struct kk_physical_device *pdev)
+    _mesa_blake3_update(&blake3_ctx, &pdev->settings.experimental_enabled,
+                       sizeof(pdev->settings.experimental_enabled));
+ 
+-   const uint32_t cache_schema = 5;
++   const uint32_t cache_schema = 6;
+    const uint64_t compile_flags =
+       kk_mesa_debug_flags & (KK_DEBUG_FORCE_ROBUSTNESS | KK_DEBUG_DYNAMIC_VI |
+                              KK_DEBUG_PARTITION | KK_DEBUG_GPL_NIR);
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 48cc7b6e1872870caf505ef66f226097081dbb3d..2e66959e1b8bba3ee0d0190d864d696299b57df6 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -249,26 +249,51 @@ static bool
+ kk_is_possible_both_depth_clip_clamp(
+    const struct vk_graphics_pipeline_state *state, bool enabled);
+ 
++#define KK_HASH_FIELD(ctx, value) \
++   _mesa_blake3_update((ctx), &(value), sizeof(value))
++
+ static void
+ kk_hash_graphics_state(struct vk_physical_device *device,
+                        const struct vk_graphics_pipeline_state *state,
+                        const struct vk_features *enabled_features,
+                        VkShaderStageFlags stages, blake3_hash blake3_out)
+ {
+-   struct mesa_blake3 blake3_ctx;
+-   _mesa_blake3_init(&blake3_ctx);
++   enum { VI, PRE_RASTER, DS, BLEND, MS, ATTACHMENTS, MV, FEATURES, COUNT };
++   const char *names[COUNT] = {
++      "vertex_input", "pre_raster", "depth_stencil", "blend",
++      "multisampling", "attachments", "multiview", "features",
++   };
++   struct mesa_blake3 components[COUNT];
++   blake3_hash digests[COUNT];
++   for (unsigned i = 0; i < COUNT; i++)
++      _mesa_blake3_init(&components[i]);
+ 
+    if (stages & VK_SHADER_STAGE_VERTEX_BIT) {
+       struct kk_vs_key key;
+       kk_populate_vs_key(&key, state);
+-      _mesa_blake3_update(&blake3_ctx, &key, sizeof(key));
+-
++      KK_HASH_FIELD(&components[PRE_RASTER], key.is_points);
++      KK_HASH_FIELD(&components[VI], key.dynamic_vi);
++      KK_HASH_FIELD(&components[VI], key.vi.bindings_valid);
++      KK_HASH_FIELD(&components[VI], key.vi.attributes_valid);
++      for (unsigned i = 0; i < MESA_VK_MAX_VERTEX_BINDINGS; i++) {
++         if (!(key.vi.bindings_valid & BITFIELD_BIT(i)))
++            continue;
++         KK_HASH_FIELD(&components[VI], key.vi.bindings[i].stride);
++         KK_HASH_FIELD(&components[VI], key.vi.bindings[i].input_rate);
++         KK_HASH_FIELD(&components[VI], key.vi.bindings[i].divisor);
++      }
++      for (unsigned i = 0; i < MESA_VK_MAX_VERTEX_ATTRIBUTES; i++) {
++         if (!(key.vi.attributes_valid & BITFIELD_BIT(i)))
++            continue;
++         KK_HASH_FIELD(&components[VI], key.vi.attributes[i].binding);
++         KK_HASH_FIELD(&components[VI], key.vi.attributes[i].format);
++         KK_HASH_FIELD(&components[VI], key.vi.attributes[i].offset);
++      }
+       const uint32_t view_mask = state->mv ? state->mv->view_mask : 0u;
+       const bool emulate_viewport_z =
+          kk_is_possible_both_depth_clip_clamp(state, false);
+-      _mesa_blake3_update(&blake3_ctx, &view_mask, sizeof(view_mask));
+-      _mesa_blake3_update(&blake3_ctx, &emulate_viewport_z,
+-                          sizeof(emulate_viewport_z));
++      KK_HASH_FIELD(&components[MV], view_mask);
++      KK_HASH_FIELD(&components[PRE_RASTER], emulate_viewport_z);
+    }
+ 
+    if (stages & VK_SHADER_STAGE_FRAGMENT_BIT) {
+@@ -276,18 +301,81 @@ kk_hash_graphics_state(struct vk_physical_device *device,
+       kk_populate_fs_key(&key, state,
+                          !(stages & VK_SHADER_STAGE_VERTEX_BIT) ||
+                             KK_DEBUG(PARTITION) || kk_state_needs_link(state));
+-      _mesa_blake3_update(&blake3_ctx, &key, sizeof(key));
+-
+-      _mesa_blake3_update(&blake3_ctx, &state->mv->view_mask,
+-                          sizeof(state->mv->view_mask));
++      KK_HASH_FIELD(&components[DS], key.ds.depth.test_enable);
++      KK_HASH_FIELD(&components[DS], key.ds.depth.write_enable);
++      KK_HASH_FIELD(&components[DS], key.ds.depth.compare_op);
++      KK_HASH_FIELD(&components[DS], key.ds.depth.bounds_test.enable);
++      KK_HASH_FIELD(&components[DS], key.ds.depth.bounds_test.min);
++      KK_HASH_FIELD(&components[DS], key.ds.depth.bounds_test.max);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.test_enable);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.write_enable);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.front.op.fail);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.front.op.pass);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.front.op.depth_fail);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.front.op.compare);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.front.compare_mask);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.front.write_mask);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.front.reference);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.back.op.fail);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.back.op.pass);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.back.op.depth_fail);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.back.op.compare);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.back.compare_mask);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.back.write_mask);
++      KK_HASH_FIELD(&components[DS], key.ds.stencil.back.reference);
++      KK_HASH_FIELD(&components[BLEND], key.color_blend.logic_op_enable);
++      KK_HASH_FIELD(&components[BLEND], key.color_blend.logic_op);
++      KK_HASH_FIELD(&components[BLEND], key.color_blend.attachment_count);
++      KK_HASH_FIELD(&components[BLEND], key.color_blend.color_write_enables);
++      for (unsigned i = 0; i < key.color_blend.attachment_count; i++) {
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].blend_enable);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].src_color_blend_factor);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].dst_color_blend_factor);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].src_alpha_blend_factor);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].dst_alpha_blend_factor);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].write_mask);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].color_blend_op);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].alpha_blend_op);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].src_premultiplied);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].dst_premultiplied);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].blend_overlap);
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].clamp_results);
++      }
++      for (unsigned i = 0; i < 4; i++)
++         KK_HASH_FIELD(&components[BLEND], key.color_blend.blend_constants[i]);
++      KK_HASH_FIELD(&components[MS], key.rasterization_samples);
++      KK_HASH_FIELD(&components[MS], key.static_sample_mask);
++      KK_HASH_FIELD(&components[MS], key.sample_shading_enable);
++      KK_HASH_FIELD(&components[MS], key.alpha_to_coverage);
++      KK_HASH_FIELD(&components[MS], key.alpha_to_one);
++      KK_HASH_FIELD(&components[ATTACHMENTS], key.color_formats);
++      KK_HASH_FIELD(&components[ATTACHMENTS], key.has_depth);
++      KK_HASH_FIELD(&components[ATTACHMENTS], key.has_stencil);
++      KK_HASH_FIELD(&components[ATTACHMENTS], key.dynamic_input_attachment_map);
++      KK_HASH_FIELD(&components[ATTACHMENTS], key.depth_input_att);
++      KK_HASH_FIELD(&components[ATTACHMENTS], key.stencil_input_att);
++      const uint32_t view_mask = state->mv ? state->mv->view_mask : 0u;
++      KK_HASH_FIELD(&components[MV], view_mask);
+    }
+ 
+    enum kk_feature_key feature_key = kk_make_feature_key(enabled_features);
+-   _mesa_blake3_update(&blake3_ctx, &feature_key, sizeof(feature_key));
++   KK_HASH_FIELD(&components[FEATURES], feature_key);
+ 
++   struct mesa_blake3 blake3_ctx;
++   _mesa_blake3_init(&blake3_ctx);
++   for (unsigned i = 0; i < COUNT; i++) {
++      _mesa_blake3_final(&components[i], digests[i]);
++      _mesa_blake3_update(&blake3_ctx, digests[i], sizeof(digests[i]));
++   }
+    _mesa_blake3_final(&blake3_ctx, blake3_out);
++   struct kk_physical_device *physical =
++      container_of(device, struct kk_physical_device, vk);
++   for (unsigned i = 0; i < COUNT; i++)
++      kk_log_cache_component(physical, stages, names[i], digests[i], blake3_out);
+ }
+ 
++#undef KK_HASH_FIELD
++
+ static void
+ shared_var_info(const struct glsl_type *type, unsigned *size, unsigned *align)
+ {
+@@ -1772,6 +1860,17 @@ kk_build_prerender(struct kk_device *device, struct kk_shader *vs,
+    return VK_SUCCESS;
+ }
+ 
++static void
++kk_hash_msl_function(const struct msl_compile_data *data, blake3_hash digest)
++{
++   struct mesa_blake3 hash;
++   _mesa_blake3_init(&hash);
++   _mesa_blake3_update(&hash, data->code, strlen(data->code) + 1);
++   _mesa_blake3_update(&hash, data->entrypoint_name,
++                        strlen(data->entrypoint_name) + 1);
++   _mesa_blake3_final(&hash, digest);
++}
++
+ static VkResult
+ kk_compile_graphics_pipeline(struct kk_device *device, struct kk_shader *vs)
+ {
+@@ -1796,6 +1895,8 @@ kk_compile_graphics_pipeline(struct kk_device *device, struct kk_shader *vs)
+ 
+    struct kk_pso_key key;
+    kk_pso_key_init(&key);
++   kk_hash_msl_function(vs_data, key.rast);
++   kk_hash_msl_function(&vs->msl_data[MESA_SHADER_FRAGMENT], key.fs);
+    key.topology_class = vs->info.vs.topology;
+ 
+    /* If color attachments are reordered there might be unused / invalid gaps
+@@ -3006,7 +3107,14 @@ kk_compile_shaders_logged(struct vk_device *device, uint32_t shader_count,
+    VkResult result = kk_compile_shaders(device, shader_count, infos, state,
+                                         enabled_features, pAllocator,
+                                         shaders_out);
++   int64_t end = os_time_get_nano();
+    kk_log_compile(dev, "shaders", start);
++   for (uint32_t i = 0; i < shader_count; i++) {
++      if (infos[i].cache_trace)
++         kk_log_cache_shader(dev, infos[i].cache_trace,
++                             result == VK_SUCCESS ? "shaders" : "shaders_failed",
++                             start, end);
++   }
+    kk_compile_origin = origin;
+    return result;
+ }
+@@ -3029,11 +3137,21 @@ kk_deserialize_shader_logged(struct vk_device *vk_dev,
+    return result;
+ }
+ 
++static void
++kk_shader_cache_trace(struct vk_device *device,
++                       const struct vk_shader_cache_trace *trace,
++                       const char *outcome)
++{
++   struct kk_device *dev = container_of(device, struct kk_device, vk);
++   kk_log_cache_shader(dev, trace, outcome, 0, 0);
++}
++
+ #define KK_DEVICE_SHADER_OPS                                                   \
+    .get_nir_options = kk_get_nir_options,                                      \
+    .get_spirv_options = kk_get_spirv_options,                                  \
+    .preprocess_nir = kk_preprocess_nir, .hash_state = kk_hash_graphics_state,  \
+    .compile = kk_compile_shaders_logged,                                       \
++   .shader_cache_trace = kk_shader_cache_trace,                                \
+    .deserialize = kk_deserialize_shader_logged,                                \
+    .cmd_set_dynamic_graphics_state = vk_cmd_set_dynamic_graphics_state,        \
+    .graphics_pipeline_created = kk_prewarm_pipeline,                          \

@@ -1,0 +1,81 @@
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index 9950b192cb8112ac8af08fab2a7419ec6e0f0ece..c0fc20780060090826d5a739eab494f7673f4806 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -314,6 +314,18 @@ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+       dev->has_queue = true;
+    }
+ 
++   /* Also cache pipelines when applications pass VK_NULL_HANDLE. Weak
++    * references avoid retaining every Metal pipeline for the device lifetime. */
++   struct vk_pipeline_cache_create_info cache_info = {
++      .weak_ref = true,
++      .skip_disk_cache = dev->vk.disable_internal_cache,
++   };
++   dev->vk.mem_cache = vk_pipeline_cache_create(&dev->vk, &cache_info, NULL);
++   if (dev->vk.mem_cache == NULL) {
++      result = VK_ERROR_OUT_OF_HOST_MEMORY;
++      goto fail_mem_cache;
++   }
++
+    result = kk_device_init_meta(dev);
+    if (result != VK_SUCCESS)
+       goto fail_mem_cache;
+@@ -348,6 +360,8 @@ fail_query_table:
+ fail_meta:
+    kk_device_finish_meta(dev);
+ fail_mem_cache:
++   if (dev->vk.mem_cache)
++      vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
+    if (dev->has_queue) {
+       kk_queue_finish(dev, &dev->queue);
+       dev->has_queue = false;
+@@ -382,6 +396,7 @@ kk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
+    /* Meta first since it may destroy Vulkan objects */
+    kk_device_finish_meta(dev);
+    kk_device_finish_lib(dev);
++   vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
+    kk_query_table_finish(dev, &dev->occlusion_queries);
+    kk_destroy_sampler_heap(dev, &dev->samplers);
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
+index 1b7098d22a5b572f46df79798282bb13dbf62598..37f565d7c0af1deb64781586699121e30e57396d 100644
+--- a/src/kosmickrisp/vulkan/kk_physical_device.c
++++ b/src/kosmickrisp/vulkan/kk_physical_device.c
+@@ -981,12 +981,28 @@ kk_physical_device_init_pipeline_cache(struct kk_physical_device *pdev)
+    _mesa_blake3_update(&blake3_ctx, instance->driver_build_sha,
+                        sizeof(instance->driver_build_sha));
+ 
++   /* MSL lowering depends on the GPU, language and workaround settings. */
++   _mesa_blake3_update(&blake3_ctx, &pdev->info.gpu_apple_family,
++                      sizeof(pdev->info.gpu_apple_family));
++   _mesa_blake3_update(&blake3_ctx, &pdev->info.msl_version,
++                      sizeof(pdev->info.msl_version));
++   _mesa_blake3_update(&blake3_ctx, &pdev->settings.disabled_workarounds,
++                      sizeof(pdev->settings.disabled_workarounds));
++   _mesa_blake3_update(&blake3_ctx, &pdev->settings.experimental_enabled,
++                      sizeof(pdev->settings.experimental_enabled));
++
+    unsigned char blake3[BLAKE3_KEY_LEN];
+    _mesa_blake3_final(&blake3_ctx, blake3);
+ 
+    STATIC_ASSERT(BLAKE3_KEY_LEN >= VK_UUID_SIZE);
+    memcpy(pdev->vk.properties.pipelineCacheUUID, blake3, VK_UUID_SIZE);
+    memcpy(pdev->vk.properties.shaderBinaryUUID, blake3, VK_UUID_SIZE);
++
++#ifdef ENABLE_SHADER_CACHE
++   char cache_id[BLAKE3_HEX_LEN];
++   _mesa_blake3_format(cache_id, blake3);
++   pdev->vk.disk_cache = disk_cache_create("kosmickrisp", cache_id, 0);
++#endif
+ }
+ 
+ static void
+@@ -1231,6 +1247,7 @@ kk_enumerate_physical_devices(struct vk_instance *_instance)
+    return VK_SUCCESS;
+ 
+ fail_disk_cache:
++   kk_physical_device_free_disk_cache(pdev);
+    vk_physical_device_finish(&pdev->vk);
+ fail_mtl_dev:
+    mtl_release(pdev->mtl_dev_handle);

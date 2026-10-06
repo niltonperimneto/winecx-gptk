@@ -1,0 +1,22 @@
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 73234a77c0f7bc2681939b455cfef027c332690b..2c3e59de7ec4aa543085e667b8abea70b2c83d64 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -547,6 +547,7 @@ kk_lower_fs_blend(nir_shader *nir,
+    /* Fold constant offset srcs for IO. */
+    NIR_PASS(_, nir, nir_opt_constant_folding);
+    NIR_PASS(_, nir, nir_lower_blend, &opts);
++   NIR_PASS(_, nir, nir_lower_undef_to_zero, NULL);
+ }
+ 
+ static bool
+@@ -1058,7 +1059,8 @@ gather_fs_io(nir_builder *b, nir_intrinsic_instr *intr, void *data)
+       return false;
+ 
+    nir_io_semantics io = nir_intrinsic_io_semantics(intr);
+-   if (io.dual_source_blend_index)
++   if (io.dual_source_blend_index ||
++       io.location == FRAG_RESULT_DUAL_SRC_BLEND)
+       info->fs.dual_source_blend = true;
+ 
+    if (io.location == FRAG_RESULT_DEPTH) {

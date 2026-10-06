@@ -1,0 +1,307 @@
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index f25d524494ed1acfeea62da8e32e78db1ca98598..2e689c0e9bb07d086d0071e495414f981867b031 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -4,6 +4,7 @@
+  */
+ 
+ #include "kk_pso_cache.h"
++#include "kk_metal_cache.h"
+ 
+ #include "kk_cmd_buffer.h"
+ #include "kk_device.h"
+@@ -101,8 +102,16 @@ kk_new_render_pipeline(struct kk_device *dev, mtl_function_descriptor *vs,
+    mtl_render_pipeline_descriptor_set_multisample_alpha(
+       desc, key->alpha_to_coverage, key->alpha_to_one);
+ 
+-   mtl_render_pipeline_state *pso =
++   blake3_hash digest;
++   _mesa_blake3_compute(key, sizeof(*key), digest);
++   bool archive_hit = false;
++   int64_t start = os_time_get_nano();
++   mtl_render_pipeline_state *pso = dev->metal_cache ?
++      kk_metal_cache_new_render_pipeline(dev->metal_cache, digest, desc, &archive_hit) :
+       mtl_new_render_pipeline(dev->mtl_compiler_handle, desc);
++   kk_log_compile(dev, archive_hit ? "pso_archive" : "pso", start);
++   kk_log_cache_pso(dev, archive_hit ? "archive_hit" : "compiler_fallback",
++                     key, sizeof(*key));
+    mtl_release(desc);
+    return pso;
+ }
+@@ -204,9 +213,7 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+                      key, sizeof(*key));
+    if (KK_DEBUG(PSO))
+       mesa_logi("PSO compile");
+-   int64_t start = os_time_get_nano();
+    mtl_render_pipeline_state *pso = kk_new_render_pipeline(dev, vs, fs, key);
+-   kk_log_compile(dev, "pso", start);
+    mtx_lock(&cache->lock);
+    entry->pso = pso;
+    entry->compiling = false;
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 2e66959e1b8bba3ee0d0190d864d696299b57df6..11ebc6c495bce486d0c178551bfb87e52e26a1b5 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include "kk_shader.h"
++#include "kk_metal_cache.h"
+ 
+ #include "kk_cmd_buffer.h"
+ #include "kk_debug.h"
+@@ -304,9 +305,6 @@ kk_hash_graphics_state(struct vk_physical_device *device,
+       KK_HASH_FIELD(&components[DS], key.ds.depth.test_enable);
+       KK_HASH_FIELD(&components[DS], key.ds.depth.write_enable);
+       KK_HASH_FIELD(&components[DS], key.ds.depth.compare_op);
+-      KK_HASH_FIELD(&components[DS], key.ds.depth.bounds_test.enable);
+-      KK_HASH_FIELD(&components[DS], key.ds.depth.bounds_test.min);
+-      KK_HASH_FIELD(&components[DS], key.ds.depth.bounds_test.max);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.test_enable);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.write_enable);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.front.op.fail);
+@@ -315,14 +313,12 @@ kk_hash_graphics_state(struct vk_physical_device *device,
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.front.op.compare);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.front.compare_mask);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.front.write_mask);
+-      KK_HASH_FIELD(&components[DS], key.ds.stencil.front.reference);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.back.op.fail);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.back.op.pass);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.back.op.depth_fail);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.back.op.compare);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.back.compare_mask);
+       KK_HASH_FIELD(&components[DS], key.ds.stencil.back.write_mask);
+-      KK_HASH_FIELD(&components[DS], key.ds.stencil.back.reference);
+       KK_HASH_FIELD(&components[BLEND], key.color_blend.logic_op_enable);
+       KK_HASH_FIELD(&components[BLEND], key.color_blend.logic_op);
+       KK_HASH_FIELD(&components[BLEND], key.color_blend.attachment_count);
+@@ -341,8 +337,6 @@ kk_hash_graphics_state(struct vk_physical_device *device,
+          KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].blend_overlap);
+          KK_HASH_FIELD(&components[BLEND], key.color_blend.attachments[i].clamp_results);
+       }
+-      for (unsigned i = 0; i < 4; i++)
+-         KK_HASH_FIELD(&components[BLEND], key.color_blend.blend_constants[i]);
+       KK_HASH_FIELD(&components[MS], key.rasterization_samples);
+       KK_HASH_FIELD(&components[MS], key.static_sample_mask);
+       KK_HASH_FIELD(&components[MS], key.sample_shading_enable);
+@@ -1022,6 +1016,14 @@ kk_lower_nir(struct kk_device *dev, nir_shader *nir, bool emulated_stage,
+ 
+ static const struct vk_shader_ops kk_shader_ops;
+ 
++struct kk_fs_variant_entry {
++   struct kk_fs_link_key key;
++   struct kk_fs_variant variant;
++   cnd_t ready;
++   bool compiling;
++   VkResult result;
++};
++
+ static void
+ kk_shader_destroy(struct vk_device *vk_dev, struct kk_shader *shader,
+                   const VkAllocationCallbacks *pAllocator)
+@@ -1085,13 +1087,14 @@ kk_shader_destroy(struct vk_device *vk_dev, struct kk_shader *shader,
+ 
+    if (shader->variants) {
+       hash_table_foreach(shader->variants, he) {
+-         struct kk_fs_variant *variant = he->data;
+-         mtl_release(variant->fn);
+-         mtl_release(variant->lib);
++         struct kk_fs_variant_entry *entry = he->data;
++         mtl_release(entry->variant.fn);
++         mtl_release(entry->variant.lib);
++         cnd_destroy(&entry->ready);
+       }
+       _mesa_hash_table_destroy(shader->variants, NULL);
+    }
+-   simple_mtx_destroy(&shader->variants_lock);
++   mtx_destroy(&shader->variants_lock);
+    free(shader->nir_blob);
+ 
+    vk_shader_free(&dev->vk, pAllocator, &shader->vk);
+@@ -1336,7 +1339,7 @@ kk_compile_shader(struct kk_device *dev, nir_shader *nir,
+       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+    }
+ 
+-   simple_mtx_init(&shader->variants_lock, mtx_plain);
++   mtx_init(&shader->variants_lock, mtx_plain);
+    shader->info.partial = partition;
+    gather_shader_info(shader, nir, state);
+    shader->info.rast_num_cull_distances = shader->info.num_cull_distances;
+@@ -1348,7 +1351,7 @@ kk_compile_shader(struct kk_device *dev, nir_shader *nir,
+       if (blob.out_of_memory) {
+          blob_finish(&blob);
+          ralloc_free(nir);
+-         simple_mtx_destroy(&shader->variants_lock);
++         mtx_destroy(&shader->variants_lock);
+          vk_shader_free(&dev->vk, pAllocator, &shader->vk);
+          return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+       }
+@@ -1575,8 +1578,25 @@ kk_compile_compute_pipeline(struct kk_device *device,
+ 
+    mtl_function_descriptor *function =
+       mtl_new_library_function_descriptor(library, data->entrypoint_name);
+-   mtl_compute_pipeline_state *pipeline = mtl_new_compute_pipeline_state(
+-      device->mtl_compiler_handle, function, local_size_threads);
++   struct mesa_blake3 hash;
++   _mesa_blake3_init(&hash);
++   const uint32_t kind = MESA_SHADER_COMPUTE;
++   _mesa_blake3_update(&hash, &kind, sizeof(kind));
++   _mesa_blake3_update(&hash, data->code, strlen(data->code) + 1);
++   _mesa_blake3_update(&hash, data->entrypoint_name, strlen(data->entrypoint_name) + 1);
++   _mesa_blake3_update(&hash, &local_size_threads, sizeof(local_size_threads));
++   blake3_hash digest;
++   _mesa_blake3_final(&hash, digest);
++   bool archive_hit = false;
++   int64_t start = os_time_get_nano();
++   mtl_compute_pipeline_state *pipeline = device->metal_cache ?
++      kk_metal_cache_new_compute_pipeline(device->metal_cache, digest, function,
++                                           local_size_threads, &archive_hit) :
++      mtl_new_compute_pipeline_state(device->mtl_compiler_handle, function,
++                                      local_size_threads);
++   kk_log_compile(device, archive_hit ? "compute_archive" : "compute", start);
++   kk_log_cache_pso(device, archive_hit ? "compute_archive_hit" : "compute_fallback",
++                     digest, sizeof(digest));
+    mtl_release(function);
+    mtl_release(library);
+ 
+@@ -1953,7 +1973,7 @@ kk_shader_get_rast(struct kk_device *dev, struct kk_shader *vs, bool points)
+       return &vs->fast;
+ 
+    const struct kk_fs_variant *rast = &vs->fast_points;
+-   simple_mtx_lock(&vs->variants_lock);
++   mtx_lock(&vs->variants_lock);
+    if (vs->fast_points.fn == NULL) {
+       int64_t start = os_time_get_nano();
+       VkResult result = kk_new_function(dev, &vs->msl_points,
+@@ -1968,7 +1988,7 @@ kk_shader_get_rast(struct kk_device *dev, struct kk_shader *vs, bool points)
+          rast = NULL;
+       }
+    }
+-   simple_mtx_unlock(&vs->variants_lock);
++   mtx_unlock(&vs->variants_lock);
+ 
+    return rast;
+ }
+@@ -2644,7 +2664,7 @@ kk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+       &dev->vk, &kk_shader_ops, info.stage, pAllocator, sizeof(*shader));
+    if (shader == NULL)
+       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+-   simple_mtx_init(&shader->variants_lock, mtx_plain);
++   mtx_init(&shader->variants_lock, mtx_plain);
+ 
+    shader->info = info;
+    VkResult result = kk_msl_deserialize(blob, &shader->msl_data[info.stage]);
+@@ -2890,11 +2910,6 @@ kk_compile_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+    return result;
+ }
+ 
+-struct kk_fs_variant_entry {
+-   struct kk_fs_link_key key;
+-   struct kk_fs_variant variant;
+-};
+-
+ VkResult
+ kk_shader_get_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+                          const struct kk_fs_link_key *key,
+@@ -2902,47 +2917,62 @@ kk_shader_get_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+ {
+    uint32_t hash = kk_fs_link_key_hash(key);
+ 
+-   simple_mtx_lock(&fs->variants_lock);
++   mtx_lock(&fs->variants_lock);
+    struct hash_entry *he =
+       _mesa_hash_table_search_pre_hashed(fs->variants, hash, key);
+    if (he) {
+-      *variant_out = he->data;
+-      simple_mtx_unlock(&fs->variants_lock);
+-      return VK_SUCCESS;
+-   }
+-
+-   struct kk_fs_variant variant = {0};
+-   int64_t start = os_time_get_nano();
+-   VkResult result = kk_compile_fs_variant(dev, fs, key, &variant);
+-   kk_log_compile(dev, "fs_variant", start);
+-   if (result != VK_SUCCESS) {
+-      simple_mtx_unlock(&fs->variants_lock);
++      struct kk_fs_variant_entry *entry = he->data;
++      if (entry->compiling) {
++         int64_t start = os_time_get_nano();
++         while (entry->compiling)
++            cnd_wait(&entry->ready, &fs->variants_lock);
++         kk_log_compile(dev, "fs_variant_wait", start);
++      }
++      VkResult result = entry->result;
++      mtx_unlock(&fs->variants_lock);
++      if (result == VK_SUCCESS)
++         *variant_out = &entry->variant;
+       return result;
+    }
+ 
+    struct kk_fs_variant_entry *entry =
+-      ralloc(fs->variants, struct kk_fs_variant_entry);
++      rzalloc(fs->variants, struct kk_fs_variant_entry);
+    if (!entry) {
+-      mtl_release(variant.fn);
+-      mtl_release(variant.lib);
+-      simple_mtx_unlock(&fs->variants_lock);
++      mtx_unlock(&fs->variants_lock);
+       return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+    entry->key = *key;
+-   entry->variant = variant;
+-   he = _mesa_hash_table_insert_pre_hashed(fs->variants, hash, &entry->key,
+-                                           &entry->variant);
+-   if (!he) {
+-      mtl_release(variant.fn);
+-      mtl_release(variant.lib);
++   entry->compiling = true;
++   if (cnd_init(&entry->ready) != thrd_success) {
++      ralloc_free(entry);
++      mtx_unlock(&fs->variants_lock);
++      return VK_ERROR_OUT_OF_HOST_MEMORY;
++   }
++   if (!_mesa_hash_table_insert_pre_hashed(fs->variants, hash, &entry->key,
++                                           entry)) {
++      cnd_destroy(&entry->ready);
+       ralloc_free(entry);
+-      simple_mtx_unlock(&fs->variants_lock);
++      mtx_unlock(&fs->variants_lock);
+       return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+-   simple_mtx_unlock(&fs->variants_lock);
++   mtx_unlock(&fs->variants_lock);
+ 
+-   *variant_out = he->data;
+-   return VK_SUCCESS;
++   struct kk_fs_variant variant = {0};
++   int64_t start = os_time_get_nano();
++   VkResult result = kk_compile_fs_variant(dev, fs, key, &variant);
++   kk_log_compile(dev, "fs_variant", start);
++
++   mtx_lock(&fs->variants_lock);
++   if (result == VK_SUCCESS)
++      entry->variant = variant;
++   entry->result = result;
++   entry->compiling = false;
++   cnd_broadcast(&entry->ready);
++   mtx_unlock(&fs->variants_lock);
++
++   if (result == VK_SUCCESS)
++      *variant_out = &entry->variant;
++   return result;
+ }
+ 
+ struct kk_shader *
+diff --git a/src/kosmickrisp/vulkan/kk_shader.h b/src/kosmickrisp/vulkan/kk_shader.h
+index a1a3206cb8c4065f5bcbb5a8d706d1007e9c6afa..e2e4480d20058c799a4c25a27b329fabb74bff06 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.h
++++ b/src/kosmickrisp/vulkan/kk_shader.h
+@@ -186,7 +186,7 @@ struct kk_shader {
+ 
+    void *nir_blob;
+    size_t nir_blob_size;
+-   simple_mtx_t variants_lock;
++   mtx_t variants_lock;
+    struct hash_table *variants;
+ };
+ 

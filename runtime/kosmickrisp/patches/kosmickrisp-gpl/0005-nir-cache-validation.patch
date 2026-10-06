@@ -1,0 +1,124 @@
+diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
+index ef62b129104ff38eeafc950d1df939de0203d836..ddaf2078ec2dff10e86160d6411caae44c0e01d6 100644
+--- a/src/kosmickrisp/vulkan/kk_physical_device.c
++++ b/src/kosmickrisp/vulkan/kk_physical_device.c
+@@ -803,7 +803,7 @@ kk_get_device_properties(
+ 
+       /* VK_EXT_graphics_pipeline_library */
+       .graphicsPipelineLibraryFastLinking = false,
+-      .graphicsPipelineLibraryIndependentInterpolationDecoration = false,
++      .graphicsPipelineLibraryIndependentInterpolationDecoration = true,
+ 
+       /* VK_KHR_line_rasterization */
+       .lineSubPixelPrecisionBits = 8,
+@@ -994,6 +994,10 @@ kk_physical_device_init_pipeline_cache(struct kk_physical_device *pdev)
+    _mesa_blake3_update(&blake3_ctx, &pdev->settings.experimental_enabled,
+                       sizeof(pdev->settings.experimental_enabled));
+ 
++   const uint32_t cache_schema = 2;
++   const bool force_robustness = KK_DEBUG(FORCE_ROBUSTNESS);
++   _mesa_blake3_update(&blake3_ctx, &cache_schema, sizeof(cache_schema));
++   _mesa_blake3_update(&blake3_ctx, &force_robustness, sizeof(force_robustness));
+    unsigned char blake3[BLAKE3_KEY_LEN];
+    _mesa_blake3_final(&blake3_ctx, blake3);
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 8513a12353e860bfa6fe97ff73638e49495e1aa9..ebf6193abd167bc20009c63256f344b6cbd48520 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -1691,6 +1691,28 @@ kk_forward_tes_primitive_id(nir_shader *tes, nir_shader *gs)
+    nir_shader_gather_info(gs, nir_shader_get_entrypoint(gs));
+ }
+ 
++/* Vulkan interpolation is selected by fragment inputs, independently of the
++ * last pre-rasterization stage's decorations. Work on this link's deserialized
++ * NIR only: library blobs remain immutable and reusable by concurrent links.
++ * Strip irrelevant producer qualifiers before IO lowering/varying packing;
++ * fragment barycentric intrinsics remain the source of Metal interpolation.
++ */
++static void
++kk_nir_link_interpolation(uint32_t count, struct vk_shader_compile_info *infos)
++{
++   if (count < 2 || infos[count - 1].stage != MESA_SHADER_FRAGMENT)
++      return;
++
++   nir_shader *producer = infos[count - 2].nir;
++   nir_foreach_variable_with_modes(var, producer, nir_var_shader_out) {
++      var->data.interpolation = INTERP_MODE_NONE;
++      var->data.centroid = false;
++      var->data.sample = false;
++   }
++   nir_validate_shader(producer, "KK independent producer interpolation");
++   nir_validate_shader(infos[count - 1].nir, "KK fragment interpolation");
++}
++
+ static VkResult
+ kk_compile_shaders(struct vk_device *device, uint32_t shader_count,
+                    struct vk_shader_compile_info *infos,
+@@ -1705,6 +1727,8 @@ kk_compile_shaders(struct vk_device *device, uint32_t shader_count,
+ 
+    enum kk_feature_key features = kk_make_feature_key(enabled_features);
+ 
++   kk_nir_link_interpolation(shader_count, infos);
++
+    /* Vulkan doesn't enforce a fragment shader to build pipelines. We may need
+     * to create one. */
+    nir_shader *nir_shaders[shader_count + 1u];
+@@ -1732,9 +1756,7 @@ kk_compile_shaders(struct vk_device *device, uint32_t shader_count,
+       nir_shaders[i] = nir;
+    }
+ 
+-   /* Since we don't support GPL nor shader objects and Metal render pipelines
+-    * require both vertex and fragment, we may need to provide a pass-through
+-    * fragment. */
++   /* Final library links and monolithic Metal pipelines both need an FS. */
+    uint32_t total_shaders = shader_count;
+    if (state && infos[shader_count - 1u].stage != MESA_SHADER_FRAGMENT) {
+       nir_shaders[shader_count] =
+@@ -1869,6 +1891,12 @@ kk_msl_deserialize(struct blob_reader *blob, struct msl_compile_data *data)
+ {
+    const uint32_t entrypoint_length = blob_read_uint32(blob);
+    const uint32_t code_length = blob_read_uint32(blob);
++   /* Check lengths before allocating or handing strings to the Metal compiler. */
++   size_t remaining = blob->end - blob->current;
++   if (blob->overrun || entrypoint_length == 0 || code_length == 0 ||
++       entrypoint_length > remaining || code_length > remaining - entrypoint_length)
++      return VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT;
++
+    data->entrypoint_name = ralloc_array(NULL, char, entrypoint_length);
+    if (data->entrypoint_name == NULL)
+       return VK_ERROR_OUT_OF_HOST_MEMORY;
+@@ -1880,7 +1908,10 @@ kk_msl_deserialize(struct blob_reader *blob, struct msl_compile_data *data)
+    blob_copy_bytes(blob, (void *)data->entrypoint_name, entrypoint_length);
+    blob_copy_bytes(blob, (void *)data->code, code_length);
+ 
+-   if (blob->overrun)
++   if (blob->overrun || data->entrypoint_name[entrypoint_length - 1] != '\0' ||
++       data->code[code_length - 1] != '\0' ||
++       strlen(data->entrypoint_name) != entrypoint_length - 1 ||
++       strlen(data->code) != code_length - 1)
+       return VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT;
+ 
+    return VK_SUCCESS;
+@@ -1896,7 +1927,12 @@ kk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+ 
+    struct kk_shader_info info;
+    blob_copy_bytes(blob, &info, sizeof(info));
+-   if (blob->overrun)
++   const uint32_t graphics_stages = BITFIELD_BIT(MESA_SHADER_TESS_CTRL) |
++      BITFIELD_BIT(MESA_SHADER_TESS_EVAL) | BITFIELD_BIT(MESA_SHADER_GEOMETRY) |
++      BITFIELD_BIT(MESA_SHADER_FRAGMENT);
++   if (blob->overrun || info.stage > MESA_SHADER_COMPUTE ||
++       (info.stage == MESA_SHADER_VERTEX &&
++        (info.vs.additional_stages_bits & ~graphics_stages)))
+       return vk_error(dev, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
+ 
+    struct kk_shader *shader = vk_shader_zalloc(
+@@ -1904,6 +1940,7 @@ kk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+    if (shader == NULL)
+       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+ 
++   shader->info = info;
+    VkResult result = kk_msl_deserialize(blob, &shader->msl_data[info.stage]);
+    if (result != VK_SUCCESS)
+       goto fail;

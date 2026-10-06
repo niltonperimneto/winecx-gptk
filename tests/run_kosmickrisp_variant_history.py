@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 
-SCENARIOS = ("race", "idle_under_load", "serialization", "failure", "concurrency", "corruption", "disabled", "capacity", "import", "eviction", "idle_only", "concurrent_idle")
+SCENARIOS = ("persistence", "merge", "update", "database_update", "interrupted", "corruption", "duplicate_blob", "capacity", "concurrency", "disabled")
 
 
 def compiler_arguments(mesa, build, output):
@@ -47,8 +47,8 @@ def compiler_arguments(mesa, build, output):
         result.append(argument)
     result.extend(
         [
-            str(mesa / "src/kosmickrisp/vulkan/kk_metal_cache.c"),
-            str(Path(__file__).with_name("kosmickrisp_metal_cache.c")),
+            str(mesa / "src/kosmickrisp/vulkan/kk_variant_history.c"),
+            str(Path(__file__).with_name("kosmickrisp_variant_history.c")),
             str(mesa / "src/c11/impl/threads_posix.c"),
             str(mesa / "src/c11/impl/time.c"),
             "-pthread",
@@ -67,15 +67,18 @@ def main():
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--scenario", choices=SCENARIOS, action="append")
     parser.add_argument("--timeout", type=float, default=15)
+    parser.add_argument("--sanitize", choices=("address", "thread"))
     args = parser.parse_args()
     out = args.out.resolve()
     if out.exists() and any(out.iterdir()):
         parser.error("--out must be empty")
     out.mkdir(parents=True, exist_ok=True)
-    binary = out / "metal-cache-regression"
+    binary = out / "variant-history-regression"
     arguments, directory = compiler_arguments(
         args.mesa.resolve(), args.build.resolve(), binary
     )
+    if args.sanitize:
+        arguments.extend([f"-fsanitize={args.sanitize}", "-fno-omit-frame-pointer"])
     compile_result = subprocess.run(
         arguments, cwd=directory, capture_output=True, text=True
     )

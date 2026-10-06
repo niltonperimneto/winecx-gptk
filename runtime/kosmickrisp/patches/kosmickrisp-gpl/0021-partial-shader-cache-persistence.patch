@@ -1,0 +1,132 @@
+diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
+index d190520bd28abba999c1f60f50d3e608fc15fe74..f0a831258d0832bd44af9279dc34f6aea7613e75 100644
+--- a/src/kosmickrisp/vulkan/kk_physical_device.c
++++ b/src/kosmickrisp/vulkan/kk_physical_device.c
+@@ -904,7 +904,7 @@ kk_get_device_properties(
+       .variableSampleLocations = true,
+ 
+       /* VK_EXT_shader_object */
+-      .shaderBinaryVersion = 0,
++      .shaderBinaryVersion = 2,
+ 
+       /* VK_EXT_transform_feedback */
+       .maxTransformFeedbackStreams = 4,
+@@ -1012,7 +1012,7 @@ kk_physical_device_init_pipeline_cache(struct kk_physical_device *pdev)
+    _mesa_blake3_update(&blake3_ctx, &pdev->settings.experimental_enabled,
+                       sizeof(pdev->settings.experimental_enabled));
+ 
+-   const uint32_t cache_schema = 3;
++   const uint32_t cache_schema = 5;
+    const uint64_t compile_flags =
+       kk_mesa_debug_flags & (KK_DEBUG_FORCE_ROBUSTNESS | KK_DEBUG_DYNAMIC_VI |
+                              KK_DEBUG_PARTITION | KK_DEBUG_GPL_NIR);
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 8daf6918438bbe0e600904de98397fca2c5c4581..4954185d6c1f6419696cb0f81b19d51fdbd09e3b 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -25,6 +25,7 @@
+ #include "nir_builder.h"
+ #include "nir_lower_blend.h"
+ #include "nir_serialize.h"
++#include "util/disk_cache.h"
+ 
+ #include "util/hash_table.h"
+ 
+@@ -2446,6 +2447,8 @@ kk_shader_serialize(struct vk_device *vk_dev, const struct vk_shader *vk_shader,
+ {
+    struct kk_shader *shader = container_of(vk_shader, struct kk_shader, vk);
+ 
++   blob_write_uint32(blob, 0x4b4b5348u);
++   blob_write_uint32(blob, 2u);
+    blob_write_bytes(blob, &shader->info, sizeof(shader->info));
+    kk_msl_serialize(&shader->msl_data[shader->info.stage], blob);
+    if (shader->info.stage == MESA_SHADER_VERTEX) {
+@@ -2509,12 +2512,17 @@ kk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+ {
+    struct kk_device *dev = container_of(vk_dev, struct kk_device, vk);
+ 
++   uint32_t magic = blob_read_uint32(blob);
++   uint32_t version = blob_read_uint32(blob);
++   if (blob->overrun || binary_version != 2u || magic != 0x4b4b5348u || version != 2u)
++      return vk_error(dev, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
++
+    struct kk_shader_info info;
+    blob_copy_bytes(blob, &info, sizeof(info));
+    const uint32_t graphics_stages = BITFIELD_BIT(MESA_SHADER_TESS_CTRL) |
+       BITFIELD_BIT(MESA_SHADER_TESS_EVAL) | BITFIELD_BIT(MESA_SHADER_GEOMETRY) |
+       BITFIELD_BIT(MESA_SHADER_FRAGMENT);
+-   if (blob->overrun || info.stage > MESA_SHADER_COMPUTE ||
++   if (blob->overrun || (unsigned)info.stage > MESA_SHADER_COMPUTE ||
+        (info.stage == MESA_SHADER_VERTEX &&
+         (info.vs.additional_stages_bits & ~graphics_stages)))
+       return vk_error(dev, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
+@@ -2538,8 +2546,6 @@ kk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+    if (result != VK_SUCCESS)
+       goto fail;
+ 
+-   shader->info = info;
+-
+    if (shader->info.stage == MESA_SHADER_VERTEX) {
+       u_foreach_bit(stage, shader->info.vs.additional_stages_bits) {
+          result = kk_msl_deserialize(blob, &shader->msl_data[stage]);
+@@ -2637,6 +2643,45 @@ kk_compile_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+ {
+    struct kk_physical_device *pdev = kk_device_physical(dev);
+ 
++   struct disk_cache *cache = dev->vk.disable_internal_cache ? NULL : pdev->vk.disk_cache;
++   cache_key disk_key;
++   if (cache) {
++      blake3_hasher hash;
++      _mesa_blake3_init(&hash);
++      _mesa_blake3_update(&hash, fs->nir_blob, fs->nir_blob_size);
++      _mesa_blake3_update(&hash, key, sizeof(*key));
++      blake3_hash digest;
++      _mesa_blake3_final(&hash, digest);
++      disk_cache_compute_key(cache, digest, sizeof(digest), disk_key);
++      size_t size;
++      void *cached = disk_cache_get(cache, disk_key, &size);
++      if (cached) {
++         struct blob_reader blob;
++         blob_reader_init(&blob, cached, size);
++         struct msl_compile_data data = {0};
++         VkResult result = kk_msl_deserialize(&blob, &data);
++         if (result == VK_SUCCESS && blob.current == blob.end) {
++            result = kk_new_function(dev, &data, &variant->lib, &variant->fn);
++            if (result == VK_SUCCESS) {
++               _mesa_blake3_compute(data.code, strlen(data.code), variant->hash);
++               variant->shader_blend = key->shader_blend;
++            }
++         } else {
++            result = VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT;
++         }
++         ralloc_free(data.code);
++         ralloc_free(data.entrypoint_name);
++         free(cached);
++         if (result == VK_SUCCESS) {
++            if (KK_DEBUG(PSO))
++               mesa_logi("FS variant disk cache hit");
++            return result;
++         }
++      }
++   }
++   if (KK_DEBUG(PSO))
++      mesa_logi("FS variant compile");
++
+    struct blob_reader reader;
+    blob_reader_init(&reader, fs->nir_blob, fs->nir_blob_size);
+    nir_shader *nir = nir_deserialize(NULL, &kk_nir_options, &reader);
+@@ -2725,6 +2770,14 @@ kk_compile_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+    if (result == VK_SUCCESS) {
+       _mesa_blake3_compute(data.code, strlen(data.code), variant->hash);
+       variant->shader_blend = key->shader_blend;
++      if (cache) {
++         struct blob blob;
++         blob_init(&blob);
++         kk_msl_serialize(&data, &blob);
++         if (!blob.out_of_memory)
++            disk_cache_put(cache, disk_key, blob.data, blob.size, NULL);
++         blob_finish(&blob);
++      }
+    }
+ 
+    ralloc_free(data.code);

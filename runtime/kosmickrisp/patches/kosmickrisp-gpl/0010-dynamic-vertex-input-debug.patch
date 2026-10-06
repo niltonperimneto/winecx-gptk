@@ -1,0 +1,37 @@
+diff --git a/src/kosmickrisp/vulkan/kk_debug.c b/src/kosmickrisp/vulkan/kk_debug.c
+index 1805d6644d2c226812d76fd7ec6aef26331a52f8..793402e86d2cbe625ff12946a58b58d16ab518bd 100644
+--- a/src/kosmickrisp/vulkan/kk_debug.c
++++ b/src/kosmickrisp/vulkan/kk_debug.c
+@@ -11,6 +11,7 @@ const struct debug_named_value debug_flags[] = {
+    {"nir", KK_DEBUG_NIR},
+    {"msl", KK_DEBUG_MSL},
+    {"force_robustness", KK_DEBUG_FORCE_ROBUSTNESS},
++   {"dynamic_vi", KK_DEBUG_DYNAMIC_VI},
+    {NULL, 0},
+ };
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_debug.h b/src/kosmickrisp/vulkan/kk_debug.h
+index f45480442130a621b36db7c32742c3528123f5d4..f371710f9f7a96fcb1e6518be7c1feb701c26d9a 100644
+--- a/src/kosmickrisp/vulkan/kk_debug.h
++++ b/src/kosmickrisp/vulkan/kk_debug.h
+@@ -12,6 +12,7 @@ enum kk_debug {
+    KK_DEBUG_MSL = 1ull << 1,
+    /* Forces robustness for all shaders */
+    KK_DEBUG_FORCE_ROBUSTNESS = 1ull << 2,
++   KK_DEBUG_DYNAMIC_VI = 1ull << 3,
+ };
+ 
+ extern enum kk_debug kk_mesa_debug_flags;
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 6bda254d9cf9a454101894817551a7ec6eca3d09..68e53e39feb0e2258664f1ef19a8eb12b4a4cede 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -104,7 +104,7 @@ has_static_depth_stencil_state(const struct vk_graphics_pipeline_state *state)
+ static bool
+ kk_vi_is_static(const struct vk_graphics_pipeline_state *state)
+ {
+-   return state && state->vi &&
++   return !KK_DEBUG(DYNAMIC_VI) && state && state->vi &&
+           !BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI);
+ }
+ 

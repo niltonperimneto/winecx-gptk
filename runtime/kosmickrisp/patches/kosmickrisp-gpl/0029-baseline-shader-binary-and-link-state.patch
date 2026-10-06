@@ -1,0 +1,836 @@
+diff --git a/src/kosmickrisp/vulkan/kk_debug.c b/src/kosmickrisp/vulkan/kk_debug.c
+index 41573fc5d7c..83159bc2a12 100644
+--- a/src/kosmickrisp/vulkan/kk_debug.c
++++ b/src/kosmickrisp/vulkan/kk_debug.c
+@@ -13,7 +13,6 @@ const struct debug_named_value debug_flags[] = {
+    {"force_robustness", KK_DEBUG_FORCE_ROBUSTNESS},
+    {"dynamic_vi", KK_DEBUG_DYNAMIC_VI},
+    {"partition", KK_DEBUG_PARTITION},
+-   {"gpl_nir", KK_DEBUG_GPL_NIR},
+    {"pso", KK_DEBUG_PSO},
+    {NULL, 0},
+ };
+diff --git a/src/kosmickrisp/vulkan/kk_debug.h b/src/kosmickrisp/vulkan/kk_debug.h
+index 7680665c64e..c4351463a82 100644
+--- a/src/kosmickrisp/vulkan/kk_debug.h
++++ b/src/kosmickrisp/vulkan/kk_debug.h
+@@ -14,7 +14,6 @@ enum kk_debug {
+    KK_DEBUG_FORCE_ROBUSTNESS = 1ull << 2,
+    KK_DEBUG_DYNAMIC_VI = 1ull << 3,
+    KK_DEBUG_PARTITION = 1ull << 4,
+-   KK_DEBUG_GPL_NIR = 1ull << 5,
+    KK_DEBUG_PSO = 1ull << 6,
+ };
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index 5e9b27dee9b..b28b7d2a906 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -428,8 +428,7 @@ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+    if (result != VK_SUCCESS)
+       goto fail_alloc;
+ 
+-   dev->vk.shader_ops = KK_DEBUG(GPL_NIR) ? &kk_device_shader_ops_gpl_nir
+-                                          : &kk_device_shader_ops;
++   dev->vk.shader_ops = &kk_device_shader_ops;
+    dev->mtl_handle = pdev->mtl_dev_handle;
+    dev->vk.command_buffer_ops = &kk_cmd_buffer_ops;
+    dev->vk.command_dispatch_table = &dev->vk.dispatch_table;
+diff --git a/src/kosmickrisp/vulkan/kk_metal_cache.c b/src/kosmickrisp/vulkan/kk_metal_cache.c
+index 358339a99f7..b8bf51743e0 100644
+--- a/src/kosmickrisp/vulkan/kk_metal_cache.c
++++ b/src/kosmickrisp/vulkan/kk_metal_cache.c
+@@ -7,18 +7,13 @@
+ #include <string.h>
+ #include <time.h>
+ 
++#define KK_METAL_FORCE_FLUSH 256
++
+ struct kk_metal_cache_key {
+    cache_key key;
+    struct kk_metal_cache_key *next;
+ };
+ 
+-struct kk_metal_archive_request {
+-   cache_key key;
+-   mtl_archive *archive;
+-   bool complete;
+-   struct kk_metal_archive_request *next;
+-};
+-
+ struct kk_metal_loaded_archive {
+    cache_key key;
+    mtl_archive *archive;
+@@ -37,7 +32,6 @@ struct kk_metal_cache {
+    char identity[256];
+    struct kk_metal_cache_key *pending;
+    unsigned pending_count;
+-   struct kk_metal_archive_request *requests;
+    struct kk_metal_loaded_archive *archives;
+    unsigned archive_count;
+ };
+@@ -68,12 +62,17 @@ kk_metal_log_failure(const char *outcome)
+ }
+ 
+ static void
+-kk_metal_flush_locked(struct kk_metal_cache *cache)
++kk_metal_flush_locked(struct kk_metal_cache *cache, bool force)
+ {
+    if (!cache->pending)
+       return;
+    pthread_mutex_unlock(&cache->mutex);
+-   pthread_rwlock_wrlock(&cache->capture_gate);
++   if (force) {
++      pthread_rwlock_wrlock(&cache->capture_gate);
++   } else if (pthread_rwlock_trywrlock(&cache->capture_gate)) {
++      pthread_mutex_lock(&cache->mutex);
++      return;
++   }
+    pthread_mutex_lock(&cache->mutex);
+    struct kk_metal_cache_key *pending = cache->pending;
+    cache->pending = NULL;
+@@ -104,64 +103,26 @@ kk_metal_flush_locked(struct kk_metal_cache *cache)
+    pthread_mutex_lock(&cache->mutex);
+ }
+ 
+-static mtl_archive *kk_metal_load(struct kk_metal_cache *cache,
+-                                  const uint8_t key[CACHE_KEY_SIZE]);
+-
+ static void *
+ kk_metal_worker(void *arg)
+ {
+    struct kk_metal_cache *cache = arg;
+-   struct timespec deadline;
+-   clock_gettime(CLOCK_REALTIME, &deadline);
+-   deadline.tv_sec++;
+    pthread_mutex_lock(&cache->mutex);
+    while (!cache->stopping) {
+-      struct kk_metal_archive_request *requests = cache->requests;
+-      if (requests) {
+-         cache->requests = NULL;
+-         pthread_mutex_unlock(&cache->mutex);
+-         for (struct kk_metal_archive_request *request = requests; request;
+-              request = request->next)
+-            request->archive = kk_metal_load(cache, request->key);
+-         pthread_mutex_lock(&cache->mutex);
+-         while (requests) {
+-            struct kk_metal_archive_request *next = requests->next;
+-            requests->complete = true;
+-            requests = next;
+-         }
+-         pthread_cond_broadcast(&cache->cond);
+-      }
+-      struct timespec now;
+-      clock_gettime(CLOCK_REALTIME, &now);
+-      if (cache->pending_count >= 64 || now.tv_sec > deadline.tv_sec ||
+-          (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) {
+-         kk_metal_flush_locked(cache);
+-         deadline = now;
+-         deadline.tv_sec++;
+-      }
+-      if (cache->requests || cache->stopping)
+-         continue;
++      struct timespec deadline;
++      clock_gettime(CLOCK_REALTIME, &deadline);
++      deadline.tv_sec++;
+       pthread_cond_timedwait(&cache->cond, &cache->mutex, &deadline);
++      if (cache->stopping)
++         break;
++      kk_metal_flush_locked(cache,
++                            cache->pending_count >= KK_METAL_FORCE_FLUSH);
+    }
+-   kk_metal_flush_locked(cache);
++   kk_metal_flush_locked(cache, true);
+    pthread_mutex_unlock(&cache->mutex);
+    return NULL;
+ }
+ 
+-static mtl_archive *
+-kk_metal_request_locked(struct kk_metal_cache *cache,
+-                         const uint8_t key[CACHE_KEY_SIZE])
+-{
+-   struct kk_metal_archive_request request = {0};
+-   memcpy(request.key, key, CACHE_KEY_SIZE);
+-   request.next = cache->requests;
+-   cache->requests = &request;
+-   pthread_cond_broadcast(&cache->cond);
+-   while (!request.complete)
+-      pthread_cond_wait(&cache->cond, &cache->mutex);
+-   return request.archive;
+-}
+-
+ struct kk_metal_cache *
+ kk_metal_cache_create(struct disk_cache *disk_cache, mtl_device *device,
+                       mtl_compiler *compiler)
+@@ -226,16 +187,8 @@ kk_metal_cache_destroy(struct kk_metal_cache *cache)
+ }
+ 
+ static mtl_archive *
+-kk_metal_load(struct kk_metal_cache *cache, const uint8_t key[CACHE_KEY_SIZE])
++kk_metal_find_archive_locked(struct kk_metal_cache *cache, const void *ref)
+ {
+-   cache_key reference;
+-   kk_metal_reference_key(cache, key, reference);
+-   size_t ref_size = 0;
+-   void *ref = disk_cache_get(cache->disk, reference, &ref_size);
+-   if (!ref || ref_size != CACHE_KEY_SIZE) {
+-      free(ref);
+-      return NULL;
+-   }
+    for (struct kk_metal_loaded_archive **link = &cache->archives; *link;
+         link = &(*link)->next) {
+       struct kk_metal_loaded_archive *entry = *link;
+@@ -243,22 +196,47 @@ kk_metal_load(struct kk_metal_cache *cache, const uint8_t key[CACHE_KEY_SIZE])
+          *link = entry->next;
+          entry->next = cache->archives;
+          cache->archives = entry;
+-         free(ref);
+          return mtl_retain(entry->archive);
+       }
+    }
++   return NULL;
++}
++
++static mtl_archive *
++kk_metal_load(struct kk_metal_cache *cache, const uint8_t key[CACHE_KEY_SIZE])
++{
++   cache_key reference;
++   kk_metal_reference_key(cache, key, reference);
++   size_t ref_size = 0;
++   void *ref = disk_cache_get(cache->disk, reference, &ref_size);
++   if (!ref || ref_size != CACHE_KEY_SIZE) {
++      free(ref);
++      return NULL;
++   }
++   pthread_mutex_lock(&cache->mutex);
++   mtl_archive *archive = kk_metal_find_archive_locked(cache, ref);
++   pthread_mutex_unlock(&cache->mutex);
++   if (archive) {
++      free(ref);
++      return archive;
++   }
+    size_t size = 0;
+    void *data = disk_cache_get(cache->disk, ref, &size);
+    cache_key actual;
+-   mtl_archive *archive = NULL;
+    if (data && size) {
+       disk_cache_compute_key(cache->disk, data, size, actual);
+       if (!memcmp(actual, ref, CACHE_KEY_SIZE))
+          archive = mtl_new_archive(cache->device, data, size);
+    }
+    if (archive) {
+-      struct kk_metal_loaded_archive *entry = malloc(sizeof(*entry));
+-      if (entry) {
++      pthread_mutex_lock(&cache->mutex);
++      mtl_archive *existing = kk_metal_find_archive_locked(cache, ref);
++      struct kk_metal_loaded_archive *entry =
++         existing ? NULL : malloc(sizeof(*entry));
++      if (existing) {
++         mtl_release(archive);
++         archive = existing;
++      } else if (entry) {
+          memcpy(entry->key, ref, CACHE_KEY_SIZE);
+          entry->archive = mtl_retain(archive);
+          entry->next = cache->archives;
+@@ -273,6 +251,7 @@ kk_metal_load(struct kk_metal_cache *cache, const uint8_t key[CACHE_KEY_SIZE])
+             cache->archive_count--;
+          }
+       }
++      pthread_mutex_unlock(&cache->mutex);
+    }
+    free(ref);
+    free(data);
+@@ -292,7 +271,7 @@ kk_metal_capture_locked(struct kk_metal_cache *cache,
+    memcpy(entry->key, key, CACHE_KEY_SIZE);
+    entry->next = cache->pending;
+    cache->pending = entry;
+-   if (++cache->pending_count >= 64)
++   if (++cache->pending_count == KK_METAL_FORCE_FLUSH)
+       pthread_cond_broadcast(&cache->cond);
+ }
+ 
+@@ -303,9 +282,7 @@ kk_metal_cache_new_render_pipeline(struct kk_metal_cache *cache,
+                                    bool *archive_hit)
+ {
+    *archive_hit = false;
+-   pthread_mutex_lock(&cache->mutex);
+-   mtl_archive *archive = kk_metal_request_locked(cache, key);
+-   pthread_mutex_unlock(&cache->mutex);
++   mtl_archive *archive = kk_metal_load(cache, key);
+    mtl_render_pipeline_state *pipeline = archive ?
+       mtl_archive_new_render_pipeline(archive, descriptor) : NULL;
+    mtl_release(archive);
+@@ -330,9 +307,7 @@ kk_metal_cache_new_compute_pipeline(struct kk_metal_cache *cache,
+                                     uint64_t max_threads, bool *archive_hit)
+ {
+    *archive_hit = false;
+-   pthread_mutex_lock(&cache->mutex);
+-   mtl_archive *archive = kk_metal_request_locked(cache, key);
+-   pthread_mutex_unlock(&cache->mutex);
++   mtl_archive *archive = kk_metal_load(cache, key);
+    mtl_compute_pipeline_state *pipeline = archive ?
+       mtl_archive_new_compute_pipeline(archive, function, max_threads) : NULL;
+    mtl_release(archive);
+diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
+index 8d39aa75961..52e0b134822 100644
+--- a/src/kosmickrisp/vulkan/kk_physical_device.c
++++ b/src/kosmickrisp/vulkan/kk_physical_device.c
+@@ -820,7 +820,7 @@ kk_get_device_properties(
+       .minImportedHostPointerAlignment = os_page_size,
+ 
+       /* VK_EXT_graphics_pipeline_library */
+-      .graphicsPipelineLibraryFastLinking = !KK_DEBUG(GPL_NIR),
++      .graphicsPipelineLibraryFastLinking = true,
+       .graphicsPipelineLibraryIndependentInterpolationDecoration = true,
+ 
+       /* VK_KHR_line_rasterization */
+@@ -904,7 +904,7 @@ kk_get_device_properties(
+       .variableSampleLocations = true,
+ 
+       /* VK_EXT_shader_object */
+-      .shaderBinaryVersion = 2,
++      .shaderBinaryVersion = KK_SHADER_BINARY_VERSION,
+ 
+       /* VK_EXT_transform_feedback */
+       .maxTransformFeedbackStreams = 4,
+@@ -1012,11 +1012,11 @@ kk_physical_device_init_pipeline_cache(struct kk_physical_device *pdev)
+    _mesa_blake3_update(&blake3_ctx, &pdev->settings.experimental_enabled,
+                       sizeof(pdev->settings.experimental_enabled));
+ 
+-   const uint32_t cache_schema = 6;
+    const uint64_t compile_flags =
+       kk_mesa_debug_flags & (KK_DEBUG_FORCE_ROBUSTNESS | KK_DEBUG_DYNAMIC_VI |
+-                             KK_DEBUG_PARTITION | KK_DEBUG_GPL_NIR);
+-   _mesa_blake3_update(&blake3_ctx, &cache_schema, sizeof(cache_schema));
++                             KK_DEBUG_PARTITION);
++   const uint32_t binary_version = KK_SHADER_BINARY_VERSION;
++   _mesa_blake3_update(&blake3_ctx, &binary_version, sizeof(binary_version));
+    _mesa_blake3_update(&blake3_ctx, &compile_flags, sizeof(compile_flags));
+    unsigned char blake3[BLAKE3_KEY_LEN];
+    _mesa_blake3_final(&blake3_ctx, blake3);
+diff --git a/src/kosmickrisp/vulkan/kk_private.h b/src/kosmickrisp/vulkan/kk_private.h
+index b58bd219e20..eb2cf0b222b 100644
+--- a/src/kosmickrisp/vulkan/kk_private.h
++++ b/src/kosmickrisp/vulkan/kk_private.h
+@@ -43,6 +43,8 @@
+ /* Max size of a bound cbuf */
+ #define KK_MAX_CBUF_SIZE (1u << 16)
+ 
++#define KK_SHADER_BINARY_VERSION 7u
++
+ /* Metal related macros */
+ #define KK_MTL_RESOURCE_OPTIONS                                                \
+    MTL_RESOURCE_STORAGE_MODE_SHARED |                                          \
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index 2e689c0e9bb..d7edcfe40ac 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -233,18 +233,17 @@ kk_format_base_type(enum pipe_format format)
+ }
+ 
+ static enum mtl_primitive_topology_class
+-kk_cmd_topology_class(struct kk_cmd_buffer *cmd)
++kk_link_topology_class(const struct kk_link_state *ls)
+ {
+-   struct kk_shader *gs = cmd->state.shaders[MESA_SHADER_GEOMETRY];
+-   struct kk_shader *tes = cmd->state.shaders[MESA_SHADER_TESS_EVAL];
+-   VkPrimitiveTopology topology =
+-      cmd->vk.dynamic_graphics_state.ia.primitive_topology;
++   struct kk_shader *gs = ls->shaders[MESA_SHADER_GEOMETRY];
++   struct kk_shader *tes = ls->shaders[MESA_SHADER_TESS_EVAL];
++   VkPrimitiveTopology topology = ls->dyn->ia.primitive_topology;
+ 
+    enum mesa_prim prim = MESA_PRIM_COUNT;
+    if (gs)
+       prim = u_reduced_prim(gs->info.gs.mode);
+    else if (tes)
+-      prim = cmd->state.gfx.tess.prim;
++      prim = ls->tess_prim;
+ 
+    if (prim == MESA_PRIM_POINTS)
+       topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+@@ -279,23 +278,22 @@ kk_fs_link_key_needed(const struct kk_shader *fs,
+ }
+ 
+ static void
+-kk_cmd_build_fs_link_key(struct kk_cmd_buffer *cmd, const struct kk_shader *vs,
+-                         const struct kk_shader *fs, bool force_shader_blend,
+-                         struct kk_fs_link_key *key)
++kk_build_fs_link_key(const struct kk_link_state *ls, const struct kk_shader *vs,
++                     const struct kk_shader *fs, bool force_shader_blend,
++                     struct kk_fs_link_key *key)
+ {
+-   const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
+-   const struct kk_rendering_state *render = &cmd->state.gfx.render;
++   const struct vk_dynamic_graphics_state *dyn = ls->dyn;
+ 
+    memset(key, 0, sizeof(*key));
+ 
+    bool shader_blend = force_shader_blend || fs->info.fs.dual_source_blend ||
+                        (dyn->cb.logic_op_enable && fs->info.fs.color_outputs);
+-   for (uint32_t i = 0u; i < render->color_att_count; ++i) {
++   for (uint32_t i = 0u; i < ls->color_att_count; ++i) {
+       uint8_t rt = dyn->cal.color_map[i];
+       if (rt == MESA_VK_ATTACHMENT_UNUSED || rt >= MAX_DRAW_BUFFERS)
+          continue;
+ 
+-      VkFormat vk_format = render->color_att[i].vk_format;
++      VkFormat vk_format = ls->color_formats[i];
+       if (vk_format == VK_FORMAT_UNDEFINED)
+          continue;
+ 
+@@ -328,7 +326,7 @@ kk_cmd_build_fs_link_key(struct kk_cmd_buffer *cmd, const struct kk_shader *vs,
+    }
+ 
+    key->remove_depth = fs->info.fs.writes_depth &&
+-                       render->depth_att.vk_format == VK_FORMAT_UNDEFINED;
++                       ls->depth_format == VK_FORMAT_UNDEFINED;
+    key->missing_inputs =
+       fs->info.fs.inputs_read & ~vs->info.rast_outputs_written;
+    key->num_cull_distances = vs->info.rast_num_cull_distances;
+@@ -348,20 +346,19 @@ kk_cmd_build_fs_link_key(struct kk_cmd_buffer *cmd, const struct kk_shader *vs,
+ }
+ 
+ static void
+-kk_cmd_build_pso_blend(struct kk_cmd_buffer *cmd,
+-                       const struct kk_fs_link_key *fs_key,
+-                       const struct kk_fs_variant *variant,
+-                       struct kk_pso_key *key)
++kk_build_pso_blend(const struct kk_link_state *ls,
++                   const struct kk_fs_link_key *fs_key,
++                   const struct kk_fs_variant *variant,
++                   struct kk_pso_key *key)
+ {
+-   const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
+-   const struct kk_rendering_state *render = &cmd->state.gfx.render;
++   const struct vk_dynamic_graphics_state *dyn = ls->dyn;
+ 
+-   for (uint32_t i = 0u; i < render->color_att_count; ++i) {
++   for (uint32_t i = 0u; i < ls->color_att_count; ++i) {
+       uint8_t rt = dyn->cal.color_map[i];
+       if (rt == MESA_VK_ATTACHMENT_UNUSED || rt >= MAX_DRAW_BUFFERS)
+          continue;
+ 
+-      VkFormat vk_format = render->color_att[i].vk_format;
++      VkFormat vk_format = ls->color_formats[i];
+       if (vk_format == VK_FORMAT_UNDEFINED)
+          continue;
+ 
+@@ -397,14 +394,14 @@ kk_cmd_build_pso_blend(struct kk_cmd_buffer *cmd,
+ }
+ 
+ static struct kk_shader *
+-kk_cmd_rast_shader(struct kk_cmd_buffer *cmd)
++kk_link_rast_shader(const struct kk_link_state *ls)
+ {
+-   struct kk_shader *vs = cmd->state.shaders[MESA_SHADER_VERTEX];
++   struct kk_shader *vs = ls->shaders[MESA_SHADER_VERTEX];
+    if (!vs->info.shader_object)
+       return vs;
+ 
+-   struct kk_shader *gs = cmd->state.shaders[MESA_SHADER_GEOMETRY];
+-   struct kk_shader *tes = cmd->state.shaders[MESA_SHADER_TESS_EVAL];
++   struct kk_shader *gs = ls->shaders[MESA_SHADER_GEOMETRY];
++   struct kk_shader *tes = ls->shaders[MESA_SHADER_TESS_EVAL];
+    if (gs)
+       return gs;
+    if (tes)
+@@ -413,14 +410,13 @@ kk_cmd_rast_shader(struct kk_cmd_buffer *cmd)
+ }
+ 
+ static mtl_render_pipeline_state *
+-kk_cmd_link(struct kk_cmd_buffer *cmd, struct kk_shader *vs,
+-            struct kk_shader *fs, bool force_shader_blend)
++kk_link(struct kk_device *dev, const struct kk_link_state *ls,
++        struct kk_shader *vs, struct kk_shader *fs, bool force_shader_blend)
+ {
+-   struct kk_device *dev = kk_cmd_buffer_device(cmd);
+-   const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
++   const struct vk_dynamic_graphics_state *dyn = ls->dyn;
+ 
+    struct kk_fs_link_key fs_key;
+-   kk_cmd_build_fs_link_key(cmd, vs, fs, force_shader_blend, &fs_key);
++   kk_build_fs_link_key(ls, vs, fs, force_shader_blend, &fs_key);
+ 
+    const struct kk_fs_variant *variant = &fs->fast;
+    if (kk_fs_link_key_needed(fs, &fs_key) &&
+@@ -429,7 +425,7 @@ kk_cmd_link(struct kk_cmd_buffer *cmd, struct kk_shader *vs,
+ 
+    struct kk_pso_key key;
+    kk_pso_key_init(&key);
+-   key.topology_class = kk_cmd_topology_class(cmd);
++   key.topology_class = kk_link_topology_class(ls);
+ 
+    const struct kk_fs_variant *rast = kk_shader_get_rast(
+       dev, vs, key.topology_class == MTL_PRIMITIVE_TOPOLOGY_CLASS_POINT);
+@@ -438,8 +434,8 @@ kk_cmd_link(struct kk_cmd_buffer *cmd, struct kk_shader *vs,
+ 
+    memcpy(key.rast, rast->hash, sizeof(key.rast));
+    memcpy(key.fs, variant->hash, sizeof(key.fs));
+-   kk_cmd_build_pso_blend(cmd, &fs_key, variant, &key);
+-   key.amplification = util_bitcount(cmd->state.gfx.render.view_mask);
++   kk_build_pso_blend(ls, &fs_key, variant, &key);
++   key.amplification = util_bitcount(ls->view_mask);
+    key.sample_count = dyn->ms.rasterization_samples;
+    key.alpha_to_coverage =
+       !variant->shader_blend && dyn->ms.alpha_to_coverage_enable;
+@@ -449,11 +445,10 @@ kk_cmd_link(struct kk_cmd_buffer *cmd, struct kk_shader *vs,
+ }
+ 
+ mtl_render_pipeline_state *
+-kk_cmd_link_pipeline(struct kk_cmd_buffer *cmd)
++kk_link_pipeline(struct kk_device *dev, const struct kk_link_state *ls)
+ {
+-   struct kk_device *dev = kk_cmd_buffer_device(cmd);
+-   struct kk_shader *vs = kk_cmd_rast_shader(cmd);
+-   struct kk_shader *fs = cmd->state.shaders[MESA_SHADER_FRAGMENT];
++   struct kk_shader *vs = kk_link_rast_shader(ls);
++   struct kk_shader *fs = ls->shaders[MESA_SHADER_FRAGMENT];
+    if (vs == NULL)
+       return NULL;
+ 
+@@ -462,14 +457,34 @@ kk_cmd_link_pipeline(struct kk_cmd_buffer *cmd)
+    if (fs == NULL)
+       return NULL;
+ 
+-   mtl_render_pipeline_state *pso = kk_cmd_link(cmd, vs, fs, false);
++   mtl_render_pipeline_state *pso = kk_link(dev, ls, vs, fs, false);
+    if (pso == NULL)
+-      pso = kk_cmd_link(cmd, vs, fs, true);
++      pso = kk_link(dev, ls, vs, fs, true);
+    return pso;
+ }
+ 
++mtl_render_pipeline_state *
++kk_cmd_link_pipeline(struct kk_cmd_buffer *cmd)
++{
++   const struct kk_rendering_state *render = &cmd->state.gfx.render;
++   struct kk_link_state ls = {
++      .dyn = &cmd->vk.dynamic_graphics_state,
++      .tess_prim = cmd->state.gfx.tess.prim,
++      .view_mask = render->view_mask,
++      .color_att_count = render->color_att_count,
++      .depth_format = render->depth_att.vk_format,
++   };
++   memcpy(ls.shaders, cmd->state.shaders, sizeof(ls.shaders));
++   for (uint32_t i = 0; i < render->color_att_count; ++i)
++      ls.color_formats[i] = render->color_att[i].vk_format;
++
++   return kk_link_pipeline(kk_cmd_buffer_device(cmd), &ls);
++}
++
+ struct kk_prewarm_job {
+-   struct kk_cmd_buffer cmd;
++   struct kk_device *dev;
++   struct vk_dynamic_graphics_state dyn;
++   struct kk_link_state link;
+    struct util_queue_fence fence;
+ };
+ 
+@@ -481,7 +496,7 @@ kk_prewarm_execute(void *data, void *global_data, int thread_index)
+    kk_compile_origin = KK_COMPILE_ORIGIN_PREWARM;
+    if (KK_DEBUG(PSO))
+       mesa_logi("PSO prewarm started");
+-   kk_cmd_link_pipeline(&job->cmd);
++   kk_link_pipeline(job->dev, &job->link);
+    kk_compile_origin = origin;
+ }
+ 
+@@ -489,11 +504,11 @@ static void
+ kk_prewarm_cleanup(void *data, void *global_data, int thread_index)
+ {
+    struct kk_prewarm_job *job = data;
+-   struct vk_device *dev = job->cmd.vk.base.device;
+    for (uint32_t i = 0; i < MESA_SHADER_COMPUTE; ++i) {
+-      struct kk_shader *shader = job->cmd.state.shaders[i];
++      struct kk_shader *shader = job->link.shaders[i];
+       if (shader)
+-         vk_pipeline_cache_object_unref(dev, &shader->vk.pipeline.cache_obj);
++         vk_pipeline_cache_object_unref(&job->dev->vk,
++                                        &shader->vk.pipeline.cache_obj);
+    }
+    util_queue_fence_destroy(&job->fence);
+    free(job);
+@@ -576,25 +591,25 @@ kk_prewarm_pipeline(struct vk_device *vk_dev,
+    struct kk_prewarm_job *job = calloc(1, sizeof(*job));
+    if (!job)
+       return;
+-   job->cmd.vk.base.device = vk_dev;
+-   vk_dynamic_graphics_state_init(&job->cmd.vk.dynamic_graphics_state);
+-   vk_dynamic_graphics_state_fill(&job->cmd.vk.dynamic_graphics_state, state);
+-   kk_prewarm_dynamic_defaults(&job->cmd.vk.dynamic_graphics_state, state);
+-   struct kk_rendering_state *render = &job->cmd.state.gfx.render;
+-   render->view_mask = state->mv ? state->mv->view_mask : 0;
+-   render->color_att_count = state->rp->color_attachment_count;
+-   for (uint32_t i = 0; i < render->color_att_count; ++i)
+-      render->color_att[i].vk_format = state->rp->color_attachment_formats[i];
+-   render->depth_att.vk_format = state->rp->depth_attachment_format;
+-   render->stencil_att.vk_format = state->rp->stencil_attachment_format;
++   job->dev = dev;
++   vk_dynamic_graphics_state_init(&job->dyn);
++   vk_dynamic_graphics_state_fill(&job->dyn, state);
++   kk_prewarm_dynamic_defaults(&job->dyn, state);
++   struct kk_link_state *ls = &job->link;
++   ls->dyn = &job->dyn;
++   ls->view_mask = state->mv ? state->mv->view_mask : 0;
++   ls->color_att_count = state->rp->color_attachment_count;
++   for (uint32_t i = 0; i < ls->color_att_count; ++i)
++      ls->color_formats[i] = state->rp->color_attachment_formats[i];
++   ls->depth_format = state->rp->depth_attachment_format;
+    for (uint32_t i = 0; i < shader_count; ++i) {
+       if (!shaders[i])
+          continue;
+       struct kk_shader *shader = container_of(shaders[i], struct kk_shader, vk);
+       vk_pipeline_cache_object_ref(&shader->vk.pipeline.cache_obj);
+-      job->cmd.state.shaders[shader->info.stage] = shader;
++      ls->shaders[shader->info.stage] = shader;
+       if (shader->info.stage == MESA_SHADER_TESS_EVAL) {
+-         job->cmd.state.gfx.tess.prim =
++         ls->tess_prim =
+             shader->info.tess.info.points ? MESA_PRIM_POINTS :
+             shader->info.tess.info.mode == TESS_PRIMITIVE_ISOLINES ?
+                MESA_PRIM_LINES : MESA_PRIM_TRIANGLES;
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.h b/src/kosmickrisp/vulkan/kk_pso_cache.h
+index 5329c1e9860..dfb59d2f73f 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.h
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.h
+@@ -14,9 +14,12 @@
+ #include "util/simple_mtx.h"
+ #include "util/u_queue.h"
+ 
++#include "vk_graphics_state.h"
++
+ struct hash_table;
+ struct kk_cmd_buffer;
+ struct kk_device;
++struct kk_shader;
+ 
+ struct kk_pso_blend {
+    uint8_t enable;
+@@ -41,6 +44,16 @@ struct kk_pso_key {
+    struct kk_pso_blend blend[MAX_DRAW_BUFFERS];
+ };
+ 
++struct kk_link_state {
++   const struct vk_dynamic_graphics_state *dyn;
++   struct kk_shader *shaders[MESA_SHADER_COMPUTE];
++   enum mesa_prim tess_prim;
++   uint32_t view_mask;
++   uint32_t color_att_count;
++   VkFormat color_formats[MESA_VK_MAX_COLOR_ATTACHMENTS];
++   VkFormat depth_format;
++};
++
+ struct kk_pso_cache {
+    mtx_t lock;
+    struct hash_table *table;
+@@ -71,6 +84,9 @@ mtl_render_pipeline_state *kk_pso_cache_get(struct kk_device *dev,
+                                             mtl_function_descriptor *vs,
+                                             mtl_function_descriptor *fs);
+ 
++mtl_render_pipeline_state *kk_link_pipeline(struct kk_device *dev,
++                                            const struct kk_link_state *ls);
++
+ mtl_render_pipeline_state *kk_cmd_link_pipeline(struct kk_cmd_buffer *cmd);
+ 
+ #endif /* KK_PSO_CACHE_H */
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 11ebc6c495b..8424745f945 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -29,6 +29,7 @@
+ #include "util/disk_cache.h"
+ 
+ #include "util/hash_table.h"
++#include "util/u_atomic.h"
+ 
+ #include "poly/nir/poly_nir.h"
+ 
+@@ -38,6 +39,8 @@
+ #include "vk_nir_convert_ycbcr.h"
+ #include "vk_pipeline.h"
+ 
++#define KK_SHADER_BINARY_MAGIC 0x4b4b5348u
++
+ static const nir_shader_compiler_options *
+ kk_get_nir_options(struct vk_physical_device *vk_pdev, mesa_shader_stage stage,
+                    UNUSED const struct vk_pipeline_robustness_state *rs)
+@@ -2572,8 +2575,8 @@ kk_shader_serialize(struct vk_device *vk_dev, const struct vk_shader *vk_shader,
+ {
+    struct kk_shader *shader = container_of(vk_shader, struct kk_shader, vk);
+ 
+-   blob_write_uint32(blob, 0x4b4b5348u);
+-   blob_write_uint32(blob, 2u);
++   blob_write_uint32(blob, KK_SHADER_BINARY_MAGIC);
++   blob_write_uint32(blob, KK_SHADER_BINARY_VERSION);
+    blob_write_bytes(blob, &shader->info, sizeof(shader->info));
+    kk_msl_serialize(&shader->msl_data[shader->info.stage], blob);
+    if (shader->info.stage == MESA_SHADER_VERTEX) {
+@@ -2639,7 +2642,8 @@ kk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+ 
+    uint32_t magic = blob_read_uint32(blob);
+    uint32_t version = blob_read_uint32(blob);
+-   if (blob->overrun || binary_version != 2u || magic != 0x4b4b5348u || version != 2u)
++   if (blob->overrun || binary_version != KK_SHADER_BINARY_VERSION ||
++       magic != KK_SHADER_BINARY_MAGIC || version != KK_SHADER_BINARY_VERSION)
+       return vk_error(dev, VK_ERROR_INCOMPATIBLE_SHADER_BINARY_EXT);
+ 
+    struct kk_shader_info info;
+@@ -2978,6 +2982,10 @@ kk_shader_get_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+ struct kk_shader *
+ kk_device_get_empty_fs(struct kk_device *dev)
+ {
++   struct kk_shader *empty_fs = p_atomic_read(&dev->empty_fs);
++   if (empty_fs)
++      return empty_fs;
++
+    simple_mtx_lock(&dev->empty_fs_lock);
+    if (dev->empty_fs == NULL) {
+       struct vk_multiview_state mv = {0};
+@@ -2993,7 +3001,7 @@ kk_device_get_empty_fs(struct kk_device *dev)
+       if (kk_compile_shader(dev, nir, NULL, true, &rs_none, &state, NULL,
+                             &fs) == VK_SUCCESS) {
+          if (kk_init_fast_fs(dev, fs) == VK_SUCCESS)
+-            dev->empty_fs = fs;
++            p_atomic_set(&dev->empty_fs, fs);
+          else
+             kk_shader_destroy(&dev->vk, fs, NULL);
+       }
+@@ -3176,22 +3184,15 @@ kk_shader_cache_trace(struct vk_device *device,
+    kk_log_cache_shader(dev, trace, outcome, 0, 0);
+ }
+ 
+-#define KK_DEVICE_SHADER_OPS                                                   \
+-   .get_nir_options = kk_get_nir_options,                                      \
+-   .get_spirv_options = kk_get_spirv_options,                                  \
+-   .preprocess_nir = kk_preprocess_nir, .hash_state = kk_hash_graphics_state,  \
+-   .compile = kk_compile_shaders_logged,                                       \
+-   .shader_cache_trace = kk_shader_cache_trace,                                \
+-   .deserialize = kk_deserialize_shader_logged,                                \
+-   .cmd_set_dynamic_graphics_state = vk_cmd_set_dynamic_graphics_state,        \
+-   .graphics_pipeline_created = kk_prewarm_pipeline,                          \
+-   .cmd_bind_shaders = kk_cmd_bind_shaders
+-
+ const struct vk_device_shader_ops kk_device_shader_ops = {
+-   KK_DEVICE_SHADER_OPS,
+-};
+-
+-const struct vk_device_shader_ops kk_device_shader_ops_gpl_nir = {
+-   .graphics_pipeline_needs_full_state = true,
+-   KK_DEVICE_SHADER_OPS,
++   .get_nir_options = kk_get_nir_options,
++   .get_spirv_options = kk_get_spirv_options,
++   .preprocess_nir = kk_preprocess_nir,
++   .hash_state = kk_hash_graphics_state,
++   .compile = kk_compile_shaders_logged,
++   .shader_cache_trace = kk_shader_cache_trace,
++   .deserialize = kk_deserialize_shader_logged,
++   .cmd_set_dynamic_graphics_state = vk_cmd_set_dynamic_graphics_state,
++   .graphics_pipeline_created = kk_prewarm_pipeline,
++   .cmd_bind_shaders = kk_cmd_bind_shaders,
+ };
+diff --git a/src/kosmickrisp/vulkan/kk_shader.h b/src/kosmickrisp/vulkan/kk_shader.h
+index e2e4480d200..6c815f48bd9 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.h
++++ b/src/kosmickrisp/vulkan/kk_shader.h
+@@ -211,7 +211,6 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(kk_shader, vk.base, VkShaderEXT,
+                                VK_OBJECT_TYPE_SHADER_EXT);
+ 
+ extern const struct vk_device_shader_ops kk_device_shader_ops;
+-extern const struct vk_device_shader_ops kk_device_shader_ops_gpl_nir;
+ 
+ static inline nir_address_format
+ kk_buffer_addr_format(VkPipelineRobustnessBufferBehaviorEXT robustness)
+diff --git a/src/vulkan/runtime/vk_pipeline.c b/src/vulkan/runtime/vk_pipeline.c
+index fe0ac554f50..ee39f1acd53 100644
+--- a/src/vulkan/runtime/vk_pipeline.c
++++ b/src/vulkan/runtime/vk_pipeline.c
+@@ -1336,8 +1336,6 @@ vk_get_graphics_pipeline_compile_info(struct vk_graphics_pipeline_compile_info *
+       vk_graphics_pipeline_create_flags(pCreateInfo);
+ 
+    info->retain_precomp =
+-      (device->shader_ops->graphics_pipeline_needs_full_state &&
+-       (pipeline_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR)) ||
+       (pipeline_flags &
+        VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT) != 0;
+ 
+@@ -1509,10 +1507,9 @@ vk_get_graphics_pipeline_compile_info(struct vk_graphics_pipeline_compile_info *
+     * GPL optimized link.)
+     */
+    info->optimize =
+-      device->shader_ops->graphics_pipeline_needs_full_state ||
+-      (!device->disable_lto &&
++      !device->disable_lto &&
+       (libs_info == NULL ||
+-       (pipeline_flags & VK_PIPELINE_CREATE_2_LINK_TIME_OPTIMIZATION_BIT_EXT)));
++       (pipeline_flags & VK_PIPELINE_CREATE_2_LINK_TIME_OPTIMIZATION_BIT_EXT));
+ 
+    /* Partition the shaders. Whenever pipelines are used,
+     * vertex/geometry/fragment stages are always specified together, so should
+@@ -1568,11 +1565,6 @@ vk_get_graphics_pipeline_compile_info(struct vk_graphics_pipeline_compile_info *
+    _mesa_blake3_final(&blake3_ctx, layout_blake3);
+ 
+    const struct vk_device_shader_ops *ops = device->shader_ops;
+-   /* Partial libraries have no render target or vertex input state to hash. */
+-   if (ops->graphics_pipeline_needs_full_state &&
+-       (pipeline_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR))
+-      return;
+-
+    for (uint32_t p = 0; p < info->part_count; p++) {
+       /* Don't try to re-compile any fast-link shaders */
+       if (!info->optimize && info->stages[info->partition[p]].shader != NULL)
+@@ -1648,9 +1640,7 @@ vk_graphics_pipeline_compile_shaders(struct vk_device *device,
+    const struct vk_device_shader_ops *ops = device->shader_ops;
+    VkResult result;
+ 
+-   if (compile_info->stage_count == 0 ||
+-       (ops->graphics_pipeline_needs_full_state &&
+-        (pipeline_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR)))
++   if (compile_info->stage_count == 0)
+       return VK_SUCCESS;
+ 
+    /* If we're linking, throw away any previously compiled shaders as they
+@@ -1921,8 +1911,6 @@ vk_graphics_pipeline_get_executable_properties(
+       *executable_count = 0;
+       for (uint32_t i = 0; i < gfx_pipeline->stage_count; i++) {
+          struct vk_shader *shader = gfx_pipeline->stages[i].shader;
+-         if (shader == NULL)
+-            continue;
+ 
+          uint32_t shader_exec_count = 0;
+          result = shader->ops->get_executable_properties(device, shader,
+@@ -1936,8 +1924,6 @@ vk_graphics_pipeline_get_executable_properties(
+       *executable_count = 0;
+       for (uint32_t i = 0; i < gfx_pipeline->stage_count; i++) {
+          struct vk_shader *shader = gfx_pipeline->stages[i].shader;
+-         if (shader == NULL)
+-            continue;
+ 
+          uint32_t shader_exec_count = arr_len - *executable_count;
+          result = shader->ops->get_executable_properties(device, shader,
+@@ -1960,8 +1946,6 @@ vk_graphics_pipeline_executable_shader(struct vk_device *device,
+ {
+    for (uint32_t i = 0; i < gfx_pipeline->stage_count; i++) {
+       struct vk_shader *shader = gfx_pipeline->stages[i].shader;
+-      if (shader == NULL)
+-         continue;
+ 
+       uint32_t shader_exec_count = 0;
+       shader->ops->get_executable_properties(device, shader,
+diff --git a/src/vulkan/runtime/vk_shader.h b/src/vulkan/runtime/vk_shader.h
+index 25a2b835cdc..0c6a65cdeb2 100644
+--- a/src/vulkan/runtime/vk_shader.h
++++ b/src/vulkan/runtime/vk_shader.h
+@@ -237,12 +237,6 @@ struct vk_device_shader_ops {
+                               const struct vk_shader_cache_trace *trace,
+                               const char *outcome);
+ 
+-   /** Defer library compilation until all graphics stages and state are known.
+-    * Libraries retain preprocessed NIR, even without RETAIN_LINK_TIME_INFO.
+-    * Drivers using this must not advertise graphicsPipelineLibraryFastLinking.
+-    */
+-   bool graphics_pipeline_needs_full_state;
+-
+    /** Retrieves a NIR compiler options struct
+     *
+     * NIR compiler options are only allowed to vary based on physical device,

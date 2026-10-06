@@ -1,0 +1,396 @@
+diff --git a/src/kosmickrisp/vulkan/kk_metal_cache.c b/src/kosmickrisp/vulkan/kk_metal_cache.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..358339a99f7f47895bb1a2ed9e69c0bf359768a0
+--- /dev/null
++++ b/src/kosmickrisp/vulkan/kk_metal_cache.c
+@@ -0,0 +1,351 @@
++#include "kk_metal_cache.h"
++#include "kosmickrisp/bridge/mtl_bridge.h"
++#include "util/u_debug.h"
++
++#include <pthread.h>
++#include <stdlib.h>
++#include <string.h>
++#include <time.h>
++
++struct kk_metal_cache_key {
++   cache_key key;
++   struct kk_metal_cache_key *next;
++};
++
++struct kk_metal_archive_request {
++   cache_key key;
++   mtl_archive *archive;
++   bool complete;
++   struct kk_metal_archive_request *next;
++};
++
++struct kk_metal_loaded_archive {
++   cache_key key;
++   mtl_archive *archive;
++   struct kk_metal_loaded_archive *next;
++};
++
++struct kk_metal_cache {
++   struct disk_cache *disk;
++   mtl_device *device;
++   mtl_compiler *compiler;
++   pthread_mutex_t mutex;
++   pthread_rwlock_t capture_gate;
++   pthread_cond_t cond;
++   pthread_t worker;
++   bool stopping;
++   char identity[256];
++   struct kk_metal_cache_key *pending;
++   unsigned pending_count;
++   struct kk_metal_archive_request *requests;
++   struct kk_metal_loaded_archive *archives;
++   unsigned archive_count;
++};
++
++static void
++kk_metal_reference_key(struct kk_metal_cache *cache,
++                       const uint8_t key[CACHE_KEY_SIZE], cache_key reference)
++{
++   uint8_t data[sizeof(cache->identity) + CACHE_KEY_SIZE] = {0};
++   memcpy(data, cache->identity, sizeof(cache->identity));
++   memcpy(data + sizeof(cache->identity), key, CACHE_KEY_SIZE);
++   disk_cache_compute_key(cache->disk, data, sizeof(data), reference);
++}
++
++static void
++kk_metal_log_failure(const char *outcome)
++{
++   const char *path = debug_get_option("MESA_KK_CACHE_LOG", NULL);
++   if (path) {
++      FILE *file = fopen(path, "a");
++      if (file) {
++         fprintf(file, "{\"event\":\"persistence\",\"outcome\":\"%s\"}\n", outcome);
++         fclose(file);
++      }
++   }
++   if (debug_get_bool_option("MESA_KK_PSO_CACHE_DEBUG", false))
++      fprintf(stderr, "KosmicKrisp: %s\n", outcome);
++}
++
++static void
++kk_metal_flush_locked(struct kk_metal_cache *cache)
++{
++   if (!cache->pending)
++      return;
++   pthread_mutex_unlock(&cache->mutex);
++   pthread_rwlock_wrlock(&cache->capture_gate);
++   pthread_mutex_lock(&cache->mutex);
++   struct kk_metal_cache_key *pending = cache->pending;
++   cache->pending = NULL;
++   cache->pending_count = 0;
++   pthread_mutex_unlock(&cache->mutex);
++
++   size_t size = 0;
++   void *data = pending ? mtl_compiler_serialize(cache->compiler, &size) : NULL;
++   pthread_rwlock_unlock(&cache->capture_gate);
++   cache_key blob;
++   if (data && size) {
++      disk_cache_compute_key(cache->disk, data, size, blob);
++      disk_cache_put(cache->disk, blob, data, size, NULL);
++   } else if (pending) {
++      kk_metal_log_failure("serialization_failed");
++   }
++   while (pending) {
++      struct kk_metal_cache_key *entry = pending;
++      if (data && size) {
++         cache_key reference;
++         kk_metal_reference_key(cache, entry->key, reference);
++         disk_cache_put(cache->disk, reference, blob, sizeof(blob), NULL);
++      }
++      pending = entry->next;
++      free(entry);
++   }
++   free(data);
++   pthread_mutex_lock(&cache->mutex);
++}
++
++static mtl_archive *kk_metal_load(struct kk_metal_cache *cache,
++                                  const uint8_t key[CACHE_KEY_SIZE]);
++
++static void *
++kk_metal_worker(void *arg)
++{
++   struct kk_metal_cache *cache = arg;
++   struct timespec deadline;
++   clock_gettime(CLOCK_REALTIME, &deadline);
++   deadline.tv_sec++;
++   pthread_mutex_lock(&cache->mutex);
++   while (!cache->stopping) {
++      struct kk_metal_archive_request *requests = cache->requests;
++      if (requests) {
++         cache->requests = NULL;
++         pthread_mutex_unlock(&cache->mutex);
++         for (struct kk_metal_archive_request *request = requests; request;
++              request = request->next)
++            request->archive = kk_metal_load(cache, request->key);
++         pthread_mutex_lock(&cache->mutex);
++         while (requests) {
++            struct kk_metal_archive_request *next = requests->next;
++            requests->complete = true;
++            requests = next;
++         }
++         pthread_cond_broadcast(&cache->cond);
++      }
++      struct timespec now;
++      clock_gettime(CLOCK_REALTIME, &now);
++      if (cache->pending_count >= 64 || now.tv_sec > deadline.tv_sec ||
++          (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) {
++         kk_metal_flush_locked(cache);
++         deadline = now;
++         deadline.tv_sec++;
++      }
++      if (cache->requests || cache->stopping)
++         continue;
++      pthread_cond_timedwait(&cache->cond, &cache->mutex, &deadline);
++   }
++   kk_metal_flush_locked(cache);
++   pthread_mutex_unlock(&cache->mutex);
++   return NULL;
++}
++
++static mtl_archive *
++kk_metal_request_locked(struct kk_metal_cache *cache,
++                         const uint8_t key[CACHE_KEY_SIZE])
++{
++   struct kk_metal_archive_request request = {0};
++   memcpy(request.key, key, CACHE_KEY_SIZE);
++   request.next = cache->requests;
++   cache->requests = &request;
++   pthread_cond_broadcast(&cache->cond);
++   while (!request.complete)
++      pthread_cond_wait(&cache->cond, &cache->mutex);
++   return request.archive;
++}
++
++struct kk_metal_cache *
++kk_metal_cache_create(struct disk_cache *disk_cache, mtl_device *device,
++                      mtl_compiler *compiler)
++{
++   if (!disk_cache || debug_get_bool_option("MESA_KK_PSO_CACHE_DISABLE", false) ||
++       !mtl_compiler_has_serializer(compiler))
++      return NULL;
++   struct kk_metal_cache *cache = calloc(1, sizeof(*cache));
++   if (!cache)
++      return NULL;
++   cache->disk = disk_cache;
++   cache->device = device;
++   cache->compiler = compiler;
++   mtl_pipeline_cache_identity(device, cache->identity, sizeof(cache->identity));
++   if (pthread_mutex_init(&cache->mutex, NULL))
++      goto fail;
++   if (pthread_rwlock_init(&cache->capture_gate, NULL))
++      goto fail_mutex;
++   if (pthread_cond_init(&cache->cond, NULL))
++      goto fail_gate;
++   if (pthread_create(&cache->worker, NULL, kk_metal_worker, cache))
++      goto fail_cond;
++   return cache;
++
++fail_cond:
++   pthread_cond_destroy(&cache->cond);
++fail_gate:
++   pthread_rwlock_destroy(&cache->capture_gate);
++fail_mutex:
++   pthread_mutex_destroy(&cache->mutex);
++fail:
++   free(cache);
++   return NULL;
++}
++
++void
++kk_metal_cache_destroy(struct kk_metal_cache *cache)
++{
++   if (!cache)
++      return;
++   pthread_mutex_lock(&cache->mutex);
++   cache->stopping = true;
++   pthread_cond_broadcast(&cache->cond);
++   pthread_mutex_unlock(&cache->mutex);
++   pthread_join(cache->worker, NULL);
++   disk_cache_wait_for_idle(cache->disk);
++   pthread_cond_destroy(&cache->cond);
++   pthread_rwlock_destroy(&cache->capture_gate);
++   pthread_mutex_destroy(&cache->mutex);
++   while (cache->pending) {
++      struct kk_metal_cache_key *next = cache->pending->next;
++      free(cache->pending);
++      cache->pending = next;
++   }
++   while (cache->archives) {
++      struct kk_metal_loaded_archive *next = cache->archives->next;
++      mtl_release(cache->archives->archive);
++      free(cache->archives);
++      cache->archives = next;
++   }
++   free(cache);
++}
++
++static mtl_archive *
++kk_metal_load(struct kk_metal_cache *cache, const uint8_t key[CACHE_KEY_SIZE])
++{
++   cache_key reference;
++   kk_metal_reference_key(cache, key, reference);
++   size_t ref_size = 0;
++   void *ref = disk_cache_get(cache->disk, reference, &ref_size);
++   if (!ref || ref_size != CACHE_KEY_SIZE) {
++      free(ref);
++      return NULL;
++   }
++   for (struct kk_metal_loaded_archive **link = &cache->archives; *link;
++        link = &(*link)->next) {
++      struct kk_metal_loaded_archive *entry = *link;
++      if (!memcmp(entry->key, ref, CACHE_KEY_SIZE)) {
++         *link = entry->next;
++         entry->next = cache->archives;
++         cache->archives = entry;
++         free(ref);
++         return mtl_retain(entry->archive);
++      }
++   }
++   size_t size = 0;
++   void *data = disk_cache_get(cache->disk, ref, &size);
++   cache_key actual;
++   mtl_archive *archive = NULL;
++   if (data && size) {
++      disk_cache_compute_key(cache->disk, data, size, actual);
++      if (!memcmp(actual, ref, CACHE_KEY_SIZE))
++         archive = mtl_new_archive(cache->device, data, size);
++   }
++   if (archive) {
++      struct kk_metal_loaded_archive *entry = malloc(sizeof(*entry));
++      if (entry) {
++         memcpy(entry->key, ref, CACHE_KEY_SIZE);
++         entry->archive = mtl_retain(archive);
++         entry->next = cache->archives;
++         cache->archives = entry;
++         if (++cache->archive_count > 16) {
++            struct kk_metal_loaded_archive **last = &cache->archives;
++            while ((*last)->next)
++               last = &(*last)->next;
++            mtl_release((*last)->archive);
++            free(*last);
++            *last = NULL;
++            cache->archive_count--;
++         }
++      }
++   }
++   free(ref);
++   free(data);
++   return archive;
++}
++
++static void
++kk_metal_capture_locked(struct kk_metal_cache *cache,
++                         const uint8_t key[CACHE_KEY_SIZE])
++{
++   for (struct kk_metal_cache_key *entry = cache->pending; entry; entry = entry->next)
++      if (!memcmp(entry->key, key, CACHE_KEY_SIZE))
++         return;
++   struct kk_metal_cache_key *entry = malloc(sizeof(*entry));
++   if (!entry)
++      return;
++   memcpy(entry->key, key, CACHE_KEY_SIZE);
++   entry->next = cache->pending;
++   cache->pending = entry;
++   if (++cache->pending_count >= 64)
++      pthread_cond_broadcast(&cache->cond);
++}
++
++mtl_render_pipeline_state *
++kk_metal_cache_new_render_pipeline(struct kk_metal_cache *cache,
++                                   const uint8_t key[CACHE_KEY_SIZE],
++                                   mtl_render_pipeline_descriptor *descriptor,
++                                   bool *archive_hit)
++{
++   *archive_hit = false;
++   pthread_mutex_lock(&cache->mutex);
++   mtl_archive *archive = kk_metal_request_locked(cache, key);
++   pthread_mutex_unlock(&cache->mutex);
++   mtl_render_pipeline_state *pipeline = archive ?
++      mtl_archive_new_render_pipeline(archive, descriptor) : NULL;
++   mtl_release(archive);
++   *archive_hit = pipeline != NULL;
++   if (!pipeline) {
++      pthread_rwlock_rdlock(&cache->capture_gate);
++      pipeline = mtl_new_render_pipeline(cache->compiler, descriptor);
++      if (pipeline) {
++         pthread_mutex_lock(&cache->mutex);
++         kk_metal_capture_locked(cache, key);
++         pthread_mutex_unlock(&cache->mutex);
++      }
++      pthread_rwlock_unlock(&cache->capture_gate);
++   }
++   return pipeline;
++}
++
++mtl_compute_pipeline_state *
++kk_metal_cache_new_compute_pipeline(struct kk_metal_cache *cache,
++                                    const uint8_t key[CACHE_KEY_SIZE],
++                                    mtl_function_descriptor *function,
++                                    uint64_t max_threads, bool *archive_hit)
++{
++   *archive_hit = false;
++   pthread_mutex_lock(&cache->mutex);
++   mtl_archive *archive = kk_metal_request_locked(cache, key);
++   pthread_mutex_unlock(&cache->mutex);
++   mtl_compute_pipeline_state *pipeline = archive ?
++      mtl_archive_new_compute_pipeline(archive, function, max_threads) : NULL;
++   mtl_release(archive);
++   *archive_hit = pipeline != NULL;
++   if (!pipeline) {
++      pthread_rwlock_rdlock(&cache->capture_gate);
++      pipeline = mtl_new_compute_pipeline_state(cache->compiler, function, max_threads);
++      if (pipeline) {
++         pthread_mutex_lock(&cache->mutex);
++         kk_metal_capture_locked(cache, key);
++         pthread_mutex_unlock(&cache->mutex);
++      }
++      pthread_rwlock_unlock(&cache->capture_gate);
++   }
++   return pipeline;
++}
+diff --git a/src/kosmickrisp/vulkan/kk_metal_cache.h b/src/kosmickrisp/vulkan/kk_metal_cache.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..30a5ba6dcc54196a7931c236e263f2130d5bda72
+--- /dev/null
++++ b/src/kosmickrisp/vulkan/kk_metal_cache.h
+@@ -0,0 +1,21 @@
++#ifndef KK_METAL_CACHE_H
++#define KK_METAL_CACHE_H
++
++#include "kosmickrisp/bridge/mtl_compiler.h"
++#include "util/disk_cache.h"
++
++struct kk_metal_cache;
++
++struct kk_metal_cache *kk_metal_cache_create(struct disk_cache *disk_cache,
++                                            mtl_device *device,
++                                            mtl_compiler *compiler);
++void kk_metal_cache_destroy(struct kk_metal_cache *cache);
++
++mtl_render_pipeline_state *kk_metal_cache_new_render_pipeline(
++   struct kk_metal_cache *cache, const uint8_t key[CACHE_KEY_SIZE],
++   mtl_render_pipeline_descriptor *descriptor, bool *archive_hit);
++mtl_compute_pipeline_state *kk_metal_cache_new_compute_pipeline(
++   struct kk_metal_cache *cache, const uint8_t key[CACHE_KEY_SIZE],
++   mtl_function_descriptor *function, uint64_t max_threads, bool *archive_hit);
++
++#endif
+diff --git a/src/kosmickrisp/vulkan/meson.build b/src/kosmickrisp/vulkan/meson.build
+index 4caaf9a87872b8e7ece3130138323b5f4d952211..f4439c1abe8da82b324f98c73c86312409c9fed7 100644
+--- a/src/kosmickrisp/vulkan/meson.build
++++ b/src/kosmickrisp/vulkan/meson.build
+@@ -107,6 +107,7 @@ kk_files = files(
+   'kk_sampler.h',
+   'kk_sampler.c',
+   'kk_shader.h',
++  'kk_metal_cache.c',
+   'kk_pso_cache.c',
+   'kk_pso_cache.h',
+   'kk_shader.c',

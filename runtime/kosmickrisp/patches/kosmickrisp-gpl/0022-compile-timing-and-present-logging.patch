@@ -1,0 +1,221 @@
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index 60d47a056723e96edb9e0c5910fb337978db6fbd..1761c5db20add2da1a09de3d1fee52804811063a 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -254,6 +254,24 @@ kk_get_timestamp(struct vk_device *device, uint64_t *timestamp)
+    return VK_SUCCESS;
+ }
+ 
++__THREAD_INITIAL_EXEC enum kk_compile_origin kk_compile_origin;
++
++void
++kk_log_compile(struct kk_device *dev, const char *kind, int64_t start)
++{
++   if (!dev->compile_log)
++      return;
++
++   static const char *const origins[] = {
++      [KK_COMPILE_ORIGIN_DRAW] = "draw",
++      [KK_COMPILE_ORIGIN_PREWARM] = "prewarm",
++      [KK_COMPILE_ORIGIN_CREATE] = "create",
++   };
++   fprintf(dev->compile_log, "%s,%s,%lld,%lld\n", kind,
++           origins[kk_compile_origin], (long long)start,
++           (long long)os_time_get_nano());
++}
++
+ VKAPI_ATTR VkResult VKAPI_CALL
+ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+                 const VkDeviceCreateInfo *pCreateInfo,
+@@ -358,6 +376,14 @@ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+    dev->capture_directory = debug_get_option("MESA_KK_GPU_CAPTURE_DIRECTORY", NULL);
+    dev->capture_frames = CLAMP(debug_get_num_option("MESA_KK_GPU_CAPTURE_FRAMES", 3), 1, 120);
+    dev->present_log_path = debug_get_option("MESA_KK_PRESENT_LOG", NULL);
++   const char *compile_log_path = debug_get_option("MESA_KK_COMPILE_LOG", NULL);
++   if (compile_log_path) {
++      dev->compile_log = fopen(compile_log_path, "a");
++      if (dev->compile_log)
++         setvbuf(dev->compile_log, NULL, _IOLBF, 0);
++      else
++         fprintf(stderr, "KK cannot open compile log\n");
++   }
+    *pDevice = kk_device_to_handle(dev);
+ 
+    return VK_SUCCESS;
+@@ -414,6 +440,8 @@ kk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
+    kk_device_finish_meta(dev);
+    kk_device_finish_lib(dev);
+    kk_pso_cache_finish(&dev->pso_cache);
++   if (dev->compile_log)
++      fclose(dev->compile_log);
+    vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
+    kk_device_finish_empty_fs(dev);
+    simple_mtx_destroy(&dev->empty_fs_lock);
+diff --git a/src/kosmickrisp/vulkan/kk_device.h b/src/kosmickrisp/vulkan/kk_device.h
+index 955a28477078df697f745b00a5558fb8a13f8020..d7ca85657b81942008674738132acbfd7ce92fa2 100644
+--- a/src/kosmickrisp/vulkan/kk_device.h
++++ b/src/kosmickrisp/vulkan/kk_device.h
+@@ -19,7 +19,9 @@
+ #include "kosmickrisp/clc/kk_precompiled_shader.h"
+ #include "libkk_shaders.h"
+ 
++#include "util/os_time.h"
+ #include "util/u_dynarray.h"
++#include "util/u_thread.h"
+ 
+ #include "vk_device.h"
+ #include "vk_meta.h"
+@@ -84,6 +86,7 @@ struct kk_device {
+    unsigned capture_frames;
+    const char *present_log_path;
+    FILE *present_log;
++   FILE *compile_log;
+ 
+    mtl_device *mtl_handle;
+    mtl_compiler *mtl_compiler_handle;
+@@ -144,4 +147,14 @@ VkResult kk_sampler_heap_add(struct kk_device *dev,
+                              struct kk_rc_sampler **out);
+ void kk_sampler_heap_remove(struct kk_device *dev, struct kk_rc_sampler *rc);
+ 
++enum kk_compile_origin {
++   KK_COMPILE_ORIGIN_DRAW,
++   KK_COMPILE_ORIGIN_PREWARM,
++   KK_COMPILE_ORIGIN_CREATE,
++};
++
++extern __THREAD_INITIAL_EXEC enum kk_compile_origin kk_compile_origin;
++
++void kk_log_compile(struct kk_device *dev, const char *kind, int64_t start);
++
+ #endif // KK_DEVICE_H
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index f768b04e24be4f47cfb72224d6d86e1cd309b924..a756c1ed58a0209eedc8d66860c7418dd54f44c7 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -146,8 +146,12 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+       _mesa_hash_table_search_pre_hashed(cache->table, hash, key);
+    if (he) {
+       struct kk_pso_entry *entry = he->data;
+-      while (entry->compiling)
+-         cnd_wait(&entry->ready, &cache->lock);
++      if (entry->compiling) {
++         int64_t start = os_time_get_nano();
++         while (entry->compiling)
++            cnd_wait(&entry->ready, &cache->lock);
++         kk_log_compile(dev, "pso_wait", start);
++      }
+       if (KK_DEBUG(PSO))
+          mesa_logi("PSO cache hit");
+       mtl_render_pipeline_state *pso = entry->pso;
+@@ -178,7 +182,9 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+ 
+    if (KK_DEBUG(PSO))
+       mesa_logi("PSO compile");
++   int64_t start = os_time_get_nano();
+    mtl_render_pipeline_state *pso = kk_new_render_pipeline(dev, vs, fs, key);
++   kk_log_compile(dev, "pso", start);
+    mtx_lock(&cache->lock);
+    entry->pso = pso;
+    entry->compiling = false;
+@@ -442,6 +448,7 @@ static void
+ kk_prewarm_execute(void *data, void *global_data, int thread_index)
+ {
+    struct kk_prewarm_job *job = data;
++   kk_compile_origin = KK_COMPILE_ORIGIN_PREWARM;
+    if (KK_DEBUG(PSO))
+       mesa_logi("PSO prewarm started");
+    kk_cmd_link_pipeline(&job->cmd);
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 4954185d6c1f6419696cb0f81b19d51fdbd09e3b..48cc7b6e1872870caf505ef66f226097081dbb3d 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -1854,8 +1854,12 @@ kk_shader_get_rast(struct kk_device *dev, struct kk_shader *vs, bool points)
+    const struct kk_fs_variant *rast = &vs->fast_points;
+    simple_mtx_lock(&vs->variants_lock);
+    if (vs->fast_points.fn == NULL) {
+-      if (kk_new_function(dev, &vs->msl_points, &vs->fast_points.lib,
+-                          &vs->fast_points.fn) == VK_SUCCESS) {
++      int64_t start = os_time_get_nano();
++      VkResult result = kk_new_function(dev, &vs->msl_points,
++                                        &vs->fast_points.lib,
++                                        &vs->fast_points.fn);
++      kk_log_compile(dev, "rast_points", start);
++      if (result == VK_SUCCESS) {
+          _mesa_blake3_compute(vs->msl_points.code,
+                               strlen(vs->msl_points.code),
+                               vs->fast_points.hash);
+@@ -2807,7 +2811,9 @@ kk_shader_get_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+    }
+ 
+    struct kk_fs_variant variant = {0};
++   int64_t start = os_time_get_nano();
+    VkResult result = kk_compile_fs_variant(dev, fs, key, &variant);
++   kk_log_compile(dev, "fs_variant", start);
+    if (result != VK_SUCCESS) {
+       simple_mtx_unlock(&fs->variants_lock);
+       return result;
+@@ -2985,11 +2991,50 @@ static const struct vk_shader_ops kk_shader_ops = {
+       kk_shader_get_executable_internal_representations,
+ };
+ 
++static VkResult
++kk_compile_shaders_logged(struct vk_device *device, uint32_t shader_count,
++                          struct vk_shader_compile_info *infos,
++                          const struct vk_graphics_pipeline_state *state,
++                          const struct vk_features *enabled_features,
++                          const VkAllocationCallbacks *pAllocator,
++                          struct vk_shader **shaders_out)
++{
++   struct kk_device *dev = container_of(device, struct kk_device, vk);
++   enum kk_compile_origin origin = kk_compile_origin;
++   kk_compile_origin = KK_COMPILE_ORIGIN_CREATE;
++   int64_t start = os_time_get_nano();
++   VkResult result = kk_compile_shaders(device, shader_count, infos, state,
++                                        enabled_features, pAllocator,
++                                        shaders_out);
++   kk_log_compile(dev, "shaders", start);
++   kk_compile_origin = origin;
++   return result;
++}
++
++static VkResult
++kk_deserialize_shader_logged(struct vk_device *vk_dev,
++                             struct blob_reader *blob,
++                             uint32_t binary_version,
++                             const VkAllocationCallbacks *pAllocator,
++                             struct vk_shader **shader_out)
++{
++   struct kk_device *dev = container_of(vk_dev, struct kk_device, vk);
++   enum kk_compile_origin origin = kk_compile_origin;
++   kk_compile_origin = KK_COMPILE_ORIGIN_CREATE;
++   int64_t start = os_time_get_nano();
++   VkResult result = kk_deserialize_shader(vk_dev, blob, binary_version,
++                                           pAllocator, shader_out);
++   kk_log_compile(dev, "deserialize", start);
++   kk_compile_origin = origin;
++   return result;
++}
++
+ #define KK_DEVICE_SHADER_OPS                                                   \
+    .get_nir_options = kk_get_nir_options,                                      \
+    .get_spirv_options = kk_get_spirv_options,                                  \
+    .preprocess_nir = kk_preprocess_nir, .hash_state = kk_hash_graphics_state,  \
+-   .compile = kk_compile_shaders, .deserialize = kk_deserialize_shader,        \
++   .compile = kk_compile_shaders_logged,                                       \
++   .deserialize = kk_deserialize_shader_logged,                                \
+    .cmd_set_dynamic_graphics_state = vk_cmd_set_dynamic_graphics_state,        \
+    .graphics_pipeline_created = kk_prewarm_pipeline,                          \
+    .cmd_bind_shaders = kk_cmd_bind_shaders
+diff --git a/src/kosmickrisp/vulkan/kk_wsi.c b/src/kosmickrisp/vulkan/kk_wsi.c
+index a502edefb7a9cd6d80e5e133a4bbfa69a5ab4409..f4b9a0d3ed75599c07be6ef5dbd2495624476a54 100644
+--- a/src/kosmickrisp/vulkan/kk_wsi.c
++++ b/src/kosmickrisp/vulkan/kk_wsi.c
+@@ -162,7 +162,7 @@ kk_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *info)
+             fprintf(stderr, "KK cannot open presentation log\n");
+             dev->present_log_path = NULL;
+          } else {
+-            setvbuf(dev->present_log, NULL, _IOFBF, 65536);
++            setvbuf(dev->present_log, NULL, _IOLBF, 0);
+          }
+       }
+       if (dev->present_log)

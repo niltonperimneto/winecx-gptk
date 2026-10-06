@@ -1,0 +1,405 @@
+diff --git a/src/kosmickrisp/vulkan/kk_debug.c b/src/kosmickrisp/vulkan/kk_debug.c
+index 637ebdd08892edcfc983f861bdf3b76eee268447..41573fc5d7ce6c3934c96de9bd3b852c1a1adf89 100644
+--- a/src/kosmickrisp/vulkan/kk_debug.c
++++ b/src/kosmickrisp/vulkan/kk_debug.c
+@@ -14,6 +14,7 @@ const struct debug_named_value debug_flags[] = {
+    {"dynamic_vi", KK_DEBUG_DYNAMIC_VI},
+    {"partition", KK_DEBUG_PARTITION},
+    {"gpl_nir", KK_DEBUG_GPL_NIR},
++   {"pso", KK_DEBUG_PSO},
+    {NULL, 0},
+ };
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_debug.h b/src/kosmickrisp/vulkan/kk_debug.h
+index ff49fc51330e52242a3495a569df4e90b4f24d9f..7680665c64e1b970239a3b642b425be647916d41 100644
+--- a/src/kosmickrisp/vulkan/kk_debug.h
++++ b/src/kosmickrisp/vulkan/kk_debug.h
+@@ -15,6 +15,7 @@ enum kk_debug {
+    KK_DEBUG_DYNAMIC_VI = 1ull << 3,
+    KK_DEBUG_PARTITION = 1ull << 4,
+    KK_DEBUG_GPL_NIR = 1ull << 5,
++   KK_DEBUG_PSO = 1ull << 6,
+ };
+ 
+ extern enum kk_debug kk_mesa_debug_flags;
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index b0f82201e7cd9eb2d0838efd8f3c19a8ffede962..60d47a056723e96edb9e0c5910fb337978db6fbd 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -413,10 +413,10 @@ kk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
+    /* Meta first since it may destroy Vulkan objects */
+    kk_device_finish_meta(dev);
+    kk_device_finish_lib(dev);
++   kk_pso_cache_finish(&dev->pso_cache);
+    vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
+    kk_device_finish_empty_fs(dev);
+    simple_mtx_destroy(&dev->empty_fs_lock);
+-   kk_pso_cache_finish(&dev->pso_cache);
+    kk_query_table_finish(dev, &dev->occlusion_queries);
+    kk_destroy_sampler_heap(dev, &dev->samplers);
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index 9af310b6a3136c8bd328737dc91cd8d5b359ab12..f768b04e24be4f47cfb72224d6d86e1cd309b924 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -7,6 +7,8 @@
+ 
+ #include "kk_cmd_buffer.h"
+ #include "kk_device.h"
++#include "kk_debug.h"
++#include "util/log.h"
+ #include "kk_format.h"
+ #include "kk_shader.h"
+ 
+@@ -19,10 +21,14 @@
+ 
+ #include "vk_format.h"
+ #include "vk_graphics_state.h"
++#include "vk_pipeline_cache.h"
++#include "vk_shader.h"
+ 
+ struct kk_pso_entry {
+    struct kk_pso_key key;
+    mtl_render_pipeline_state *pso;
++   cnd_t ready;
++   bool compiling;
+ };
+ 
+ static uint32_t
+@@ -102,23 +108,30 @@ kk_new_render_pipeline(struct kk_device *dev, mtl_function_descriptor *vs,
+ void
+ kk_pso_cache_init(struct kk_pso_cache *cache)
+ {
+-   simple_mtx_init(&cache->lock, mtx_plain);
++   mtx_init(&cache->lock, mtx_plain);
+    cache->table =
+       _mesa_hash_table_create(NULL, kk_pso_key_hash, kk_pso_key_equal);
++   util_queue_init(&cache->prewarm_queue, "kk-pso", 64, 2,
++                   UTIL_QUEUE_INIT_RESIZE_IF_FULL, NULL);
+ }
+ 
+ void
+ kk_pso_cache_finish(struct kk_pso_cache *cache)
+ {
++   if (util_queue_is_initialized(&cache->prewarm_queue)) {
++      util_queue_finish(&cache->prewarm_queue);
++      util_queue_destroy(&cache->prewarm_queue);
++   }
+    if (cache->table) {
+       hash_table_foreach(cache->table, he) {
+          struct kk_pso_entry *entry = he->data;
+          mtl_release(entry->pso);
++         cnd_destroy(&entry->ready);
+       }
+       _mesa_hash_table_destroy(cache->table, NULL);
+       cache->table = NULL;
+    }
+-   simple_mtx_destroy(&cache->lock);
++   mtx_destroy(&cache->lock);
+ }
+ 
+ mtl_render_pipeline_state *
+@@ -128,33 +141,49 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+    struct kk_pso_cache *cache = &dev->pso_cache;
+    uint32_t hash = kk_pso_key_hash(key);
+ 
+-   simple_mtx_lock(&cache->lock);
++   mtx_lock(&cache->lock);
+    struct hash_entry *he =
+       _mesa_hash_table_search_pre_hashed(cache->table, hash, key);
+-   mtl_render_pipeline_state *pso =
+-      he ? ((struct kk_pso_entry *)he->data)->pso : NULL;
+-   simple_mtx_unlock(&cache->lock);
+-   if (pso)
++   if (he) {
++      struct kk_pso_entry *entry = he->data;
++      while (entry->compiling)
++         cnd_wait(&entry->ready, &cache->lock);
++      if (KK_DEBUG(PSO))
++         mesa_logi("PSO cache hit");
++      mtl_render_pipeline_state *pso = entry->pso;
++      mtx_unlock(&cache->lock);
+       return pso;
++   }
+ 
+-   pso = kk_new_render_pipeline(dev, vs, fs, key);
+-   if (pso == NULL)
++   struct kk_pso_entry *entry = rzalloc(cache->table, struct kk_pso_entry);
++   if (entry == NULL) {
++      mtx_unlock(&cache->lock);
+       return NULL;
+-
+-   simple_mtx_lock(&cache->lock);
+-   he = _mesa_hash_table_search_pre_hashed(cache->table, hash, key);
+-   if (he) {
+-      mtl_release(pso);
+-      pso = ((struct kk_pso_entry *)he->data)->pso;
+-   } else {
+-      struct kk_pso_entry *entry = ralloc(cache->table, struct kk_pso_entry);
+-      entry->key = *key;
+-      entry->pso = pso;
+-      _mesa_hash_table_insert_pre_hashed(cache->table, hash, &entry->key,
+-                                         entry);
+    }
+-   simple_mtx_unlock(&cache->lock);
+-
++   entry->key = *key;
++   entry->compiling = true;
++   if (cnd_init(&entry->ready) != thrd_success) {
++      ralloc_free(entry);
++      mtx_unlock(&cache->lock);
++      return NULL;
++   }
++   if (!_mesa_hash_table_insert_pre_hashed(cache->table, hash, &entry->key,
++                                          entry)) {
++      cnd_destroy(&entry->ready);
++      ralloc_free(entry);
++      mtx_unlock(&cache->lock);
++      return NULL;
++   }
++   mtx_unlock(&cache->lock);
++
++   if (KK_DEBUG(PSO))
++      mesa_logi("PSO compile");
++   mtl_render_pipeline_state *pso = kk_new_render_pipeline(dev, vs, fs, key);
++   mtx_lock(&cache->lock);
++   entry->pso = pso;
++   entry->compiling = false;
++   cnd_broadcast(&entry->ready);
++   mtx_unlock(&cache->lock);
+    return pso;
+ }
+ 
+@@ -403,3 +432,101 @@ kk_cmd_link_pipeline(struct kk_cmd_buffer *cmd)
+       pso = kk_cmd_link(cmd, vs, fs, true);
+    return pso;
+ }
++
++struct kk_prewarm_job {
++   struct kk_cmd_buffer cmd;
++   struct util_queue_fence fence;
++};
++
++static void
++kk_prewarm_execute(void *data, void *global_data, int thread_index)
++{
++   struct kk_prewarm_job *job = data;
++   if (KK_DEBUG(PSO))
++      mesa_logi("PSO prewarm started");
++   kk_cmd_link_pipeline(&job->cmd);
++}
++
++static void
++kk_prewarm_cleanup(void *data, void *global_data, int thread_index)
++{
++   struct kk_prewarm_job *job = data;
++   struct vk_device *dev = job->cmd.vk.base.device;
++   for (uint32_t i = 0; i < MESA_SHADER_COMPUTE; ++i) {
++      struct kk_shader *shader = job->cmd.state.shaders[i];
++      if (shader)
++         vk_pipeline_cache_object_unref(dev, &shader->vk.pipeline.cache_obj);
++   }
++   util_queue_fence_destroy(&job->fence);
++   free(job);
++}
++
++void
++kk_prewarm_pipeline(struct vk_device *vk_dev,
++                    const struct vk_graphics_pipeline_state *state,
++                    uint32_t shader_count, struct vk_shader *const *shaders)
++{
++   struct kk_device *dev = container_of(vk_dev, struct kk_device, vk);
++   if (!util_queue_is_initialized(&dev->pso_cache.prewarm_queue) ||
++       !state->ia || !state->rs || !state->ms || !state->rp ||
++       !vk_render_pass_state_has_attachment_info(state->rp))
++      return;
++
++   const enum mesa_vk_dynamic_graphics_state required[] = {
++      MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY,
++      MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES,
++      MESA_VK_DYNAMIC_MS_SAMPLE_MASK,
++      MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE,
++      MESA_VK_DYNAMIC_MS_ALPHA_TO_ONE_ENABLE,
++      MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE,
++      MESA_VK_DYNAMIC_CB_LOGIC_OP,
++      MESA_VK_DYNAMIC_CB_BLEND_ENABLES,
++      MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS,
++      MESA_VK_DYNAMIC_CB_WRITE_MASKS,
++      MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES,
++      MESA_VK_DYNAMIC_CB_BLEND_ADVANCED,
++      MESA_VK_DYNAMIC_COLOR_ATTACHMENT_MAP,
++   };
++   for (uint32_t i = 0; i < ARRAY_SIZE(required); ++i) {
++      if (BITSET_TEST(state->dynamic, required[i]))
++         return;
++   }
++
++   struct kk_shader *vs = NULL;
++   for (uint32_t i = 0; i < shader_count; ++i) {
++      if (shaders[i] && shaders[i]->stage == MESA_SHADER_VERTEX)
++         vs = container_of(shaders[i], struct kk_shader, vk);
++   }
++   if (!vs || !vs->info.partial)
++      return;
++
++   struct kk_prewarm_job *job = calloc(1, sizeof(*job));
++   if (!job)
++      return;
++   job->cmd.vk.base.device = vk_dev;
++   vk_dynamic_graphics_state_init(&job->cmd.vk.dynamic_graphics_state);
++   vk_dynamic_graphics_state_fill(&job->cmd.vk.dynamic_graphics_state, state);
++   struct kk_rendering_state *render = &job->cmd.state.gfx.render;
++   render->view_mask = state->mv ? state->mv->view_mask : 0;
++   render->color_att_count = state->rp->color_attachment_count;
++   for (uint32_t i = 0; i < render->color_att_count; ++i)
++      render->color_att[i].vk_format = state->rp->color_attachment_formats[i];
++   render->depth_att.vk_format = state->rp->depth_attachment_format;
++   render->stencil_att.vk_format = state->rp->stencil_attachment_format;
++   for (uint32_t i = 0; i < shader_count; ++i) {
++      if (!shaders[i])
++         continue;
++      struct kk_shader *shader = container_of(shaders[i], struct kk_shader, vk);
++      vk_pipeline_cache_object_ref(&shader->vk.pipeline.cache_obj);
++      job->cmd.state.shaders[shader->info.stage] = shader;
++      if (shader->info.stage == MESA_SHADER_TESS_EVAL) {
++         job->cmd.state.gfx.tess.prim =
++            shader->info.tess.info.points ? MESA_PRIM_POINTS :
++            shader->info.tess.info.mode == TESS_PRIMITIVE_ISOLINES ?
++               MESA_PRIM_LINES : MESA_PRIM_TRIANGLES;
++      }
++   }
++   util_queue_fence_init(&job->fence);
++   util_queue_add_job(&dev->pso_cache.prewarm_queue, job, &job->fence,
++                      kk_prewarm_execute, kk_prewarm_cleanup, sizeof(*job));
++}
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.h b/src/kosmickrisp/vulkan/kk_pso_cache.h
+index 14b30e1e986e5af8bded52b38efc0818e7532378..5329c1e986015cb717eeec30f1738c697766aed4 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.h
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.h
+@@ -12,6 +12,7 @@
+ 
+ #include "util/mesa-blake3.h"
+ #include "util/simple_mtx.h"
++#include "util/u_queue.h"
+ 
+ struct hash_table;
+ struct kk_cmd_buffer;
+@@ -41,10 +42,20 @@ struct kk_pso_key {
+ };
+ 
+ struct kk_pso_cache {
+-   simple_mtx_t lock;
++   mtx_t lock;
+    struct hash_table *table;
++   struct util_queue prewarm_queue;
+ };
+ 
++struct vk_device;
++struct vk_shader;
++struct vk_graphics_pipeline_state;
++
++void kk_prewarm_pipeline(struct vk_device *device,
++                         const struct vk_graphics_pipeline_state *state,
++                         uint32_t shader_count,
++                         struct vk_shader *const *shaders);
++
+ void kk_pso_key_init(struct kk_pso_key *key);
+ 
+ mtl_render_pipeline_state *
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 2c3e59de7ec4aa543085e667b8abea70b2c83d64..8daf6918438bbe0e600904de98397fca2c5c4581 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -2747,29 +2747,37 @@ kk_shader_get_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+    simple_mtx_lock(&fs->variants_lock);
+    struct hash_entry *he =
+       _mesa_hash_table_search_pre_hashed(fs->variants, hash, key);
+-   simple_mtx_unlock(&fs->variants_lock);
+    if (he) {
+       *variant_out = he->data;
++      simple_mtx_unlock(&fs->variants_lock);
+       return VK_SUCCESS;
+    }
+ 
+    struct kk_fs_variant variant = {0};
+    VkResult result = kk_compile_fs_variant(dev, fs, key, &variant);
+-   if (result != VK_SUCCESS)
++   if (result != VK_SUCCESS) {
++      simple_mtx_unlock(&fs->variants_lock);
+       return result;
++   }
+ 
+-   simple_mtx_lock(&fs->variants_lock);
+-   he = _mesa_hash_table_search_pre_hashed(fs->variants, hash, key);
+-   if (he) {
++   struct kk_fs_variant_entry *entry =
++      ralloc(fs->variants, struct kk_fs_variant_entry);
++   if (!entry) {
+       mtl_release(variant.fn);
+       mtl_release(variant.lib);
+-   } else {
+-      struct kk_fs_variant_entry *entry =
+-         ralloc(fs->variants, struct kk_fs_variant_entry);
+-      entry->key = *key;
+-      entry->variant = variant;
+-      he = _mesa_hash_table_insert_pre_hashed(fs->variants, hash, &entry->key,
+-                                              &entry->variant);
++      simple_mtx_unlock(&fs->variants_lock);
++      return VK_ERROR_OUT_OF_HOST_MEMORY;
++   }
++   entry->key = *key;
++   entry->variant = variant;
++   he = _mesa_hash_table_insert_pre_hashed(fs->variants, hash, &entry->key,
++                                           &entry->variant);
++   if (!he) {
++      mtl_release(variant.fn);
++      mtl_release(variant.lib);
++      ralloc_free(entry);
++      simple_mtx_unlock(&fs->variants_lock);
++      return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+    simple_mtx_unlock(&fs->variants_lock);
+ 
+@@ -2930,6 +2938,7 @@ static const struct vk_shader_ops kk_shader_ops = {
+    .preprocess_nir = kk_preprocess_nir, .hash_state = kk_hash_graphics_state,  \
+    .compile = kk_compile_shaders, .deserialize = kk_deserialize_shader,        \
+    .cmd_set_dynamic_graphics_state = vk_cmd_set_dynamic_graphics_state,        \
++   .graphics_pipeline_created = kk_prewarm_pipeline,                          \
+    .cmd_bind_shaders = kk_cmd_bind_shaders
+ 
+ const struct vk_device_shader_ops kk_device_shader_ops = {
+diff --git a/src/vulkan/runtime/vk_pipeline.c b/src/vulkan/runtime/vk_pipeline.c
+index b2affe551070810c36934c33beedd32e85c78219..b5f1695fe57a2f888b18d687472fb85cbec5df64 100644
+--- a/src/vulkan/runtime/vk_pipeline.c
++++ b/src/vulkan/runtime/vk_pipeline.c
+@@ -2199,6 +2199,14 @@ vk_create_graphics_pipeline(struct vk_device *device,
+       }
+    }
+ 
++   if (!is_library && device->shader_ops->graphics_pipeline_created) {
++      struct vk_shader *shaders[MESA_SHADER_MESH_STAGES];
++      for (uint32_t i = 0; i < compile_info.stage_count; ++i)
++         shaders[i] = compile_info.stages[i].shader;
++      device->shader_ops->graphics_pipeline_created(
++         device, &state_tmp, compile_info.stage_count, shaders);
++   }
++
+    const int64_t pipeline_end = os_time_get_nano();
+    if (feedback_info != NULL) {
+       VkPipelineCreationFeedback pipeline_feedback = {
+diff --git a/src/vulkan/runtime/vk_shader.h b/src/vulkan/runtime/vk_shader.h
+index e22f7f4ecf72bb73dc43926b1ec41e2aa3da81c0..3c993a44a4233c629cada667a4370324cef52ed6 100644
+--- a/src/vulkan/runtime/vk_shader.h
++++ b/src/vulkan/runtime/vk_shader.h
+@@ -342,6 +342,11 @@ struct vk_device_shader_ops {
+                                   struct vk_shader **vk_shaders,
+                                   const void *replay_data);
+ 
++   void (*graphics_pipeline_created)(struct vk_device *device,
++                                     const struct vk_graphics_pipeline_state *state,
++                                     uint32_t shader_count,
++                                     struct vk_shader *const *shaders);
++
+    /** Bind a set of shaders
+     *
+     * This is roughly equivalent to vkCmdBindShadersEXT()

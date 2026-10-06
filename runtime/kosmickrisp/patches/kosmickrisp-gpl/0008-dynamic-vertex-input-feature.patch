@@ -1,0 +1,22 @@
+diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
+index ddaf2078ec2dff10e86160d6411caae44c0e01d6..736a21f0ae47e599d0dcfce2e81dac507860a097 100644
+--- a/src/kosmickrisp/vulkan/kk_physical_device.c
++++ b/src/kosmickrisp/vulkan/kk_physical_device.c
+@@ -207,6 +207,7 @@ kk_get_device_extensions(const struct kk_instance *instance,
+       .EXT_swapchain_maintenance1 = true,
+ #endif
+       .EXT_vertex_attribute_robustness = true,
++      .EXT_vertex_input_dynamic_state = true,
+ 
+       .GOOGLE_decorate_string = true,
+       .GOOGLE_hlsl_functionality1 = true,
+@@ -524,6 +525,9 @@ kk_get_device_features(
+       /* VK_EXT_vertex_attribute_robustness */
+       .vertexAttributeRobustness = true,
+ 
++      /* VK_EXT_vertex_input_dynamic_state */
++      .vertexInputDynamicState = true,
++
+       /* EXT_ycbcr_2plane_444_formats */
+       .ycbcr2plane444Formats = true,
+    };

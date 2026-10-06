@@ -1,0 +1,312 @@
+diff --git a/src/kosmickrisp/bridge/mtl_compiler.h b/src/kosmickrisp/bridge/mtl_compiler.h
+index 21acaf45815cc61704fca5ab69f5a4f2b0309873..27a13b53604118c6c3d1b89c21d8ea2c0c79689c 100644
+--- a/src/kosmickrisp/bridge/mtl_compiler.h
++++ b/src/kosmickrisp/bridge/mtl_compiler.h
+@@ -77,4 +77,14 @@ mtl_render_pipeline_state *
+ mtl_new_render_pipeline(mtl_compiler *compiler,
+                         mtl_render_pass_descriptor *descriptor);
+ 
++bool mtl_compiler_has_serializer(mtl_compiler *compiler);
++void *mtl_compiler_serialize(mtl_compiler *compiler, size_t *size);
++void mtl_pipeline_cache_identity(mtl_device *device, char *identity, size_t size);
++mtl_archive *mtl_new_archive(mtl_device *device, const void *data, size_t size);
++mtl_render_pipeline_state *mtl_archive_new_render_pipeline(
++   mtl_archive *archive, mtl_render_pipeline_descriptor *descriptor);
++mtl_compute_pipeline_state *mtl_archive_new_compute_pipeline(
++   mtl_archive *archive, mtl_function_descriptor *function,
++   uint64_t max_total_threads_per_threadgroup);
++
+ #endif /* MTL_COMPILER_H */
+diff --git a/src/kosmickrisp/bridge/mtl_compiler.m b/src/kosmickrisp/bridge/mtl_compiler.m
+index f7f5ad044395656a4107f1c857a7fd11e134fc5e..b0221ab7d61d4b0c5aeb0b6975c15f82e7750191 100644
+--- a/src/kosmickrisp/bridge/mtl_compiler.m
++++ b/src/kosmickrisp/bridge/mtl_compiler.m
+@@ -12,6 +12,67 @@
+ #include <Metal/MTL4LibraryFunctionDescriptor.h>
+ #include <Metal/MTL4RenderPipeline.h>
+ #include <Metal/MTLDevice.h>
++#include <Metal/MTL4Archive.h>
++#include <Metal/MTL4PipelineDataSetSerializer.h>
++#include <objc/runtime.h>
++#include <pthread.h>
++#include <sys/sysctl.h>
++#include <unistd.h>
++#include "util/u_debug.h"
++
++@interface KKCompilerLock : NSObject {
++@public
++   pthread_rwlock_t rwlock;
++   bool initialized;
++}
++@end
++
++@implementation KKCompilerLock
++- (instancetype)init
++{
++   self = [super init];
++   if (self) {
++      if (pthread_rwlock_init(&rwlock, NULL)) {
++         [self release];
++         return nil;
++      }
++      initialized = true;
++   }
++   return self;
++}
++
++- (void)dealloc
++{
++   if (initialized)
++      pthread_rwlock_destroy(&rwlock);
++   [super dealloc];
++}
++@end
++
++static const char mtl_compiler_lock_key;
++
++static KKCompilerLock *
++mtl_compiler_lock(mtl_compiler *compiler)
++{
++   return objc_getAssociatedObject((id)compiler, &mtl_compiler_lock_key);
++}
++
++@interface KKMetalArchive : NSObject {
++@public
++   id<MTL4Archive> handle;
++   NSURL *url;
++}
++@end
++
++@implementation KKMetalArchive
++- (void)dealloc
++{
++   [handle release];
++   [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
++   [url release];
++   [super dealloc];
++}
++@end
+ 
+ /* Compiler */
+ mtl_compiler *
+@@ -22,11 +83,28 @@
+ 
+       MTL4CompilerDescriptor *desc = [[MTL4CompilerDescriptor new] autorelease];
+ 
++      if (!debug_get_bool_option("MESA_KK_PSO_CACHE_DISABLE", false) &&
++          !debug_get_bool_option("MESA_SHADER_CACHE_DISABLE", false)) {
++         MTL4PipelineDataSetSerializerDescriptor *serializer_desc =
++            [[MTL4PipelineDataSetSerializerDescriptor new] autorelease];
++         serializer_desc.configuration = MTL4PipelineDataSetSerializerConfigurationCaptureBinaries;
++         desc.pipelineDataSetSerializer =
++            [[dev newPipelineDataSetSerializerWithDescriptor:serializer_desc] autorelease];
++      }
++
+       NSError *error;
+       id<MTL4Compiler> compiler = [dev newCompilerWithDescriptor:desc error:&error];
+ 
+       if (compiler == nil) {
+          fprintf(stderr, "Failed to create MTL4Compiler: %s\n", [error.localizedDescription UTF8String]);
++      } else if (compiler.pipelineDataSetSerializer) {
++         KKCompilerLock *lock = [[KKCompilerLock new] autorelease];
++         if (!lock) {
++            [compiler release];
++            return NULL;
++         }
++         objc_setAssociatedObject(compiler, &mtl_compiler_lock_key, lock,
++                                  OBJC_ASSOCIATION_RETAIN);
+       }
+ 
+       return compiler;
+@@ -86,14 +164,19 @@
+ {
+    @autoreleasepool {
+       id<MTL4Compiler> comp = (id<MTL4Compiler>)compiler;
++      KKCompilerLock *lock = mtl_compiler_lock(compiler);
+ 
+       MTL4ComputePipelineDescriptor *desc = [[MTL4ComputePipelineDescriptor new] autorelease];
+       desc.computeFunctionDescriptor = (MTL4FunctionDescriptor *)function;
+       desc.maxTotalThreadsPerThreadgroup = max_total_threads_per_threadgroup;
+ 
+       NSError *error;
++      if (lock)
++         pthread_rwlock_rdlock(&lock->rwlock);
+       id<MTLComputePipelineState> pipeline = [comp newComputePipelineStateWithDescriptor:desc compilerTaskOptions:nil
+                                                                                    error:&error];
++      if (lock)
++         pthread_rwlock_unlock(&lock->rwlock);
+ 
+       if (pipeline == nil) {
+          fprintf(stderr, "Failed to create MTLComputePipelineState: %s\n", [error.localizedDescription UTF8String]);
+@@ -226,10 +309,15 @@
+    @autoreleasepool {
+       id<MTL4Compiler> comp = (id<MTL4Compiler>)compiler;
+       MTL4RenderPipelineDescriptor *desc = (MTL4RenderPipelineDescriptor *)descriptor;
++      KKCompilerLock *lock = mtl_compiler_lock(compiler);
+ 
+       NSError *error = nil;
++      if (lock)
++         pthread_rwlock_rdlock(&lock->rwlock);
+       id<MTLRenderPipelineState> pipeline = [comp newRenderPipelineStateWithDescriptor:desc compilerTaskOptions:nil
+                                                                                  error:&error];
++      if (lock)
++         pthread_rwlock_unlock(&lock->rwlock);
+ 
+       if (pipeline == nil) {
+          fprintf(stderr, "Failed to create MTLRenderPipelineState: %s\n", [error.localizedDescription UTF8String]);
+@@ -238,3 +326,101 @@
+       return pipeline;
+    }
+ }
++
++bool
++mtl_compiler_has_serializer(mtl_compiler *compiler)
++{
++   return [(id<MTL4Compiler>)compiler pipelineDataSetSerializer] != nil;
++}
++
++static NSURL *
++mtl_archive_temporary_url(void)
++{
++   NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
++      [NSString stringWithFormat:@"mesa-kk-%@", [[NSUUID UUID] UUIDString]]];
++   return [NSURL fileURLWithPath:path];
++}
++
++void *
++mtl_compiler_serialize(mtl_compiler *compiler, size_t *size)
++{
++   *size = 0;
++   @autoreleasepool {
++      id<MTL4PipelineDataSetSerializer> serializer =
++         [(id<MTL4Compiler>)compiler pipelineDataSetSerializer];
++      KKCompilerLock *lock = mtl_compiler_lock(compiler);
++      if (!serializer || !lock)
++         return NULL;
++      NSURL *url = mtl_archive_temporary_url();
++      NSError *error = nil;
++      pthread_rwlock_wrlock(&lock->rwlock);
++      BOOL ok = [serializer serializeAsArchiveAndFlushToURL:url error:&error];
++      pthread_rwlock_unlock(&lock->rwlock);
++      NSData *data = ok ? [NSData dataWithContentsOfURL:url] : nil;
++      [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
++      if (!data || !data.length)
++         return NULL;
++      void *bytes = malloc(data.length);
++      if (bytes) {
++         memcpy(bytes, data.bytes, data.length);
++         *size = data.length;
++      }
++      return bytes;
++   }
++}
++
++void
++mtl_pipeline_cache_identity(mtl_device *device, char *identity, size_t size)
++{
++   char build[128] = {0};
++   size_t build_size = sizeof(build);
++   sysctlbyname("kern.osversion", build, &build_size, NULL, 0);
++   snprintf(identity, size, "metal4-pso-1:%s:%llu", build,
++            (unsigned long long)[(id<MTLDevice>)device registryID]);
++}
++
++mtl_archive *
++mtl_new_archive(mtl_device *device, const void *bytes, size_t size)
++{
++   @autoreleasepool {
++      NSURL *url = mtl_archive_temporary_url();
++      NSData *data = [NSData dataWithBytesNoCopy:(void *)bytes length:size freeWhenDone:NO];
++      if (![data writeToURL:url options:NSDataWritingAtomic error:NULL])
++         return NULL;
++      NSError *error = nil;
++      id<MTL4Archive> archive = [(id<MTLDevice>)device newArchiveWithURL:url error:&error];
++      if (!archive) {
++         [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
++         return NULL;
++      }
++      KKMetalArchive *result = [KKMetalArchive new];
++      result->handle = archive;
++      result->url = [url retain];
++      return result;
++   }
++}
++
++mtl_render_pipeline_state *
++mtl_archive_new_render_pipeline(mtl_archive *archive,
++                                mtl_render_pipeline_descriptor *descriptor)
++{
++   @autoreleasepool {
++      NSError *error = nil;
++      return [((KKMetalArchive *)archive)->handle newRenderPipelineStateWithDescriptor:
++         (MTL4RenderPipelineDescriptor *)descriptor error:&error];
++   }
++}
++
++mtl_compute_pipeline_state *
++mtl_archive_new_compute_pipeline(mtl_archive *archive,
++                                 mtl_function_descriptor *function,
++                                 uint64_t max_total_threads_per_threadgroup)
++{
++   @autoreleasepool {
++      MTL4ComputePipelineDescriptor *desc = [[MTL4ComputePipelineDescriptor new] autorelease];
++      desc.computeFunctionDescriptor = (MTL4FunctionDescriptor *)function;
++      desc.maxTotalThreadsPerThreadgroup = max_total_threads_per_threadgroup;
++      NSError *error = nil;
++      return [((KKMetalArchive *)archive)->handle newComputePipelineStateWithDescriptor:desc error:&error];
++   }
++}
+diff --git a/src/kosmickrisp/bridge/mtl_types.h b/src/kosmickrisp/bridge/mtl_types.h
+index 398850a23b455074d0cfb5f215d2d5160815d31d..132087aafb22c597462e4e315a5a71083cafb557 100644
+--- a/src/kosmickrisp/bridge/mtl_types.h
++++ b/src/kosmickrisp/bridge/mtl_types.h
+@@ -43,6 +43,7 @@ typedef void mtl_render_pass_attachment_descriptor;
+ typedef void mtl_residency_set;
+ typedef void mtl_allocation;
+ typedef void mtl_compiler;
++typedef void mtl_archive;
+ typedef void mtl_argument_table_descriptor;
+ typedef void mtl_argument_table;
+ typedef void mtl_commit_options;
+diff --git a/src/kosmickrisp/bridge/stubs/mtl_compiler.c b/src/kosmickrisp/bridge/stubs/mtl_compiler.c
+index 94a33c8ea7477c14c139e160d2e7bdf9a37ccb73..1e96d3079945d86749979f05212b0c9af527efba 100644
+--- a/src/kosmickrisp/bridge/stubs/mtl_compiler.c
++++ b/src/kosmickrisp/bridge/stubs/mtl_compiler.c
+@@ -115,3 +115,37 @@ mtl_new_render_pipeline(mtl_compiler *compiler,
+ {
+    return NULL;
+ }
++
++bool mtl_compiler_has_serializer(mtl_compiler *compiler)
++{
++   return false;
++}
++
++void *mtl_compiler_serialize(mtl_compiler *compiler, size_t *size)
++{
++   *size = 0;
++   return NULL;
++}
++
++void mtl_pipeline_cache_identity(mtl_device *device, char *identity, size_t size)
++{
++   if (size)
++      identity[0] = 0;
++}
++
++mtl_archive *mtl_new_archive(mtl_device *device, const void *data, size_t size)
++{
++   return NULL;
++}
++
++mtl_render_pipeline_state *mtl_archive_new_render_pipeline(
++   mtl_archive *archive, mtl_render_pipeline_descriptor *descriptor)
++{
++   return NULL;
++}
++
++mtl_compute_pipeline_state *mtl_archive_new_compute_pipeline(
++   mtl_archive *archive, mtl_function_descriptor *function, uint64_t max_threads)
++{
++   return NULL;
++}

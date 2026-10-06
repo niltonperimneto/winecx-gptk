@@ -1,0 +1,463 @@
+diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.h b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
+index 20e585458b8a5f6c92860ad64069ff88fb8ce5e8..59e57a282f4e0b21af35194bc0204d7b0e469ad1 100644
+--- a/src/kosmickrisp/vulkan/kk_cmd_buffer.h
++++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
+@@ -36,6 +36,9 @@ struct kk_root_descriptor_table {
+          uint32_t buffer_strides[KK_MAX_VBUFS];
+          uint64_t attrib_base[KK_MAX_ATTRIBS];
+          uint32_t attrib_clamps[KK_MAX_ATTRIBS];
++         uint32_t attrib_format[KK_MAX_ATTRIBS];
++         uint32_t attrib_divisor[KK_MAX_ATTRIBS];
++         uint32_t attrib_stride[KK_MAX_ATTRIBS];
+ 
+          float blend_constant[4];
+          float clip_z_coeff;
+diff --git a/src/kosmickrisp/vulkan/kk_cmd_draw.c b/src/kosmickrisp/vulkan/kk_cmd_draw.c
+index a87d20b8fa12850c58e81fe25caf9f6dfec1d469..4f262746988e419e0937776becba7051a6b69272 100644
+--- a/src/kosmickrisp/vulkan/kk_cmd_draw.c
++++ b/src/kosmickrisp/vulkan/kk_cmd_draw.c
+@@ -1496,20 +1496,39 @@ kk_flush_dynamic_state(struct kk_cmd_buffer *cmd)
+    }
+ 
+    if (IS_DIRTY(VI) || IS_DIRTY(VI_BINDINGS_VALID) ||
+-       IS_DIRTY(VI_BINDING_STRIDES) || gfx->dirty & KK_DIRTY_VB) {
++       IS_DIRTY(VI_BINDING_STRIDES) || gfx->dirty & KK_DIRTY_VB ||
++       IS_SHADER_DIRTY(VERTEX)) {
+       struct kk_shader *vs = cmd->state.shaders[MESA_SHADER_VERTEX];
++      bool dynamic_vi = vs->info.vs.dynamic_vi;
+       unsigned slot = 0;
+       u_foreach_bit(i, vs->info.vs.attribs_read) {
+          if (dyn->vi->attributes_valid & BITFIELD_BIT(i)) {
+             struct vk_vertex_attribute_state attr = dyn->vi->attributes[i];
+             struct kk_addr_range vb = gfx->vb.addr_range[attr.binding];
++            enum pipe_format format = vk_format_to_pipe_format(attr.format);
++            uint32_t stride = dyn->vi_binding_strides[attr.binding];
+ 
+             desc->root.draw.attrib_clamps[slot] = kk_calculate_vbo_clamp(
+-               vb.addr, 0, vk_format_to_pipe_format(attr.format), vb.range,
+-               dyn->vi_binding_strides[attr.binding], attr.offset,
++               vb.addr, 0, format, vb.range, stride, attr.offset,
+                &desc->root.draw.attrib_base[slot]);
+-            desc->root.draw.buffer_strides[attr.binding] =
+-               dyn->vi_binding_strides[attr.binding];
++            desc->root.draw.buffer_strides[attr.binding] = stride;
++
++            if (dynamic_vi) {
++               const struct vk_vertex_binding_state *binding =
++                  &dyn->vi->bindings[attr.binding];
++               uint32_t fmt = kk_vbo_encode_format(format);
++               if (binding->input_rate == VK_VERTEX_INPUT_RATE_INSTANCE)
++                  fmt |= KK_VBO_FMT_INSTANCED;
++               desc->root.draw.attrib_format[slot] = fmt;
++               desc->root.draw.attrib_divisor[slot] = binding->divisor;
++               desc->root.draw.attrib_stride[slot] = stride;
++            }
++         } else if (dynamic_vi) {
++            desc->root.draw.attrib_format[slot] = 0;
++            desc->root.draw.attrib_divisor[slot] = 0;
++            desc->root.draw.attrib_stride[slot] = 0;
++            desc->root.draw.attrib_clamps[slot] = 0;
++            desc->root.draw.attrib_base[slot] = 0;
+          }
+          slot++;
+       }
+diff --git a/src/kosmickrisp/vulkan/kk_nir_lower_vbo.c b/src/kosmickrisp/vulkan/kk_nir_lower_vbo.c
+index 6d56e5669ce5c77657322ffa90111fa45fb0de1a..d9bd47a2d8278936a1c2e4c9f5803626cd43678c 100644
+--- a/src/kosmickrisp/vulkan/kk_nir_lower_vbo.c
++++ b/src/kosmickrisp/vulkan/kk_nir_lower_vbo.c
+@@ -280,3 +280,274 @@ kk_nir_lower_vbo(nir_shader *nir, struct kk_attribute *attribs,
+    return nir_shader_intrinsics_pass(nir, pass, nir_metadata_control_flow,
+                                      &ctx);
+ }
++
++uint32_t
++kk_vbo_encode_format(enum pipe_format format)
++{
++   if (format == PIPE_FORMAT_NONE || !kk_vbo_supports_format(format))
++      return 0;
++
++   const struct util_format_description *desc = util_format_description(format);
++   int idx = util_format_get_first_non_void_channel(format);
++   if (idx < 0)
++      return 0;
++
++   struct util_format_channel_description chan = desc->channel[idx];
++   enum kk_vbo_type type;
++   switch (chan.type) {
++   case UTIL_FORMAT_TYPE_UNSIGNED:
++      type = chan.normalized     ? KK_VBO_TYPE_UNORM
++             : chan.pure_integer ? KK_VBO_TYPE_UINT
++                                 : KK_VBO_TYPE_USCALED;
++      break;
++   case UTIL_FORMAT_TYPE_SIGNED:
++      type = chan.normalized     ? KK_VBO_TYPE_SNORM
++             : chan.pure_integer ? KK_VBO_TYPE_SINT
++                                 : KK_VBO_TYPE_SSCALED;
++      break;
++   case UTIL_FORMAT_TYPE_FLOAT:
++      type = KK_VBO_TYPE_SFLOAT;
++      break;
++   default:
++      return 0;
++   }
++
++   uint32_t fmt = KK_VBO_FMT_VALID | (type << KK_VBO_FMT_TYPE_SHIFT);
++
++   if (is_rg11_b10(desc)) {
++      fmt |= KK_VBO_FMT_RG11B10F | (2u << KK_VBO_FMT_SIZE_SHIFT);
++   } else if (is_rgb10_a2(desc)) {
++      fmt |= KK_VBO_FMT_RGB10A2 | (2u << KK_VBO_FMT_SIZE_SHIFT);
++   } else {
++      fmt |= util_logbase2(chan.size / 8) << KK_VBO_FMT_SIZE_SHIFT;
++      fmt |= (desc->nr_channels - 1) << KK_VBO_FMT_COUNT_SHIFT;
++   }
++
++   for (unsigned c = 0; c < 4; ++c) {
++      assert(desc->swizzle[c] <= PIPE_SWIZZLE_1);
++      fmt |= (uint32_t)desc->swizzle[c] << (KK_VBO_FMT_SWIZZLE_SHIFT + c * 3);
++   }
++
++   return fmt;
++}
++
++static nir_def *
++fmt_field(nir_builder *b, nir_def *fmt, unsigned shift, unsigned mask)
++{
++   return nir_iand_imm(b, nir_ushr_imm(b, fmt, shift), mask);
++}
++
++static nir_def *
++load_root(nir_builder *b, nir_def *argbuf, unsigned bit_size, uint64_t offset)
++{
++   return nir_load_global_constant(b, 1, bit_size,
++                                   nir_iadd_imm(b, argbuf, offset));
++}
++
++static nir_def *
++fetch_component(nir_builder *b, nir_def *addr, nir_def *size_log2, unsigned i)
++{
++   nir_def *v32, *v16, *v8;
++
++   nir_push_if(b, nir_ieq_imm(b, size_log2, 2));
++   {
++      v32 = nir_load_global_constant(b, 1, 32, nir_iadd_imm(b, addr, i * 4));
++   }
++   nir_push_else(b, NULL);
++   {
++      nir_push_if(b, nir_ieq_imm(b, size_log2, 1));
++      {
++         v16 = nir_u2u32(b, nir_load_global_constant(
++                               b, 1, 16, nir_iadd_imm(b, addr, i * 2)));
++      }
++      nir_push_else(b, NULL);
++      {
++         v8 = nir_u2u32(
++            b, nir_load_global_constant(b, 1, 8, nir_iadd_imm(b, addr, i)));
++      }
++      nir_pop_if(b, NULL);
++      v16 = nir_if_phi(b, v16, v8);
++   }
++   nir_pop_if(b, NULL);
++
++   return nir_if_phi(b, v32, v16);
++}
++
++static nir_def *
++convert_float(nir_builder *b, nir_def *fmt, nir_def *size_log2, nir_def *raw,
++              nir_def *u, nir_def *s)
++{
++   static const unsigned bits8[4] = {8, 8, 8, 8};
++   static const unsigned bits16[4] = {16, 16, 16, 16};
++   static const unsigned bits_rgb10a2[4] = {10, 10, 10, 2};
++
++   nir_def *is8 = nir_ieq_imm(b, size_log2, 0);
++   nir_def *is16 = nir_ieq_imm(b, size_log2, 1);
++   nir_def *rgb10a2 = nir_test_mask(b, fmt, KK_VBO_FMT_RGB10A2);
++   nir_def *rg11b10 = nir_test_mask(b, fmt, KK_VBO_FMT_RG11B10F);
++
++   nir_def *pu = nir_format_unpack_uint(b, raw, bits_rgb10a2, 4);
++   nir_def *ps = nir_format_unpack_sint(b, raw, bits_rgb10a2, 4);
++
++   nir_def *unorm =
++      nir_bcsel(b, rgb10a2, nir_format_unorm_to_float(b, pu, bits_rgb10a2),
++                nir_bcsel(b, is8, nir_format_unorm_to_float(b, u, bits8),
++                          nir_format_unorm_to_float(b, u, bits16)));
++   nir_def *snorm =
++      nir_bcsel(b, rgb10a2, nir_format_snorm_to_float(b, ps, bits_rgb10a2),
++                nir_bcsel(b, is8, nir_format_snorm_to_float(b, s, bits8),
++                          nir_format_snorm_to_float(b, s, bits16)));
++   nir_def *uscaled = nir_u2f32(b, nir_bcsel(b, rgb10a2, pu, u));
++   nir_def *sscaled = nir_i2f32(b, nir_bcsel(b, rgb10a2, ps, s));
++
++   nir_def *rg11b10_val =
++      nir_pad_vector_imm_int(b, nir_format_unpack_11f11f10f(b, raw), 0, 4);
++   nir_def *sfloat =
++      nir_bcsel(b, rg11b10, rg11b10_val,
++                nir_bcsel(b, is16, nir_f2f32(b, nir_u2u16(b, u)), u));
++
++   nir_def *type =
++      fmt_field(b, fmt, KK_VBO_FMT_TYPE_SHIFT, KK_VBO_FMT_TYPE_MASK);
++   nir_def *v = sfloat;
++   v = nir_bcsel(b, nir_ieq_imm(b, type, KK_VBO_TYPE_UNORM), unorm, v);
++   v = nir_bcsel(b, nir_ieq_imm(b, type, KK_VBO_TYPE_SNORM), snorm, v);
++   v = nir_bcsel(b, nir_ieq_imm(b, type, KK_VBO_TYPE_USCALED), uscaled, v);
++   v = nir_bcsel(b, nir_ieq_imm(b, type, KK_VBO_TYPE_SSCALED), sscaled, v);
++   return v;
++}
++
++static nir_def *
++convert_int(nir_builder *b, nir_def *fmt, nir_def *raw, nir_def *u, nir_def *s)
++{
++   static const unsigned bits_rgb10a2[4] = {10, 10, 10, 2};
++
++   nir_def *rgb10a2 = nir_test_mask(b, fmt, KK_VBO_FMT_RGB10A2);
++   u =
++      nir_bcsel(b, rgb10a2, nir_format_unpack_uint(b, raw, bits_rgb10a2, 4), u);
++   s =
++      nir_bcsel(b, rgb10a2, nir_format_unpack_sint(b, raw, bits_rgb10a2, 4), s);
++
++   nir_def *type =
++      fmt_field(b, fmt, KK_VBO_FMT_TYPE_SHIFT, KK_VBO_FMT_TYPE_MASK);
++   return nir_bcsel(b, nir_ieq_imm(b, type, KK_VBO_TYPE_SINT), s, u);
++}
++
++static bool
++pass_dynamic(struct nir_builder *b, nir_intrinsic_instr *intr, void *data)
++{
++   if (intr->intrinsic != nir_intrinsic_load_input)
++      return false;
++
++   bool robustness2 = *(bool *)data;
++   b->cursor = nir_instr_remove(&intr->instr);
++
++   nir_src *offset_src = nir_get_io_offset_src(intr);
++   assert(nir_src_is_const(*offset_src) && "no attribute indirects");
++   unsigned index = nir_intrinsic_base(intr) + nir_src_as_uint(*offset_src);
++
++   nir_alu_type base_type =
++      nir_alu_type_get_base_type(nir_intrinsic_dest_type(intr));
++   bool is_int = base_type == nir_type_int || base_type == nir_type_uint;
++
++   nir_def *argbuf = nir_load_buffer_ptr_kk(b, 1, 64, .binding = 0);
++   nir_def *fmt = load_root(
++      b, argbuf, 32,
++      offsetof(struct kk_root_descriptor_table, draw.attrib_format[index]));
++   nir_def *divisor = load_root(
++      b, argbuf, 32,
++      offsetof(struct kk_root_descriptor_table, draw.attrib_divisor[index]));
++   nir_def *stride = load_root(
++      b, argbuf, 32,
++      offsetof(struct kk_root_descriptor_table, draw.attrib_stride[index]));
++   nir_def *base = load_root(
++      b, argbuf, 64,
++      offsetof(struct kk_root_descriptor_table, draw.attrib_base[index]));
++
++   nir_def *instance_el = nir_bcsel(
++      b, nir_ieq_imm(b, divisor, 0), nir_imm_int(b, 0),
++      nir_udiv(b, nir_load_instance_id(b), nir_umax_imm(b, divisor, 1)));
++   instance_el = nir_iadd(b, instance_el, nir_load_base_instance(b));
++   nir_def *el = nir_bcsel(b, nir_test_mask(b, fmt, KK_VBO_FMT_INSTANCED),
++                           instance_el, nir_load_vertex_id(b));
++
++   BITSET_SET(b->shader->info.system_values_read, SYSTEM_VALUE_INSTANCE_ID);
++   BITSET_SET(b->shader->info.system_values_read, SYSTEM_VALUE_BASE_INSTANCE);
++   BITSET_SET(b->shader->info.system_values_read, SYSTEM_VALUE_VERTEX_ID);
++
++   nir_def *valid = nir_test_mask(b, fmt, KK_VBO_FMT_VALID);
++   nir_def *fetch = valid;
++   if (robustness2) {
++      nir_def *bounds = load_root(
++         b, argbuf, 32,
++         offsetof(struct kk_root_descriptor_table, draw.attrib_clamps[index]));
++      fetch = nir_iand(b, fetch, nir_uge(b, bounds, el));
++   }
++
++   nir_def *addr = nir_iadd(b, base, nir_u2u64(b, nir_imul(b, el, stride)));
++   nir_def *size_log2 =
++      fmt_field(b, fmt, KK_VBO_FMT_SIZE_SHIFT, KK_VBO_FMT_SIZE_MASK);
++   nir_def *count_m1 =
++      fmt_field(b, fmt, KK_VBO_FMT_COUNT_SHIFT, KK_VBO_FMT_COUNT_MASK);
++
++   nir_def *zero = nir_imm_int(b, 0);
++   nir_def *loaded[4];
++   nir_push_if(b, fetch);
++   {
++      loaded[0] = fetch_component(b, addr, size_log2, 0);
++      for (unsigned i = 1; i < 4; ++i) {
++         nir_push_if(b, nir_uge_imm(b, count_m1, i));
++         nir_def *c = fetch_component(b, addr, size_log2, i);
++         nir_pop_if(b, NULL);
++         loaded[i] = nir_if_phi(b, c, zero);
++      }
++   }
++   nir_pop_if(b, NULL);
++
++   nir_def *raw[4];
++   for (unsigned i = 0; i < 4; ++i)
++      raw[i] = nir_if_phi(b, loaded[i], zero);
++
++   nir_def *u = nir_vec(b, raw, 4);
++   nir_def *s =
++      nir_bcsel(b, nir_ieq_imm(b, size_log2, 0), nir_i2i32(b, nir_u2u8(b, u)),
++                nir_bcsel(b, nir_ieq_imm(b, size_log2, 1),
++                          nir_i2i32(b, nir_u2u16(b, u)), u));
++
++   nir_def *memory = is_int ? convert_int(b, fmt, raw[0], u, s)
++                            : convert_float(b, fmt, size_log2, raw[0], u, s);
++   nir_def *zero_out = is_int ? zero : nir_imm_float(b, 0.0);
++   nir_def *one_out = is_int ? nir_imm_int(b, 1) : nir_imm_float(b, 1.0);
++
++   nir_def *channels[4] = {NULL};
++   for (unsigned i = 0; i < intr->num_components; ++i) {
++      unsigned c = nir_intrinsic_component(intr) + i;
++      nir_def *swz = fmt_field(b, fmt, KK_VBO_FMT_SWIZZLE_SHIFT + c * 3,
++                               KK_VBO_FMT_SWIZZLE_MASK);
++
++      nir_def *ch = nir_channel(b, memory, 0);
++      for (unsigned k = 1; k < 4; ++k)
++         ch = nir_bcsel(b, nir_ieq_imm(b, swz, PIPE_SWIZZLE_X + k),
++                        nir_channel(b, memory, k), ch);
++      ch = nir_bcsel(b, nir_ieq_imm(b, swz, PIPE_SWIZZLE_0), zero_out, ch);
++      ch = nir_bcsel(b, nir_ieq_imm(b, swz, PIPE_SWIZZLE_1), one_out, ch);
++      ch = nir_bcsel(b, valid, ch, c == 3 ? one_out : zero_out);
++
++      if (intr->def.bit_size != 32)
++         ch = is_int ? nir_u2uN(b, ch, intr->def.bit_size)
++                     : nir_f2fN(b, ch, intr->def.bit_size);
++      channels[i] = ch;
++   }
++
++   nir_def *logical = nir_vec(b, channels, intr->num_components);
++   nir_def_rewrite_uses(&intr->def, logical);
++   return true;
++}
++
++bool
++kk_nir_lower_vbo_dynamic(nir_shader *nir, bool robustness2)
++{
++   assert(nir->info.stage == MESA_SHADER_VERTEX);
++
++   return nir_shader_intrinsics_pass(nir, pass_dynamic, nir_metadata_none,
++                                     &robustness2);
++}
+diff --git a/src/kosmickrisp/vulkan/kk_nir_lower_vbo.h b/src/kosmickrisp/vulkan/kk_nir_lower_vbo.h
+index af47837e1f6638c899f0c1a0c6cab0e6233ede24..af062acd657322758f0dc51561abdd9ef30d0e37 100644
+--- a/src/kosmickrisp/vulkan/kk_nir_lower_vbo.h
++++ b/src/kosmickrisp/vulkan/kk_nir_lower_vbo.h
+@@ -40,6 +40,33 @@ bool kk_nir_lower_vbo(nir_shader *shader, struct kk_attribute *attribs,
+ 
+ bool kk_vbo_supports_format(enum pipe_format format);
+ 
++enum kk_vbo_type {
++   KK_VBO_TYPE_UNORM = 0,
++   KK_VBO_TYPE_SNORM = 1,
++   KK_VBO_TYPE_USCALED = 2,
++   KK_VBO_TYPE_SSCALED = 3,
++   KK_VBO_TYPE_UINT = 4,
++   KK_VBO_TYPE_SINT = 5,
++   KK_VBO_TYPE_SFLOAT = 6,
++};
++
++#define KK_VBO_FMT_SIZE_SHIFT    0
++#define KK_VBO_FMT_SIZE_MASK     0x3
++#define KK_VBO_FMT_COUNT_SHIFT   2
++#define KK_VBO_FMT_COUNT_MASK    0x3
++#define KK_VBO_FMT_TYPE_SHIFT    4
++#define KK_VBO_FMT_TYPE_MASK     0x7
++#define KK_VBO_FMT_RGB10A2       (1u << 7)
++#define KK_VBO_FMT_RG11B10F      (1u << 8)
++#define KK_VBO_FMT_INSTANCED     (1u << 9)
++#define KK_VBO_FMT_VALID         (1u << 10)
++#define KK_VBO_FMT_SWIZZLE_SHIFT 11
++#define KK_VBO_FMT_SWIZZLE_MASK  0x7
++
++uint32_t kk_vbo_encode_format(enum pipe_format format);
++
++bool kk_nir_lower_vbo_dynamic(nir_shader *shader, bool robustness2);
++
+ #ifdef __cplusplus
+ } /* extern C */
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index ebf6193abd167bc20009c63256f344b6cbd48520..6bda254d9cf9a454101894817551a7ec6eca3d09 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -101,8 +101,16 @@ has_static_depth_stencil_state(const struct vk_graphics_pipeline_state *state)
+       BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK));
+ }
+ 
++static bool
++kk_vi_is_static(const struct vk_graphics_pipeline_state *state)
++{
++   return state && state->vi &&
++          !BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI);
++}
++
+ struct kk_vs_key {
+    bool is_points;
++   bool dynamic_vi;
+    struct vk_vertex_input_state vi;
+ };
+ 
+@@ -111,9 +119,11 @@ kk_populate_vs_key(struct kk_vs_key *key,
+                    const struct vk_graphics_pipeline_state *state)
+ {
+    memset(key, 0, sizeof(*key));
+-   key->is_points =
+-      (state->ia->primitive_topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST);
+-   key->vi = *state->vi;
++   key->is_points = state->ia && state->ia->primitive_topology ==
++                                    VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
++   key->dynamic_vi = !kk_vi_is_static(state);
++   if (!key->dynamic_vi)
++      key->vi = *state->vi;
+ }
+ 
+ struct kk_fs_key {
+@@ -359,6 +369,14 @@ kk_lower_vs_vbo(nir_shader *nir, const struct vk_graphics_pipeline_state *state,
+    /* Fold constant offset srcs for IO. */
+    NIR_PASS(_, nir, nir_opt_constant_folding);
+ 
++   bool robustness2 =
++      rs->vertex_inputs ==
++      VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_2;
++   if (!kk_vi_is_static(state)) {
++      NIR_PASS(_, nir, kk_nir_lower_vbo_dynamic, robustness2);
++      return;
++   }
++
+    struct kk_attribute attributes[KK_MAX_ATTRIBS] = {};
+    uint64_t attribs_read = nir->info.inputs_read >> VERT_ATTRIB_GENERIC0;
+    u_foreach_bit(i, state->vi->attributes_valid) {
+@@ -378,9 +396,6 @@ kk_lower_vs_vbo(nir_shader *nir, const struct vk_graphics_pipeline_state *state,
+       attributes[slot].instanced =
+          binding->input_rate == VK_VERTEX_INPUT_RATE_INSTANCE;
+    }
+-   bool robustness2 =
+-      rs->vertex_inputs ==
+-      VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_2;
+    NIR_PASS(_, nir, kk_nir_lower_vbo, attributes, robustness2);
+ }
+ 
+@@ -909,6 +924,7 @@ gather_shader_info(struct kk_shader *shader, nir_shader *nir,
+    if (nir->info.stage == MESA_SHADER_VERTEX) {
+       nir_shader_intrinsics_pass(nir, gather_vs_inputs, nir_metadata_all,
+                                  &shader->info.vs.attribs_read);
++      shader->info.vs.dynamic_vi = !kk_vi_is_static(state);
+       shader->info.vs.outputs_written = nir->info.outputs_written;
+    } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+       /* Some meta shaders like vk-meta-resolve will have depth_layout as NONE
+diff --git a/src/kosmickrisp/vulkan/kk_shader.h b/src/kosmickrisp/vulkan/kk_shader.h
+index a6f5e3bd23ba6e232502d583a7956a483a40f40f..f0b1d9aadd6846d21baa05ad4a91a096cf5fd00a 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.h
++++ b/src/kosmickrisp/vulkan/kk_shader.h
+@@ -65,6 +65,7 @@ struct kk_shader_info {
+ 
+          /* Data needed to start render pass and bind pipeline. */
+          uint32_t attribs_read;
++         bool dynamic_vi;
+          uint32_t sample_count;
+          uint64_t outputs_written;
+ 

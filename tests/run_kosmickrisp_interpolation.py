@@ -1,4 +1,5 @@
 import argparse
+import csv
 import os
 from pathlib import Path
 import subprocess
@@ -158,10 +159,15 @@ def main():
                     if result.returncode or (expected_cache and 'FS variant disk cache hit' not in result.stderr) or unexpected_variant:
                         print(result.stderr, flush=True)
                         failures.append(('blend-ms', case, mode, options, result.returncode))
+            prewarm_log = work / f'prewarm-{mode}.csv'
             result = subprocess.run([str(probe), str(icd), str(work), 'vs', '1', '3', '0', '1'],
-                                    env=env, capture_output=True, text=True, timeout=120)
+                                    env=dict(env, MESA_KK_COMPILE_LOG=str(prewarm_log)),
+                                    capture_output=True, text=True, timeout=120)
+            with prewarm_log.open() if prewarm_log.exists() else open(os.devnull) as stream:
+                prewarmed = any(len(row) == 4 and row[0] in {'pso', 'pso_archive'} and row[1] == 'prewarm'
+                                for row in csv.reader(stream))
             total += 1
-            if result.returncode or 'PSO prewarm started' not in result.stderr or 'PSO compile' not in result.stderr:
+            if result.returncode or not prewarmed:
                 print(result.stderr, flush=True)
                 failures.append(('prewarm-no-draw', result.returncode))
         result = subprocess.run([str(probe), str(icd), str(work), 'gs', '5', '0', '0', '1'],

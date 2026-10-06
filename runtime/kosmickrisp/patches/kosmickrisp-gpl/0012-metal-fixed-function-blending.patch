@@ -1,0 +1,318 @@
+diff --git a/src/kosmickrisp/bridge/mtl_compiler.h b/src/kosmickrisp/bridge/mtl_compiler.h
+index d0976539b3c7b51b1409a14ec9557346a422463d..99f53bdc7727c205c85b673a6b995a9ab08e9ec5 100644
+--- a/src/kosmickrisp/bridge/mtl_compiler.h
++++ b/src/kosmickrisp/bridge/mtl_compiler.h
+@@ -14,6 +14,8 @@
+ 
+ /* Bridge enums */
+ enum mtl_pixel_format;
++enum mtl_blend_factor;
++enum mtl_blend_operation;
+ 
+ /* Compiler */
+ mtl_compiler *mtl_new_compiler(mtl_device *device);
+@@ -51,6 +53,13 @@ void mtl_render_pipeline_descriptor_set_color_attachment_format(
+    mtl_render_pipeline_descriptor *descriptor, uint8_t index,
+    enum mtl_pixel_format format);
+ 
++void mtl_render_pipeline_descriptor_set_color_attachment_blend(
++   mtl_render_pipeline_descriptor *descriptor, uint8_t index, bool enable,
++   enum mtl_blend_factor src_rgb, enum mtl_blend_factor dst_rgb,
++   enum mtl_blend_operation op_rgb, enum mtl_blend_factor src_alpha,
++   enum mtl_blend_factor dst_alpha, enum mtl_blend_operation op_alpha,
++   uint8_t write_mask);
++
+ void mtl_render_pipeline_descriptor_set_raster_sample_count(
+    mtl_render_pipeline_descriptor *descriptor, uint32_t sample_count);
+ 
+diff --git a/src/kosmickrisp/bridge/mtl_compiler.m b/src/kosmickrisp/bridge/mtl_compiler.m
+index f0f6a612ca2d10bcdcb7a07d784d5702f32e942e..222e3ba225bbcf2debcf5f53955b4ac8c8b4d3ba 100644
+--- a/src/kosmickrisp/bridge/mtl_compiler.m
++++ b/src/kosmickrisp/bridge/mtl_compiler.m
+@@ -153,6 +153,31 @@
+    }
+ }
+ 
++void
++mtl_render_pipeline_descriptor_set_color_attachment_blend(mtl_render_pipeline_descriptor *descriptor,
++                                                          uint8_t index, bool enable,
++                                                          enum mtl_blend_factor src_rgb,
++                                                          enum mtl_blend_factor dst_rgb,
++                                                          enum mtl_blend_operation op_rgb,
++                                                          enum mtl_blend_factor src_alpha,
++                                                          enum mtl_blend_factor dst_alpha,
++                                                          enum mtl_blend_operation op_alpha,
++                                                          uint8_t write_mask)
++{
++   @autoreleasepool {
++      MTL4RenderPipelineDescriptor *desc = (MTL4RenderPipelineDescriptor *)descriptor;
++      MTL4RenderPipelineColorAttachmentDescriptor *att = desc.colorAttachments[index];
++      att.blendingState = enable ? MTL4BlendStateEnabled : MTL4BlendStateDisabled;
++      att.sourceRGBBlendFactor = (MTLBlendFactor)src_rgb;
++      att.destinationRGBBlendFactor = (MTLBlendFactor)dst_rgb;
++      att.rgbBlendOperation = (MTLBlendOperation)op_rgb;
++      att.sourceAlphaBlendFactor = (MTLBlendFactor)src_alpha;
++      att.destinationAlphaBlendFactor = (MTLBlendFactor)dst_alpha;
++      att.alphaBlendOperation = (MTLBlendOperation)op_alpha;
++      att.writeMask = (MTLColorWriteMask)write_mask;
++   }
++}
++
+ void
+ mtl_render_pipeline_descriptor_set_raster_sample_count(mtl_render_pipeline_descriptor *descriptor,
+                                                        uint32_t sample_count)
+diff --git a/src/kosmickrisp/bridge/mtl_encoder.h b/src/kosmickrisp/bridge/mtl_encoder.h
+index 65f2018caba0a52c7fd0a2b7f824ce237d78d340..2e211f28b7c39e7218a12452a9acc76b7ddccd51 100644
+--- a/src/kosmickrisp/bridge/mtl_encoder.h
++++ b/src/kosmickrisp/bridge/mtl_encoder.h
+@@ -94,6 +94,8 @@ void mtl_set_depth_stencil_state(mtl_render_encoder *encoder,
+ void mtl_set_stencil_references(mtl_render_encoder *encoder, uint32_t front,
+                                 uint32_t back);
+ 
++void mtl_set_blend_color(mtl_render_encoder *encoder, const float color[4]);
++
+ void mtl_set_front_face_winding(mtl_render_encoder *encoder,
+                                 enum mtl_winding winding);
+ 
+diff --git a/src/kosmickrisp/bridge/mtl_encoder.m b/src/kosmickrisp/bridge/mtl_encoder.m
+index b356b5237e91af13f8ca5a7264193cbad54e3f97..19f79b66d7b3dd1760cea031c96cd64c724e4ff5 100644
+--- a/src/kosmickrisp/bridge/mtl_encoder.m
++++ b/src/kosmickrisp/bridge/mtl_encoder.m
+@@ -402,6 +402,15 @@
+    }
+ }
+ 
++void
++mtl_set_blend_color(mtl_render_encoder *encoder, const float color[4])
++{
++   @autoreleasepool {
++      id<MTL4RenderCommandEncoder> enc = (id<MTL4RenderCommandEncoder>)encoder;
++      [enc setBlendColorRed:color[0] green:color[1] blue:color[2] alpha:color[3]];
++   }
++}
++
+ void
+ mtl_set_depth_test_bounds(mtl_render_encoder *encoder, float min, float max)
+ {
+diff --git a/src/kosmickrisp/bridge/mtl_types.h b/src/kosmickrisp/bridge/mtl_types.h
+index 727a7ddd6cf7d51383cd4767ad529b30def1305a..398850a23b455074d0cfb5f215d2d5160815d31d 100644
+--- a/src/kosmickrisp/bridge/mtl_types.h
++++ b/src/kosmickrisp/bridge/mtl_types.h
+@@ -224,6 +224,44 @@ enum mtl_compare_function {
+    MTL_COMPARE_FUNCTION_ALWAYS = 7,
+ };
+ 
++enum mtl_blend_factor {
++   MTL_BLEND_FACTOR_ZERO = 0,
++   MTL_BLEND_FACTOR_ONE = 1,
++   MTL_BLEND_FACTOR_SOURCE_COLOR = 2,
++   MTL_BLEND_FACTOR_ONE_MINUS_SOURCE_COLOR = 3,
++   MTL_BLEND_FACTOR_SOURCE_ALPHA = 4,
++   MTL_BLEND_FACTOR_ONE_MINUS_SOURCE_ALPHA = 5,
++   MTL_BLEND_FACTOR_DESTINATION_COLOR = 6,
++   MTL_BLEND_FACTOR_ONE_MINUS_DESTINATION_COLOR = 7,
++   MTL_BLEND_FACTOR_DESTINATION_ALPHA = 8,
++   MTL_BLEND_FACTOR_ONE_MINUS_DESTINATION_ALPHA = 9,
++   MTL_BLEND_FACTOR_SOURCE_ALPHA_SATURATED = 10,
++   MTL_BLEND_FACTOR_BLEND_COLOR = 11,
++   MTL_BLEND_FACTOR_ONE_MINUS_BLEND_COLOR = 12,
++   MTL_BLEND_FACTOR_BLEND_ALPHA = 13,
++   MTL_BLEND_FACTOR_ONE_MINUS_BLEND_ALPHA = 14,
++   MTL_BLEND_FACTOR_SOURCE1_COLOR = 15,
++   MTL_BLEND_FACTOR_ONE_MINUS_SOURCE1_COLOR = 16,
++   MTL_BLEND_FACTOR_SOURCE1_ALPHA = 17,
++   MTL_BLEND_FACTOR_ONE_MINUS_SOURCE1_ALPHA = 18,
++};
++
++enum mtl_blend_operation {
++   MTL_BLEND_OPERATION_ADD = 0,
++   MTL_BLEND_OPERATION_SUBTRACT = 1,
++   MTL_BLEND_OPERATION_REVERSE_SUBTRACT = 2,
++   MTL_BLEND_OPERATION_MIN = 3,
++   MTL_BLEND_OPERATION_MAX = 4,
++};
++
++enum mtl_color_write_mask {
++   MTL_COLOR_WRITE_MASK_NONE = 0,
++   MTL_COLOR_WRITE_MASK_ALPHA = 1 << 0,
++   MTL_COLOR_WRITE_MASK_BLUE = 1 << 1,
++   MTL_COLOR_WRITE_MASK_GREEN = 1 << 2,
++   MTL_COLOR_WRITE_MASK_RED = 1 << 3,
++};
++
+ enum mtl_winding {
+    MTL_WINDING_CLOCKWISE = 0,
+    MTL_WINDING_COUNTER_CLOCKWISE = 1,
+diff --git a/src/kosmickrisp/bridge/stubs/mtl_compiler.c b/src/kosmickrisp/bridge/stubs/mtl_compiler.c
+index 11af4e79ba56922b19419eaa9bf334b09e42a291..c04dc5a3c38816102b0ddf0a420d2d0d324adfaa 100644
+--- a/src/kosmickrisp/bridge/stubs/mtl_compiler.c
++++ b/src/kosmickrisp/bridge/stubs/mtl_compiler.c
+@@ -74,6 +74,16 @@ mtl_render_pipeline_descriptor_set_color_attachment_format(
+ {
+ }
+ 
++void
++mtl_render_pipeline_descriptor_set_color_attachment_blend(
++   mtl_render_pipeline_descriptor *descriptor, uint8_t index, bool enable,
++   enum mtl_blend_factor src_rgb, enum mtl_blend_factor dst_rgb,
++   enum mtl_blend_operation op_rgb, enum mtl_blend_factor src_alpha,
++   enum mtl_blend_factor dst_alpha, enum mtl_blend_operation op_alpha,
++   uint8_t write_mask)
++{
++}
++
+ void
+ mtl_render_pipeline_descriptor_set_raster_sample_count(
+    mtl_render_pipeline_descriptor *descriptor, uint32_t sample_count)
+diff --git a/src/kosmickrisp/bridge/stubs/mtl_encoder.c b/src/kosmickrisp/bridge/stubs/mtl_encoder.c
+index 38995b506bcc308f98cd5eaa012267b767e4ebde..abc572c58df8bf3b750412738bc62e7b087ffd24 100644
+--- a/src/kosmickrisp/bridge/stubs/mtl_encoder.c
++++ b/src/kosmickrisp/bridge/stubs/mtl_encoder.c
+@@ -204,6 +204,11 @@ mtl_set_depth_clip_mode(mtl_render_encoder *encoder,
+ {
+ }
+ 
++void
++mtl_set_blend_color(mtl_render_encoder *encoder, const float color[4])
++{
++}
++
+ void
+ mtl_set_depth_test_bounds(mtl_render_encoder *encoder, float min, float max)
+ {
+diff --git a/src/kosmickrisp/bridge/vk_to_mtl_map.c b/src/kosmickrisp/bridge/vk_to_mtl_map.c
+index d47e64dbdcd958772a8c664b2f58bbb56f1cd96c..bc5933ad092b7521fbaffb7e7ba76655e1287fa2 100644
+--- a/src/kosmickrisp/bridge/vk_to_mtl_map.c
++++ b/src/kosmickrisp/bridge/vk_to_mtl_map.c
+@@ -226,6 +226,87 @@ vk_compare_op_to_mtl_compare_function(enum VkCompareOp op)
+    }
+ }
+ 
++enum mtl_blend_factor
++vk_blend_factor_to_mtl_blend_factor(enum VkBlendFactor factor)
++{
++   switch (factor) {
++   case VK_BLEND_FACTOR_ZERO:
++      return MTL_BLEND_FACTOR_ZERO;
++   case VK_BLEND_FACTOR_ONE:
++      return MTL_BLEND_FACTOR_ONE;
++   case VK_BLEND_FACTOR_SRC_COLOR:
++      return MTL_BLEND_FACTOR_SOURCE_COLOR;
++   case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
++      return MTL_BLEND_FACTOR_ONE_MINUS_SOURCE_COLOR;
++   case VK_BLEND_FACTOR_DST_COLOR:
++      return MTL_BLEND_FACTOR_DESTINATION_COLOR;
++   case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
++      return MTL_BLEND_FACTOR_ONE_MINUS_DESTINATION_COLOR;
++   case VK_BLEND_FACTOR_SRC_ALPHA:
++      return MTL_BLEND_FACTOR_SOURCE_ALPHA;
++   case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
++      return MTL_BLEND_FACTOR_ONE_MINUS_SOURCE_ALPHA;
++   case VK_BLEND_FACTOR_DST_ALPHA:
++      return MTL_BLEND_FACTOR_DESTINATION_ALPHA;
++   case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
++      return MTL_BLEND_FACTOR_ONE_MINUS_DESTINATION_ALPHA;
++   case VK_BLEND_FACTOR_CONSTANT_COLOR:
++      return MTL_BLEND_FACTOR_BLEND_COLOR;
++   case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
++      return MTL_BLEND_FACTOR_ONE_MINUS_BLEND_COLOR;
++   case VK_BLEND_FACTOR_CONSTANT_ALPHA:
++      return MTL_BLEND_FACTOR_BLEND_ALPHA;
++   case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
++      return MTL_BLEND_FACTOR_ONE_MINUS_BLEND_ALPHA;
++   case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
++      return MTL_BLEND_FACTOR_SOURCE_ALPHA_SATURATED;
++   case VK_BLEND_FACTOR_SRC1_COLOR:
++      return MTL_BLEND_FACTOR_SOURCE1_COLOR;
++   case VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR:
++      return MTL_BLEND_FACTOR_ONE_MINUS_SOURCE1_COLOR;
++   case VK_BLEND_FACTOR_SRC1_ALPHA:
++      return MTL_BLEND_FACTOR_SOURCE1_ALPHA;
++   case VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA:
++      return MTL_BLEND_FACTOR_ONE_MINUS_SOURCE1_ALPHA;
++   default:
++      UNREACHABLE("Unsupported blend factor");
++   }
++}
++
++enum mtl_blend_operation
++vk_blend_op_to_mtl_blend_operation(enum VkBlendOp op)
++{
++   switch (op) {
++   case VK_BLEND_OP_ADD:
++      return MTL_BLEND_OPERATION_ADD;
++   case VK_BLEND_OP_SUBTRACT:
++      return MTL_BLEND_OPERATION_SUBTRACT;
++   case VK_BLEND_OP_REVERSE_SUBTRACT:
++      return MTL_BLEND_OPERATION_REVERSE_SUBTRACT;
++   case VK_BLEND_OP_MIN:
++      return MTL_BLEND_OPERATION_MIN;
++   case VK_BLEND_OP_MAX:
++      return MTL_BLEND_OPERATION_MAX;
++   default:
++      UNREACHABLE("Unsupported blend operation");
++   }
++}
++
++uint8_t
++vk_color_write_mask_to_mtl_color_write_mask(uint8_t mask)
++{
++   uint8_t mtl_mask = MTL_COLOR_WRITE_MASK_NONE;
++   if (mask & VK_COLOR_COMPONENT_R_BIT)
++      mtl_mask |= MTL_COLOR_WRITE_MASK_RED;
++   if (mask & VK_COLOR_COMPONENT_G_BIT)
++      mtl_mask |= MTL_COLOR_WRITE_MASK_GREEN;
++   if (mask & VK_COLOR_COMPONENT_B_BIT)
++      mtl_mask |= MTL_COLOR_WRITE_MASK_BLUE;
++   if (mask & VK_COLOR_COMPONENT_A_BIT)
++      mtl_mask |= MTL_COLOR_WRITE_MASK_ALPHA;
++   return mtl_mask;
++}
++
+ enum mtl_winding
+ vk_front_face_to_mtl_winding(enum VkFrontFace face)
+ {
+diff --git a/src/kosmickrisp/bridge/vk_to_mtl_map.h b/src/kosmickrisp/bridge/vk_to_mtl_map.h
+index d16a68b0b373f56181f82965a68d3ec2a295175c..3fea51a649f5489eb0e891a12ab6740eb1b65024 100644
+--- a/src/kosmickrisp/bridge/vk_to_mtl_map.h
++++ b/src/kosmickrisp/bridge/vk_to_mtl_map.h
+@@ -6,6 +6,8 @@
+ #ifndef KK_MTL_TO_VK_MAP_H
+ #define KK_MTL_TO_VK_MAP_H 1
+ 
++#include <stdint.h>
++
+ struct mtl_origin;
+ struct mtl_size;
+ enum mtl_primitive_type;
+@@ -18,6 +20,8 @@ enum mtl_sampler_min_mag_filter;
+ enum mtl_sampler_mip_filter;
+ enum mtl_sampler_reduction_mode;
+ enum mtl_compare_function;
++enum mtl_blend_factor;
++enum mtl_blend_operation;
+ enum mtl_winding;
+ enum mtl_cull_mode;
+ enum mtl_index_type;
+@@ -37,6 +41,8 @@ enum VkFilter;
+ enum VkSamplerMipmapMode;
+ enum VkSamplerReductionMode;
+ enum VkCompareOp;
++enum VkBlendFactor;
++enum VkBlendOp;
+ enum VkFrontFace;
+ enum VkCullModeFlagBits;
+ enum VkResolveModeFlagBits;
+@@ -80,6 +86,12 @@ vk_sampler_reduction_mode_to_mtl_sampler_reduction_mode(
+ enum mtl_compare_function
+ vk_compare_op_to_mtl_compare_function(enum VkCompareOp op);
+ 
++enum mtl_blend_factor vk_blend_factor_to_mtl_blend_factor(enum VkBlendFactor factor);
++
++enum mtl_blend_operation vk_blend_op_to_mtl_blend_operation(enum VkBlendOp op);
++
++uint8_t vk_color_write_mask_to_mtl_color_write_mask(uint8_t mask);
++
+ enum mtl_winding vk_front_face_to_mtl_winding(enum VkFrontFace face);
+ 
+ enum mtl_cull_mode vk_front_face_to_mtl_cull_mode(enum VkCullModeFlagBits mode);

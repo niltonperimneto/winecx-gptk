@@ -1,0 +1,981 @@
+diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.h b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
+index b3c2e2fa088..43610207b7b 100644
+--- a/src/kosmickrisp/vulkan/kk_cmd_buffer.h
++++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
+@@ -440,4 +440,6 @@ void kk_cmd_write(struct kk_cmd_buffer *cmd, struct libkk_imm_write write);
+ 
+ void kk_cmd_buffer_set_label(struct kk_cmd_buffer *cb, const char *label);
+ 
++void kk_cmd_prewarm_pipeline(struct kk_cmd_buffer *cmd);
++
+ #endif
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index 9dd9593fd42..b67f586b227 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -558,7 +558,10 @@ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+       goto fail_mem_cache;
+    }
+ 
+-   kk_pso_cache_init(&dev->pso_cache);
++   if (!kk_pso_cache_init(&dev->pso_cache)) {
++      result = VK_ERROR_OUT_OF_HOST_MEMORY;
++      goto fail_mem_cache;
++   }
+    simple_mtx_init(&dev->empty_fs_lock, mtx_plain);
+ 
+    result = kk_device_init_meta(dev);
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index 0ab7898eeb4..c4324c802b2 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -5,6 +5,8 @@
+ 
+ #include "kk_pso_cache.h"
+ #include "kk_metal_cache.h"
++#include "kk_variant_history.h"
++#include "kk_physical_device.h"
+ 
+ #include "kk_cmd_buffer.h"
+ #include "kk_device.h"
+@@ -34,6 +36,76 @@ struct kk_pso_entry {
+    bool drawn;
+ };
+ 
++struct kk_variant_recipe {
++   blake3_hash family;
++   struct kk_fs_link_key fs;
++   struct kk_pso_key pso;
++   uint32_t sample_mask;
++   uint32_t write_enables;
++   uint32_t logic_enable;
++   uint32_t logic_op;
++   struct vk_color_blend_attachment_state input_blend[MAX_DRAW_BUFFERS];
++};
++
++struct kk_recipe_entry {
++   struct kk_variant_recipe recipe;
++   struct kk_pso_key native_key;
++   mtl_render_pipeline_state *pso;
++   cnd_t ready;
++   bool compiling;
++   bool drawn;
++   bool queued;
++   bool complete;
++   bool prewarmed;
++};
++
++static uint32_t
++kk_recipe_hash(const void *key)
++{
++   return _mesa_hash_data(key, sizeof(struct kk_variant_recipe));
++}
++
++static bool
++kk_recipe_equal(const void *a, const void *b)
++{
++   return memcmp(a, b, sizeof(struct kk_variant_recipe)) == 0;
++}
++
++static uint32_t
++kk_family_hash(const void *key)
++{
++   return _mesa_hash_data(key, sizeof(blake3_hash));
++}
++
++static bool
++kk_family_equal(const void *a, const void *b)
++{
++   return memcmp(a, b, sizeof(blake3_hash)) == 0;
++}
++
++static struct kk_recipe_entry *
++kk_recipe_insert_locked(struct kk_pso_cache *cache,
++                        const struct kk_variant_recipe *recipe)
++{
++   if (!cache->recipes || cache->recipe_count >= cache->recipe_limit)
++      return NULL;
++   struct kk_recipe_entry *entry = rzalloc(cache->recipes, struct kk_recipe_entry);
++   if (!entry)
++      return NULL;
++   entry->recipe = *recipe;
++   if (cnd_init(&entry->ready) != thrd_success) {
++      ralloc_free(entry);
++      return NULL;
++   }
++   if (!_mesa_hash_table_insert(cache->recipes, &entry->recipe, entry)) {
++      cnd_destroy(&entry->ready);
++      ralloc_free(entry);
++      return NULL;
++   }
++   cache->recipe_count++;
++   return entry;
++}
++
+ static uint32_t
+ kk_pso_key_hash(const void *key)
+ {
+@@ -122,23 +194,68 @@ kk_new_render_pipeline(struct kk_device *dev, mtl_function_descriptor *vs,
+    return pso;
+ }
+ 
+-void
++bool
+ kk_pso_cache_init(struct kk_pso_cache *cache)
+ {
+-   mtx_init(&cache->lock, mtx_plain);
++   if (mtx_init(&cache->lock, mtx_plain) != thrd_success)
++      return false;
++   if (cnd_init(&cache->jobs_done) != thrd_success) {
++      mtx_destroy(&cache->lock);
++      return false;
++   }
++   cache->recipe_limit = CLAMP(debug_get_num_option("MESA_KK_VARIANT_RECIPE_LIMIT", 4096), 1, 8192);
+    cache->table =
+       _mesa_hash_table_create(NULL, kk_pso_key_hash, kk_pso_key_equal);
+-   util_queue_init(&cache->prewarm_queue, "kk-pso", 64, 2,
+-                   UTIL_QUEUE_INIT_RESIZE_IF_FULL, NULL);
++   cache->recipes = _mesa_hash_table_create(NULL, kk_recipe_hash, kk_recipe_equal);
++   cache->families = _mesa_hash_table_create(NULL, kk_family_hash, kk_family_equal);
++   if (!cache->table || !cache->recipes || !cache->families) {
++      _mesa_hash_table_destroy(cache->table, NULL);
++      _mesa_hash_table_destroy(cache->recipes, NULL);
++      _mesa_hash_table_destroy(cache->families, NULL);
++      cache->table = NULL;
++      cache->recipes = NULL;
++      cache->families = NULL;
++      cnd_destroy(&cache->jobs_done);
++      mtx_destroy(&cache->lock);
++      return false;
++   }
++   struct kk_device *dev = container_of(cache, struct kk_device, pso_cache);
++   struct disk_cache *disk = kk_device_physical(dev)->vk.disk_cache;
++   if (!dev->vk.disable_internal_cache &&
++       !debug_get_bool_option("MESA_KK_PSO_CACHE_DISABLE", false)) {
++      cache->history = kk_variant_history_create(disk, sizeof(struct kk_variant_recipe));
++      cache->limited = !cache->history;
++   }
++   bool background = util_queue_init(&cache->prewarm_queue, "kk-pso", 64, 2,
++                                    UTIL_QUEUE_INIT_RESIZE_IF_FULL, NULL);
++   bool exact = util_queue_init(&cache->exact_queue, "kk-exact", 32, 1,
++                               UTIL_QUEUE_INIT_RESIZE_IF_FULL, NULL);
++   cache->limited |= !background || !exact;
++   return true;
+ }
+ 
+ void
+ kk_pso_cache_finish(struct kk_pso_cache *cache)
+ {
++   if (util_queue_is_initialized(&cache->exact_queue)) {
++      util_queue_finish(&cache->exact_queue);
++      util_queue_destroy(&cache->exact_queue);
++   }
+    if (util_queue_is_initialized(&cache->prewarm_queue)) {
+       util_queue_finish(&cache->prewarm_queue);
+       util_queue_destroy(&cache->prewarm_queue);
+    }
++   kk_variant_history_destroy(cache->history);
++   cache->history = NULL;
++   if (cache->recipes) {
++      hash_table_foreach(cache->recipes, he) {
++         struct kk_recipe_entry *entry = he->data;
++         cnd_destroy(&entry->ready);
++      }
++      _mesa_hash_table_destroy(cache->recipes, NULL);
++   }
++   if (cache->families)
++      _mesa_hash_table_destroy(cache->families, NULL);
+    if (cache->table) {
+       hash_table_foreach(cache->table, he) {
+          struct kk_pso_entry *entry = he->data;
+@@ -155,6 +272,30 @@ kk_pso_cache_finish(struct kk_pso_cache *cache)
+       cache->table = NULL;
+    }
+    mtx_destroy(&cache->lock);
++   cnd_destroy(&cache->jobs_done);
++}
++
++VkResult
++kk_pso_prewarm_wait(struct kk_device *dev)
++{
++   struct kk_pso_cache *cache = &dev->pso_cache;
++   mtx_lock(&cache->lock);
++   while (cache->pending_jobs)
++      cnd_wait(&cache->jobs_done, &cache->lock);
++   VkResult result = cache->failed_jobs ? VK_ERROR_UNKNOWN :
++      cache->limited ? VK_NOT_READY : VK_SUCCESS;
++   mtx_unlock(&cache->lock);
++   return result;
++}
++
++VkBool32
++kk_pso_prewarm_ready(struct kk_device *dev)
++{
++   struct kk_pso_cache *cache = &dev->pso_cache;
++   mtx_lock(&cache->lock);
++   bool ready = !cache->pending_jobs && !cache->failed_jobs && !cache->limited;
++   mtx_unlock(&cache->lock);
++   return ready;
+ }
+ 
+ mtl_render_pipeline_state *
+@@ -289,6 +430,25 @@ kk_fs_link_key_needed(const struct kk_shader *fs,
+    return false;
+ }
+ 
++static void
++kk_copy_blend(struct vk_color_blend_attachment_state *dst,
++               const struct vk_color_blend_attachment_state *src)
++{
++   memset(dst, 0, sizeof(*dst));
++   dst->blend_enable = src->blend_enable;
++   dst->src_color_blend_factor = src->src_color_blend_factor;
++   dst->dst_color_blend_factor = src->dst_color_blend_factor;
++   dst->src_alpha_blend_factor = src->src_alpha_blend_factor;
++   dst->dst_alpha_blend_factor = src->dst_alpha_blend_factor;
++   dst->write_mask = src->write_mask;
++   dst->color_blend_op = src->color_blend_op;
++   dst->alpha_blend_op = src->alpha_blend_op;
++   dst->src_premultiplied = src->src_premultiplied;
++   dst->dst_premultiplied = src->dst_premultiplied;
++   dst->blend_overlap = src->blend_overlap;
++   dst->clamp_results = src->clamp_results;
++}
++
+ static void
+ kk_build_fs_link_key(const struct kk_link_state *ls, const struct kk_shader *vs,
+                      const struct kk_shader *fs, bool force_shader_blend,
+@@ -311,7 +471,7 @@ kk_build_fs_link_key(const struct kk_link_state *ls, const struct kk_shader *vs,
+ 
+       enum pipe_format format = vk_format_to_pipe_format(vk_format);
+       key->rt_formats[rt] = vk_format;
+-      key->blend[rt] = dyn->cb.attachments[i];
++      kk_copy_blend(&key->blend[rt], &dyn->cb.attachments[i]);
+       if (!(dyn->cb.color_write_enables & BITFIELD_BIT(i)))
+          key->blend[rt].write_mask = 0;
+ 
+@@ -409,6 +569,8 @@ static struct kk_shader *
+ kk_link_rast_shader(const struct kk_link_state *ls)
+ {
+    struct kk_shader *vs = ls->shaders[MESA_SHADER_VERTEX];
++   if (!vs)
++      return NULL;
+    if (!vs->info.shader_object)
+       return vs;
+ 
+@@ -421,41 +583,180 @@ kk_link_rast_shader(const struct kk_link_state *ls)
+    return vs->info.so_hw ? vs : NULL;
+ }
+ 
+-static mtl_render_pipeline_state *
+-kk_link(struct kk_device *dev, const struct kk_link_state *ls,
+-        struct kk_shader *vs, struct kk_shader *fs, bool force_shader_blend)
++static void
++kk_recipe_family(struct kk_shader *vs, struct kk_shader *fs, blake3_hash family)
+ {
+-   const struct vk_dynamic_graphics_state *dyn = ls->dyn;
++   struct {
++      uint32_t version;
++      blake3_hash rast;
++      blake3_hash fragment;
++   } identity = { .version = 1 };
++   kk_shader_variant_identity(vs, identity.rast);
++   kk_shader_variant_identity(fs, identity.fragment);
++   _mesa_blake3_compute(&identity, sizeof(identity), family);
++}
+ 
+-   struct kk_fs_link_key fs_key;
+-   kk_build_fs_link_key(ls, vs, fs, force_shader_blend, &fs_key);
++static void
++kk_make_recipe(const struct kk_link_state *ls, struct kk_shader *vs,
++                struct kk_shader *fs, bool force_shader_blend,
++                struct kk_variant_recipe *recipe)
++{
++   memset(recipe, 0, sizeof(*recipe));
++   kk_recipe_family(vs, fs, recipe->family);
++   kk_build_fs_link_key(ls, vs, fs, force_shader_blend, &recipe->fs);
++   recipe->sample_mask = ls->dyn->ms.sample_mask;
++   recipe->logic_enable = ls->dyn->cb.logic_op_enable;
++   recipe->logic_op = ls->dyn->cb.logic_op;
++   for (unsigned i = 0; i < ls->color_att_count; ++i) {
++      unsigned rt = ls->dyn->cal.color_map[i];
++      if (rt >= MAX_DRAW_BUFFERS)
++         continue;
++      kk_copy_blend(&recipe->input_blend[rt], &ls->dyn->cb.attachments[i]);
++      if (ls->dyn->cb.color_write_enables & BITFIELD_BIT(i))
++         recipe->write_enables |= BITFIELD_BIT(rt);
++   }
++   kk_pso_key_init(&recipe->pso);
++   recipe->pso.topology_class = kk_link_topology_class(ls);
++   struct kk_fs_variant blend = { .shader_blend = recipe->fs.shader_blend };
++   kk_build_pso_blend(ls, &recipe->fs, &blend, &recipe->pso);
++   recipe->pso.amplification = util_bitcount(ls->view_mask);
++   recipe->pso.sample_count = ls->dyn->ms.rasterization_samples;
++   recipe->pso.alpha_to_coverage =
++      !recipe->fs.shader_blend && ls->dyn->ms.alpha_to_coverage_enable;
++   recipe->pso.alpha_to_one =
++      !recipe->fs.shader_blend && ls->dyn->ms.alpha_to_one_enable;
++}
+ 
++static mtl_render_pipeline_state *
++kk_prepare_recipe(struct kk_device *dev, struct kk_shader *vs,
++                   struct kk_shader *fs, const struct kk_variant_recipe *recipe,
++                   struct kk_pso_key *native_key)
++{
+    const struct kk_fs_variant *variant = &fs->fast;
+-   if (kk_fs_link_key_needed(fs, &fs_key) &&
+-       kk_shader_get_fs_variant(dev, fs, &fs_key, &variant) != VK_SUCCESS)
++   if (kk_fs_link_key_needed(fs, &recipe->fs) &&
++       kk_shader_get_fs_variant(dev, fs, &recipe->fs, &variant) != VK_SUCCESS)
+       return NULL;
+-
+-   struct kk_pso_key key;
+-   kk_pso_key_init(&key);
+-   key.topology_class = kk_link_topology_class(ls);
+-
+    const struct kk_fs_variant *rast = kk_shader_get_rast(
+-      dev, vs, key.topology_class == MTL_PRIMITIVE_TOPOLOGY_CLASS_POINT);
+-   if (rast == NULL)
++      dev, vs, recipe->pso.topology_class == MTL_PRIMITIVE_TOPOLOGY_CLASS_POINT);
++   if (!rast)
+       return NULL;
+-
++   struct kk_pso_key key = recipe->pso;
+    memcpy(key.rast, rast->hash, sizeof(key.rast));
+    memcpy(key.fs, variant->hash, sizeof(key.fs));
+-   kk_build_pso_blend(ls, &fs_key, variant, &key);
+-   key.amplification = util_bitcount(ls->view_mask);
+-   key.sample_count = dyn->ms.rasterization_samples;
+-   key.alpha_to_coverage =
+-      !variant->shader_blend && dyn->ms.alpha_to_coverage_enable;
+-   key.alpha_to_one = !variant->shader_blend && dyn->ms.alpha_to_one_enable;
+-
++   *native_key = key;
+    return kk_pso_cache_get(dev, &key, rast->fn, variant->fn);
+ }
+ 
++static mtl_render_pipeline_state *
++kk_recipe_get(struct kk_device *dev, struct kk_shader *vs,
++               struct kk_shader *fs, const struct kk_variant_recipe *recipe)
++{
++   struct kk_pso_cache *cache = &dev->pso_cache;
++   bool trace_enabled = dev->variant_trace_enabled;
++   blake3_hash previous, previous_family;
++   bool previous_valid = false, previous_family_valid = false;
++   if (trace_enabled) {
++      memcpy(previous, kk_variant_parent_id, sizeof(previous));
++      memcpy(previous_family, kk_variant_family_id, sizeof(previous_family));
++      previous_valid = kk_variant_parent_valid;
++      previous_family_valid = kk_variant_family_valid;
++      _mesa_blake3_compute(recipe, sizeof(*recipe), kk_variant_parent_id);
++      kk_variant_parent_valid = true;
++      memcpy(kk_variant_family_id, recipe->family, sizeof(kk_variant_family_id));
++      kk_variant_family_valid = true;
++   }
++   mtx_lock(&cache->lock);
++   struct hash_entry *he = cache->recipes ?
++      _mesa_hash_table_search(cache->recipes, recipe) : NULL;
++   struct kk_recipe_entry *entry = he ? he->data : NULL;
++   if (!entry)
++      entry = kk_recipe_insert_locked(cache, recipe);
++   if (!entry && kk_compile_origin == KK_COMPILE_ORIGIN_PREWARM) {
++      cache->limited = true;
++      mtx_unlock(&cache->lock);
++      kk_variant_trace(dev, KK_VARIANT_FAILURE, recipe, sizeof(*recipe), 0, 0);
++      if (trace_enabled) {
++         memcpy(kk_variant_parent_id, previous, sizeof(previous));
++         kk_variant_parent_valid = previous_valid;
++         memcpy(kk_variant_family_id, previous_family, sizeof(previous_family));
++         kk_variant_family_valid = previous_family_valid;
++      }
++      return NULL;
++   }
++   bool first = entry && kk_compile_origin == KK_COMPILE_ORIGIN_DRAW && !entry->drawn;
++   if (first) {
++      entry->drawn = true;
++      kk_variant_trace(dev, KK_VARIANT_FIRST_DEMAND, recipe, sizeof(*recipe), 0, 0);
++   }
++   if (entry && kk_compile_origin == KK_COMPILE_ORIGIN_DRAW &&
++       (entry->compiling || entry->queued)) {
++      int64_t start = os_time_get_nano();
++      while (entry->compiling || entry->queued)
++         cnd_wait(&entry->ready, &cache->lock);
++      kk_log_compile(dev, "variant_wait", start);
++      kk_variant_trace(dev, KK_VARIANT_PSO_WAIT, recipe, sizeof(*recipe),
++                       start, os_time_get_nano());
++   }
++   bool compile = entry && !entry->complete && !entry->compiling;
++   if (compile) {
++      entry->queued = false;
++      entry->compiling = true;
++      entry->prewarmed |= kk_compile_origin == KK_COMPILE_ORIGIN_PREWARM;
++   } else if (entry && entry->compiling) {
++      int64_t start = os_time_get_nano();
++      while (entry->compiling)
++         cnd_wait(&entry->ready, &cache->lock);
++      kk_variant_trace(dev, KK_VARIANT_PSO_WAIT, recipe, sizeof(*recipe),
++                       start, os_time_get_nano());
++   }
++   mtl_render_pipeline_state *pso = entry && !compile ? entry->pso : NULL;
++   mtx_unlock(&cache->lock);
++   if (!entry || compile) {
++      struct kk_pso_key native_key;
++      pso = kk_prepare_recipe(dev, vs, fs, recipe, &native_key);
++      if (entry) {
++         mtx_lock(&cache->lock);
++         entry->pso = pso;
++         if (pso)
++            entry->native_key = native_key;
++         entry->compiling = false;
++         entry->complete = true;
++         cnd_broadcast(&entry->ready);
++         mtx_unlock(&cache->lock);
++      }
++      kk_variant_trace(dev, pso ? KK_VARIANT_COMPLETE : KK_VARIANT_FAILURE,
++                       recipe, sizeof(*recipe), 0, 0);
++   } else if (pso) {
++      kk_variant_trace(dev, KK_VARIANT_READY_HIT, recipe, sizeof(*recipe), 0, 0);
++      if (first && entry->prewarmed)
++         kk_log_cache_pso(dev, "prewarm_match", &entry->native_key, sizeof(entry->native_key));
++   }
++   if (pso && first) {
++      mtx_lock(&cache->lock);
++      struct hash_entry *native = _mesa_hash_table_search(cache->table, &entry->native_key);
++      if (native)
++         ((struct kk_pso_entry *)native->data)->drawn = true;
++      mtx_unlock(&cache->lock);
++      kk_variant_history_record(cache->history, recipe->family, recipe);
++   }
++   if (trace_enabled) {
++      memcpy(kk_variant_parent_id, previous, sizeof(previous));
++      kk_variant_parent_valid = previous_valid;
++      memcpy(kk_variant_family_id, previous_family, sizeof(previous_family));
++      kk_variant_family_valid = previous_family_valid;
++   }
++   return pso;
++}
++
++static mtl_render_pipeline_state *
++kk_link(struct kk_device *dev, const struct kk_link_state *ls,
++        struct kk_shader *vs, struct kk_shader *fs, bool force_shader_blend)
++{
++   struct kk_variant_recipe recipe;
++   kk_make_recipe(ls, vs, fs, force_shader_blend, &recipe);
++   return kk_recipe_get(dev, vs, fs, &recipe);
++}
++
+ mtl_render_pipeline_state *
+ kk_link_pipeline(struct kk_device *dev, const struct kk_link_state *ls)
+ {
+@@ -493,22 +794,239 @@ kk_cmd_link_pipeline(struct kk_cmd_buffer *cmd)
+    return kk_link_pipeline(kk_cmd_buffer_device(cmd), &ls);
+ }
+ 
++static bool
++kk_recipe_bool_valid(const bool *value)
++{
++   return *(const uint8_t *)value <= 1;
++}
++
++static bool
++kk_recipe_valid(struct kk_device *dev, struct kk_shader *vs, struct kk_shader *fs,
++                 const struct kk_variant_recipe *recipe)
++{
++   blake3_hash family;
++   kk_recipe_family(vs, fs, family);
++   if (memcmp(family, recipe->family, sizeof(family)) ||
++       recipe->pso.topology_class < MTL_PRIMITIVE_TOPOLOGY_CLASS_POINT ||
++       recipe->pso.topology_class > MTL_PRIMITIVE_TOPOLOGY_CLASS_TRIANGLE ||
++       !util_is_power_of_two_or_zero(recipe->pso.sample_count) ||
++       !recipe->pso.sample_count || recipe->pso.sample_count > 8 ||
++       !(dev->vk.physical->properties.framebufferColorSampleCounts & recipe->pso.sample_count) ||
++       recipe->pso.amplification > 32 || recipe->pso.alpha_to_coverage > 1 ||
++       recipe->pso.alpha_to_one > 1 || recipe->fs.logic_op > VK_LOGIC_OP_SET ||
++       recipe->fs.advanced_blend_mask & ~BITFIELD_MASK(MAX_DRAW_BUFFERS) ||
++       recipe->logic_enable > 1 || recipe->logic_op > VK_LOGIC_OP_SET ||
++       recipe->write_enables & ~BITFIELD_MASK(MAX_DRAW_BUFFERS) ||
++       recipe->fs.missing_inputs !=
++          (fs->info.fs.inputs_read & ~vs->info.rast_outputs_written) ||
++       recipe->fs.num_cull_distances != vs->info.rast_num_cull_distances ||
++       recipe->fs.primitive_id_slot !=
++          (fs->info.fs.reads_primitive_id ? vs->info.rast_primitive_id_slot : 0))
++      return false;
++   const bool *flags[] = {
++      &recipe->fs.logic_op_enable, &recipe->fs.shader_blend,
++      &recipe->fs.remove_depth, &recipe->fs.alpha_to_coverage,
++      &recipe->fs.alpha_to_one, &recipe->fs.sample_mask,
++   };
++   for (unsigned i = 0; i < ARRAY_SIZE(flags); ++i)
++      if (!kk_recipe_bool_valid(flags[i]))
++         return false;
++   for (unsigned i = 0; i < MAX_DRAW_BUFFERS; ++i) {
++      VkFormat format = recipe->fs.rt_formats[i];
++      enum pipe_format pipe = vk_format_to_pipe_format(format);
++      if (format != VK_FORMAT_UNDEFINED &&
++          (pipe == PIPE_FORMAT_NONE || util_format_is_depth_or_stencil(pipe)))
++         return false;
++      const struct kk_va_format *va = pipe == PIPE_FORMAT_NONE ? NULL : kk_get_va_format(pipe);
++      if (format != VK_FORMAT_UNDEFINED &&
++          (!va || !va->color || (recipe->pso.sample_count > 1 && !va->msaa)))
++         return false;
++      if (recipe->pso.rt_formats[i] !=
++          (va ? va->mtl_pixel_format : MTL_PIXEL_FORMAT_INVALID))
++         return false;
++      const struct kk_pso_blend *b = &recipe->pso.blend[i];
++      if (b->enable > 1 || b->src_rgb > MTL_BLEND_FACTOR_ONE_MINUS_SOURCE1_ALPHA ||
++          b->dst_rgb > MTL_BLEND_FACTOR_ONE_MINUS_SOURCE1_ALPHA ||
++          b->src_alpha > MTL_BLEND_FACTOR_ONE_MINUS_SOURCE1_ALPHA ||
++          b->dst_alpha > MTL_BLEND_FACTOR_ONE_MINUS_SOURCE1_ALPHA ||
++          b->op_rgb > MTL_BLEND_OPERATION_MAX || b->op_alpha > MTL_BLEND_OPERATION_MAX ||
++          b->write_mask > 15)
++         return false;
++      for (unsigned group = 0; group < 2; ++group) {
++         const struct vk_color_blend_attachment_state *a = group ?
++            &recipe->input_blend[i] : &recipe->fs.blend[i];
++         if (!kk_recipe_bool_valid(&a->blend_enable) ||
++             !kk_recipe_bool_valid(&a->src_premultiplied) ||
++             !kk_recipe_bool_valid(&a->dst_premultiplied) ||
++             !kk_recipe_bool_valid(&a->clamp_results) || a->write_mask > 15 ||
++             a->src_color_blend_factor > VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA ||
++             a->dst_color_blend_factor > VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA ||
++             a->src_alpha_blend_factor > VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA ||
++             a->dst_alpha_blend_factor > VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA ||
++             a->blend_overlap > VK_BLEND_OVERLAP_CONJOINT_EXT)
++            return false;
++         VkBlendOp ops[] = {a->color_blend_op, a->alpha_blend_op};
++         for (unsigned j = 0; j < ARRAY_SIZE(ops); ++j)
++            if ((unsigned)ops[j] > VK_BLEND_OP_MAX &&
++                ((unsigned)ops[j] < VK_BLEND_OP_ZERO_EXT ||
++                 (unsigned)ops[j] > VK_BLEND_OP_BLUE_EXT))
++               return false;
++         struct vk_color_blend_attachment_state normalized;
++         kk_copy_blend(&normalized, a);
++         if (memcmp(a, &normalized, sizeof(normalized)))
++            return false;
++      }
++   }
++   uint8_t zero[sizeof(blake3_hash)] = {0};
++   if (memcmp(recipe->pso.rast, zero, sizeof(zero)) ||
++       memcmp(recipe->pso.fs, zero, sizeof(zero)) ||
++       memcmp(recipe->fs.pad, zero, sizeof(recipe->fs.pad)))
++      return false;
++   return true;
++}
++
+ struct kk_prewarm_job {
+    struct kk_device *dev;
+-   struct vk_dynamic_graphics_state dyn;
+-   struct kk_link_state link;
++   struct kk_shader *shaders[MESA_SHADER_COMPUTE];
++   struct kk_variant_recipe recipe;
+    struct util_queue_fence fence;
++   bool exact;
++   bool load_history;
++   BITSET_DECLARE(dynamic, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX);
+ };
+ 
++static bool
++kk_prewarm_recipe(struct kk_device *dev, struct kk_shader *vs,
++                  struct kk_shader *fs, const struct kk_variant_recipe *recipe)
++{
++   if (kk_recipe_get(dev, vs, fs, recipe))
++      return true;
++   if (recipe->fs.shader_blend)
++      return false;
++   struct kk_variant_recipe fallback = *recipe;
++   fallback.fs.shader_blend = true;
++   fallback.fs.logic_op_enable = recipe->logic_enable;
++   fallback.fs.logic_op = recipe->logic_op;
++   fallback.fs.alpha_to_coverage = recipe->pso.alpha_to_coverage;
++   fallback.fs.alpha_to_one = recipe->pso.alpha_to_one;
++   fallback.pso.alpha_to_coverage = 0;
++   fallback.pso.alpha_to_one = 0;
++   struct kk_pso_key defaults;
++   kk_pso_key_init(&defaults);
++   memcpy(fallback.pso.blend, defaults.blend, sizeof(fallback.pso.blend));
++   for (unsigned i = 0; i < MAX_DRAW_BUFFERS; ++i) {
++      if (recipe->fs.rt_formats[i] == VK_FORMAT_UNDEFINED)
++         continue;
++      kk_copy_blend(&fallback.fs.blend[i], &recipe->input_blend[i]);
++      if (!(recipe->write_enables & BITFIELD_BIT(i)))
++         fallback.fs.blend[i].write_mask = 0;
++   }
++   return kk_recipe_get(dev, vs, fs, &fallback) != NULL;
++}
++
++static bool
++kk_history_matches(const struct kk_prewarm_job *job, const struct kk_variant_recipe *r)
++{
++   const struct kk_variant_recipe *d = &job->recipe;
++   if (memcmp(r->fs.rt_formats, d->fs.rt_formats, sizeof(r->fs.rt_formats)) ||
++       r->fs.remove_depth != d->fs.remove_depth || r->pso.amplification != d->pso.amplification ||
++       r->pso.topology_class != d->pso.topology_class)
++      return false;
++   if ((!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES) &&
++        r->pso.sample_count != d->pso.sample_count) ||
++       (!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_MASK) && r->sample_mask != d->sample_mask) ||
++       (!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE) &&
++        (r->pso.alpha_to_coverage || r->fs.alpha_to_coverage) !=
++        (d->pso.alpha_to_coverage || d->fs.alpha_to_coverage)) ||
++       (!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_MS_ALPHA_TO_ONE_ENABLE) &&
++        (r->pso.alpha_to_one || r->fs.alpha_to_one) != (d->pso.alpha_to_one || d->fs.alpha_to_one)) ||
++       (!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE) && r->logic_enable != d->logic_enable) ||
++       (!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP) && r->logic_op != d->logic_op) ||
++       (!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES) && r->write_enables != d->write_enables))
++      return false;
++   for (unsigned i = 0; i < MAX_DRAW_BUFFERS; ++i) {
++      const struct vk_color_blend_attachment_state *a = &r->input_blend[i];
++      const struct vk_color_blend_attachment_state *b = &d->input_blend[i];
++      if ((!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_CB_BLEND_ENABLES) && a->blend_enable != b->blend_enable) ||
++          (!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_CB_WRITE_MASKS) && a->write_mask != b->write_mask))
++         return false;
++      if (!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS) &&
++          (a->src_color_blend_factor != b->src_color_blend_factor ||
++           a->dst_color_blend_factor != b->dst_color_blend_factor ||
++           a->src_alpha_blend_factor != b->src_alpha_blend_factor ||
++           a->dst_alpha_blend_factor != b->dst_alpha_blend_factor ||
++           a->color_blend_op != b->color_blend_op || a->alpha_blend_op != b->alpha_blend_op))
++         return false;
++      if (!BITSET_TEST(job->dynamic, MESA_VK_DYNAMIC_CB_BLEND_ADVANCED) &&
++          (a->src_premultiplied != b->src_premultiplied || a->dst_premultiplied != b->dst_premultiplied ||
++           a->blend_overlap != b->blend_overlap || a->clamp_results != b->clamp_results))
++         return false;
++   }
++   return true;
++}
++
+ static void
+ kk_prewarm_execute(void *data, void *global_data, int thread_index)
+ {
+    struct kk_prewarm_job *job = data;
+    enum kk_compile_origin origin = kk_compile_origin;
+    kk_compile_origin = KK_COMPILE_ORIGIN_PREWARM;
+-   if (KK_DEBUG(PSO))
+-      mesa_logi("PSO prewarm started");
+-   kk_link_pipeline(job->dev, &job->link);
++   bool trace_enabled = job->dev->variant_trace_enabled;
++   blake3_hash previous_parent, previous_family;
++   bool previous_parent_valid = false, previous_family_valid = false;
++   if (trace_enabled) {
++      memcpy(previous_parent, kk_variant_parent_id, sizeof(previous_parent));
++      memcpy(previous_family, kk_variant_family_id, sizeof(previous_family));
++      previous_parent_valid = kk_variant_parent_valid;
++      previous_family_valid = kk_variant_family_valid;
++      _mesa_blake3_compute(&job->recipe, sizeof(job->recipe), kk_variant_parent_id);
++      kk_variant_parent_valid = true;
++      memcpy(kk_variant_family_id, job->recipe.family, sizeof(kk_variant_family_id));
++      kk_variant_family_valid = true;
++   }
++   int64_t start = os_time_get_nano();
++   kk_variant_trace(job->dev, KK_VARIANT_WORKER_START, &job->recipe,
++                    sizeof(job->recipe), start, start);
++   struct kk_shader *vs = job->shaders[MESA_SHADER_VERTEX];
++   struct kk_shader *fs = job->shaders[MESA_SHADER_FRAGMENT];
++   bool failed = false;
++   if (job->load_history) {
++      struct kk_variant_recipe *recipes = calloc(32, sizeof(*recipes));
++      if (recipes) {
++         int64_t history_start = os_time_get_nano();
++         unsigned count = kk_variant_history_load(job->dev->pso_cache.history,
++                                                  job->recipe.family, recipes, 32);
++         kk_variant_trace(job->dev, KK_VARIANT_HISTORY_LOAD, job->recipe.family,
++                          sizeof(job->recipe.family), history_start,
++                          os_time_get_nano());
++         for (unsigned i = 0; i < count; ++i) {
++            if (!kk_recipe_valid(job->dev, vs, fs, &recipes[i])) {
++               kk_log_cache_pso(job->dev, "history_rejected", &recipes[i], sizeof(recipes[i]));
++               continue;
++            }
++            if (!kk_history_matches(job, &recipes[i]))
++               continue;
++            kk_log_cache_pso(job->dev, "history_replay", &recipes[i], sizeof(recipes[i]));
++            failed |= !kk_prewarm_recipe(job->dev, vs, fs, &recipes[i]);
++         }
++         free(recipes);
++      } else {
++         failed = true;
++      }
++   }
++   failed |= !kk_prewarm_recipe(job->dev, vs, fs, &job->recipe);
++   if (failed) {
++      mtx_lock(&job->dev->pso_cache.lock);
++      if (!job->dev->pso_cache.limited)
++         job->dev->pso_cache.failed_jobs++;
++      mtx_unlock(&job->dev->pso_cache.lock);
++   }
++   if (trace_enabled) {
++      memcpy(kk_variant_parent_id, previous_parent, sizeof(previous_parent));
++      kk_variant_parent_valid = previous_parent_valid;
++      memcpy(kk_variant_family_id, previous_family, sizeof(previous_family));
++      kk_variant_family_valid = previous_family_valid;
++   }
+    kk_compile_origin = origin;
+ }
+ 
+@@ -516,16 +1034,106 @@ static void
+ kk_prewarm_cleanup(void *data, void *global_data, int thread_index)
+ {
+    struct kk_prewarm_job *job = data;
+-   for (uint32_t i = 0; i < MESA_SHADER_COMPUTE; ++i) {
+-      struct kk_shader *shader = job->link.shaders[i];
+-      if (shader)
++   for (unsigned i = 0; i < MESA_SHADER_COMPUTE; ++i)
++      if (job->shaders[i])
+          vk_pipeline_cache_object_unref(&job->dev->vk,
+-                                        &shader->vk.pipeline.cache_obj);
+-   }
++                                        &job->shaders[i]->vk.pipeline.cache_obj);
++   mtx_lock(&job->dev->pso_cache.lock);
++   job->dev->pso_cache.pending_jobs--;
++   job->dev->pso_cache.exact_jobs -= job->exact;
++   cnd_broadcast(&job->dev->pso_cache.jobs_done);
++   mtx_unlock(&job->dev->pso_cache.lock);
+    util_queue_fence_destroy(&job->fence);
+    free(job);
+ }
+ 
++static void
++kk_schedule_recipe(struct kk_device *dev, const struct kk_link_state *ls, bool exact,
++                    const BITSET_WORD *dynamic)
++{
++   struct kk_pso_cache *cache = &dev->pso_cache;
++   struct util_queue *queue = exact ? &cache->exact_queue : &cache->prewarm_queue;
++   struct kk_shader *vs = kk_link_rast_shader(ls);
++   struct kk_shader *fs = ls->shaders[MESA_SHADER_FRAGMENT];
++   if (!util_queue_is_initialized(queue) || !vs || !vs->info.partial ||
++       !fs || !fs->info.partial)
++      return;
++   struct kk_prewarm_job *job = calloc(1, sizeof(*job));
++   if (!job) {
++      mtx_lock(&cache->lock);
++      cache->limited = true;
++      mtx_unlock(&cache->lock);
++      return;
++   }
++   job->dev = dev;
++   job->exact = exact;
++   if (dynamic)
++      memcpy(job->dynamic, dynamic, sizeof(job->dynamic));
++   kk_make_recipe(ls, vs, fs, false, &job->recipe);
++   struct mesa_blake3 hash;
++   blake3_hash load_key;
++   _mesa_blake3_init(&hash);
++   _mesa_blake3_update(&hash, &job->recipe, sizeof(job->recipe));
++   _mesa_blake3_update(&hash, job->dynamic, sizeof(job->dynamic));
++   _mesa_blake3_final(&hash, load_key);
++   mtx_lock(&cache->lock);
++   struct hash_entry *he = cache->recipes ?
++      _mesa_hash_table_search(cache->recipes, &job->recipe) : NULL;
++   bool needs_history = !exact && cache->history && cache->families &&
++      !_mesa_hash_table_search(cache->families, load_key);
++   if (he && !needs_history) {
++      mtx_unlock(&cache->lock);
++      free(job);
++      return;
++   }
++   if (cache->pending_jobs >= 64 || (exact && cache->exact_jobs >= 16) ||
++       (needs_history && cache->family_count >= cache->recipe_limit)) {
++      cache->limited = true;
++      mtx_unlock(&cache->lock);
++      free(job);
++      return;
++   }
++   struct kk_recipe_entry *entry = he ? he->data : kk_recipe_insert_locked(cache, &job->recipe);
++   if (!entry) {
++      cache->limited = true;
++      mtx_unlock(&cache->lock);
++      free(job);
++      return;
++   }
++   if (!he) {
++      entry->queued = true;
++      entry->prewarmed = true;
++   }
++   if (needs_history) {
++      uint8_t *family = ralloc_size(cache->families, sizeof(blake3_hash));
++      if (family) {
++         memcpy(family, load_key, sizeof(blake3_hash));
++         if (_mesa_hash_table_insert(cache->families, family, family)) {
++            job->load_history = true;
++            cache->family_count++;
++         } else {
++            ralloc_free(family);
++            cache->limited = true;
++         }
++      } else {
++         cache->limited = true;
++      }
++   }
++   cache->pending_jobs++;
++   cache->exact_jobs += exact;
++   mtx_unlock(&cache->lock);
++   job->shaders[MESA_SHADER_VERTEX] = vs;
++   job->shaders[MESA_SHADER_FRAGMENT] = fs;
++   for (unsigned i = 0; i < MESA_SHADER_COMPUTE; ++i)
++      if (job->shaders[i])
++         vk_pipeline_cache_object_ref(&job->shaders[i]->vk.pipeline.cache_obj);
++   util_queue_fence_init(&job->fence);
++   int64_t time = os_time_get_nano();
++   kk_variant_trace(dev, KK_VARIANT_ENQUEUE, &job->recipe, sizeof(job->recipe), time, time);
++   util_queue_add_job(queue, job, &job->fence,
++                      kk_prewarm_execute, kk_prewarm_cleanup, sizeof(*job));
++}
++
+ static void
+ kk_prewarm_dynamic_defaults(struct vk_dynamic_graphics_state *dyn,
+                             const struct vk_graphics_pipeline_state *state)
+@@ -600,34 +1208,86 @@ kk_prewarm_pipeline(struct vk_device *vk_dev,
+    if (!vs || !vs->info.partial)
+       return;
+ 
+-   struct kk_prewarm_job *job = calloc(1, sizeof(*job));
+-   if (!job)
+-      return;
+-   job->dev = dev;
+-   vk_dynamic_graphics_state_init(&job->dyn);
+-   vk_dynamic_graphics_state_fill(&job->dyn, state);
+-   kk_prewarm_dynamic_defaults(&job->dyn, state);
+-   struct kk_link_state *ls = &job->link;
+-   ls->dyn = &job->dyn;
+-   ls->view_mask = state->mv ? state->mv->view_mask : 0;
+-   ls->color_att_count = state->rp->color_attachment_count;
+-   for (uint32_t i = 0; i < ls->color_att_count; ++i)
+-      ls->color_formats[i] = state->rp->color_attachment_formats[i];
+-   ls->depth_format = state->rp->depth_attachment_format;
+-   for (uint32_t i = 0; i < shader_count; ++i) {
++   struct vk_dynamic_graphics_state dyn;
++   vk_dynamic_graphics_state_init(&dyn);
++   vk_dynamic_graphics_state_fill(&dyn, state);
++   kk_prewarm_dynamic_defaults(&dyn, state);
++   struct kk_link_state ls = {
++      .dyn = &dyn,
++      .view_mask = state->mv ? state->mv->view_mask : 0,
++      .color_att_count = state->rp->color_attachment_count,
++      .depth_format = state->rp->depth_attachment_format,
++   };
++   for (unsigned i = 0; i < ls.color_att_count; ++i)
++      ls.color_formats[i] = state->rp->color_attachment_formats[i];
++   for (unsigned i = 0; i < shader_count; ++i) {
+       if (!shaders[i])
+          continue;
+       struct kk_shader *shader = container_of(shaders[i], struct kk_shader, vk);
+-      vk_pipeline_cache_object_ref(&shader->vk.pipeline.cache_obj);
+-      ls->shaders[shader->info.stage] = shader;
+-      if (shader->info.stage == MESA_SHADER_TESS_EVAL) {
+-         ls->tess_prim =
+-            shader->info.tess.info.points ? MESA_PRIM_POINTS :
+-            shader->info.tess.info.mode == TESS_PRIMITIVE_ISOLINES ?
+-               MESA_PRIM_LINES : MESA_PRIM_TRIANGLES;
++      ls.shaders[shader->info.stage] = shader;
++      if (shader->info.stage == MESA_SHADER_TESS_EVAL)
++         ls.tess_prim = shader->info.tess.info.points ? MESA_PRIM_POINTS :
++            shader->info.tess.info.mode == TESS_PRIMITIVE_ISOLINES ? MESA_PRIM_LINES : MESA_PRIM_TRIANGLES;
++   }
++   kk_schedule_recipe(dev, &ls, false, state->dynamic);
++}
++
++void
++kk_cmd_prewarm_pipeline(struct kk_cmd_buffer *cmd)
++{
++   const struct vk_dynamic_graphics_state *dyn = &cmd->vk.dynamic_graphics_state;
++   const struct kk_rendering_state *render = &cmd->state.gfx.render;
++   if (!cmd->state.shaders[MESA_SHADER_VERTEX] || !cmd->state.gfx.render_pass_descriptor ||
++       render->color_att_count > MAX_DRAW_BUFFERS)
++      return;
++   const enum mesa_vk_dynamic_graphics_state required[] = {
++      MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY,
++      MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES,
++      MESA_VK_DYNAMIC_MS_SAMPLE_MASK,
++      MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE,
++      MESA_VK_DYNAMIC_MS_ALPHA_TO_ONE_ENABLE,
++   };
++   for (unsigned i = 0; i < ARRAY_SIZE(required); ++i)
++      if (!BITSET_TEST(dyn->set, required[i]))
++         return;
++   if (!dyn->ms.rasterization_samples || dyn->ms.rasterization_samples > 8)
++      return;
++   if (render->color_att_count) {
++      const enum mesa_vk_dynamic_graphics_state output[] = {
++         MESA_VK_DYNAMIC_COLOR_ATTACHMENT_MAP,
++         MESA_VK_DYNAMIC_CB_ATTACHMENT_COUNT,
++         MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES,
++         MESA_VK_DYNAMIC_CB_BLEND_ENABLES,
++         MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS,
++         MESA_VK_DYNAMIC_CB_WRITE_MASKS,
++         MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE,
++      };
++      for (unsigned i = 0; i < ARRAY_SIZE(output); ++i)
++         if (!BITSET_TEST(dyn->set, output[i]))
++            return;
++      if (dyn->cb.logic_op_enable && !BITSET_TEST(dyn->set, MESA_VK_DYNAMIC_CB_LOGIC_OP))
++         return;
++      if (dyn->cb.attachment_count < render->color_att_count)
++         return;
++      for (unsigned i = 0; i < render->color_att_count; ++i) {
++         if (dyn->cb.attachments[i].blend_enable &&
++             dyn->cb.attachments[i].color_blend_op >= VK_BLEND_OP_ZERO_EXT &&
++             !BITSET_TEST(dyn->set, MESA_VK_DYNAMIC_CB_BLEND_ADVANCED))
++            return;
+       }
+    }
+-   util_queue_fence_init(&job->fence);
+-   util_queue_add_job(&dev->pso_cache.prewarm_queue, job, &job->fence,
+-                      kk_prewarm_execute, kk_prewarm_cleanup, sizeof(*job));
++   struct kk_link_state ls = {
++      .dyn = dyn,
++      .view_mask = render->view_mask,
++      .color_att_count = render->color_att_count,
++      .depth_format = render->depth_att.vk_format,
++   };
++   memcpy(ls.shaders, cmd->state.shaders, sizeof(ls.shaders));
++   struct kk_shader *tes = ls.shaders[MESA_SHADER_TESS_EVAL];
++   if (tes)
++      ls.tess_prim = tes->info.tess.info.points ? MESA_PRIM_POINTS :
++         tes->info.tess.info.mode == TESS_PRIMITIVE_ISOLINES ? MESA_PRIM_LINES : MESA_PRIM_TRIANGLES;
++   for (unsigned i = 0; i < ls.color_att_count; ++i)
++      ls.color_formats[i] = render->color_att[i].vk_format;
++   kk_schedule_recipe(kk_cmd_buffer_device(cmd), &ls, true, NULL);
+ }
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.h b/src/kosmickrisp/vulkan/kk_pso_cache.h
+index dfb59d2f73f..1a027be263e 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.h
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.h
+@@ -20,6 +20,7 @@ struct hash_table;
+ struct kk_cmd_buffer;
+ struct kk_device;
+ struct kk_shader;
++struct kk_variant_history;
+ 
+ struct kk_pso_blend {
+    uint8_t enable;
+@@ -58,6 +59,18 @@ struct kk_pso_cache {
+    mtx_t lock;
+    struct hash_table *table;
+    struct util_queue prewarm_queue;
++   struct util_queue exact_queue;
++   struct hash_table *recipes;
++   struct hash_table *families;
++   struct kk_variant_history *history;
++   cnd_t jobs_done;
++   unsigned pending_jobs;
++   unsigned exact_jobs;
++   unsigned failed_jobs;
++   unsigned recipe_count;
++   unsigned recipe_limit;
++   unsigned family_count;
++   bool limited;
+ };
+ 
+ struct vk_device;
+@@ -76,8 +89,10 @@ kk_new_render_pipeline(struct kk_device *dev, mtl_function_descriptor *vs,
+                        mtl_function_descriptor *fs,
+                        const struct kk_pso_key *key);
+ 
+-void kk_pso_cache_init(struct kk_pso_cache *cache);
++bool kk_pso_cache_init(struct kk_pso_cache *cache);
+ void kk_pso_cache_finish(struct kk_pso_cache *cache);
++VkResult kk_pso_prewarm_wait(struct kk_device *dev);
++VkBool32 kk_pso_prewarm_ready(struct kk_device *dev);
+ 
+ mtl_render_pipeline_state *kk_pso_cache_get(struct kk_device *dev,
+                                             const struct kk_pso_key *key,
