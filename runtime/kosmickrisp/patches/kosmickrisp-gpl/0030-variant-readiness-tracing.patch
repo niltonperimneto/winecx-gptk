@@ -1,0 +1,703 @@
+diff --git a/src/kosmickrisp/bridge/mtl_compiler.m b/src/kosmickrisp/bridge/mtl_compiler.m
+index b0221ab7d61..e5536e3983f 100644
+--- a/src/kosmickrisp/bridge/mtl_compiler.m
++++ b/src/kosmickrisp/bridge/mtl_compiler.m
+@@ -375,8 +375,10 @@ - (void)dealloc
+    char build[128] = {0};
+    size_t build_size = sizeof(build);
+    sysctlbyname("kern.osversion", build, &build_size, NULL, 0);
+-   snprintf(identity, size, "metal4-pso-1:%s:%llu", build,
+-            (unsigned long long)[(id<MTLDevice>)device registryID]);
++   @autoreleasepool {
++      const char *name = [[(id<MTLDevice>)device name] UTF8String];
++      snprintf(identity, size, "metal4-pso-2:%s:%s", build, name ? name : "");
++   }
+ }
+ 
+ mtl_archive *
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index b28b7d2a906..9dd9593fd42 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -34,6 +34,8 @@
+ #include "vk_pipeline_cache.h"
+ 
+ #include <time.h>
++#include <pthread.h>
++#include "util/u_atomic.h"
+ 
+ struct kk_mtl_compiler {
+    mtl_compiler *handle;
+@@ -314,6 +316,96 @@ kk_log_compile(struct kk_device *dev, const char *kind, int64_t start)
+            (long long)os_time_get_nano());
+ }
+ 
++__THREAD_INITIAL_EXEC blake3_hash kk_variant_parent_id;
++__THREAD_INITIAL_EXEC bool kk_variant_parent_valid;
++__THREAD_INITIAL_EXEC blake3_hash kk_variant_family_id;
++__THREAD_INITIAL_EXEC bool kk_variant_family_valid;
++
++static const char *const kk_variant_names[KK_VARIANT_COUNT] = {
++   "enqueue", "worker_start", "fs_prepare", "fs_wait", "raster_prepare",
++   "raster_wait", "pso_create", "pso_wait", "archive_lookup", "archive_load",
++   "native_create", "complete", "first_demand", "ready_hit", "failure",
++   "history_load",
++};
++
++void
++kk_variant_trace(struct kk_device *dev, enum kk_variant_phase phase,
++                 const void *key, size_t key_size, int64_t start, int64_t end)
++{
++   if (!dev->variant_trace_enabled || phase >= KK_VARIANT_COUNT)
++      return;
++   uint64_t duration = end >= start ? end - start : 0;
++   struct kk_variant_counter *counter = &dev->variant_counters[phase];
++   p_atomic_inc(&counter->count);
++   p_atomic_add(&counter->duration_ns, duration);
++   if (kk_compile_origin == KK_COMPILE_ORIGIN_DRAW) {
++      p_atomic_inc(&counter->draw_count);
++      p_atomic_add(&counter->draw_duration_ns, duration);
++   }
++   if (!dev->variant_log || phase == KK_VARIANT_READY_HIT)
++      return;
++   if (!start && !end)
++      start = end = os_time_get_nano();
++   blake3_hash digest;
++   char id[BLAKE3_HEX_LEN], parent[BLAKE3_HEX_LEN] = {0};
++   char family[BLAKE3_HEX_LEN] = {0};
++   _mesa_blake3_compute(key, key_size, digest);
++   _mesa_blake3_format(id, digest);
++   if (kk_variant_parent_valid)
++      _mesa_blake3_format(parent, kk_variant_parent_id);
++   if (kk_variant_family_valid)
++      _mesa_blake3_format(family, kk_variant_family_id);
++   uint64_t thread_id = (uintptr_t)pthread_self();
++#ifdef __APPLE__
++   pthread_threadid_np(NULL, &thread_id);
++#endif
++   static const char *const origins[] = {"draw", "prewarm", "create"};
++   fprintf(dev->variant_log,
++           "{\"event\":\"variant\",\"phase\":\"%s\","
++           "\"request_id\":\"%s\",\"parent_id\":\"%s\","
++           "\"family_id\":\"%s\",\"origin\":\"%s\","
++           "\"thread_id\":%llu,\"start_ns\":%lld,\"end_ns\":%lld}\n",
++           kk_variant_names[phase], id, parent, family, origins[kk_compile_origin],
++           (unsigned long long)thread_id, (long long)start, (long long)end);
++}
++
++void
++kk_variant_metal_event(void *data, const char *phase, const uint8_t *key,
++                       size_t key_size, int64_t start, int64_t end)
++{
++   enum kk_variant_phase variant_phase;
++   if (strcmp(phase, "archive_lookup") == 0)
++      variant_phase = KK_VARIANT_ARCHIVE_LOOKUP;
++   else if (strcmp(phase, "archive_load") == 0)
++      variant_phase = KK_VARIANT_ARCHIVE_LOAD;
++   else if (strcmp(phase, "native_create") == 0)
++      variant_phase = KK_VARIANT_NATIVE_CREATE;
++   else
++      return;
++   kk_variant_trace(data, variant_phase, key, key_size, start, end);
++}
++
++static void
++kk_variant_trace_finish(struct kk_device *dev)
++{
++   if (dev->variant_stats) {
++      for (unsigned i = 0; i < KK_VARIANT_COUNT; ++i) {
++         const struct kk_variant_counter *counter = &dev->variant_counters[i];
++         fprintf(dev->variant_stats,
++                 "{\"event\":\"variant_summary\",\"phase\":\"%s\","
++                 "\"count\":%llu,\"duration_ns\":%llu,"
++                 "\"draw_count\":%llu,\"draw_duration_ns\":%llu}\n",
++                 kk_variant_names[i], (unsigned long long)counter->count,
++                 (unsigned long long)counter->duration_ns,
++                 (unsigned long long)counter->draw_count,
++                 (unsigned long long)counter->draw_duration_ns);
++      }
++      fclose(dev->variant_stats);
++   }
++   if (dev->variant_log)
++      fclose(dev->variant_log);
++}
++
+ static void
+ kk_cache_namespace(struct vk_physical_device *physical, char out[33])
+ {
+@@ -377,7 +469,8 @@ void
+ kk_log_cache_pso(struct kk_device *dev, const char *event,
+                   const void *key, size_t key_size)
+ {
+-   if (!dev->cache_log)
++   if (!dev->cache_log ||
++       (!dev->cache_log_hits && strcmp(event, "pso_cache_hit") == 0))
+       return;
+    blake3_hash digest;
+    char value[BLAKE3_HEX_LEN], ns[33];
+@@ -509,6 +602,17 @@ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+       if (dev->cache_log)
+          setvbuf(dev->cache_log, NULL, _IOLBF, 0);
+    }
++   dev->cache_log_hits = debug_get_bool_option("MESA_KK_CACHE_LOG_HITS", false);
++   const char *variant_log_path = debug_get_option("MESA_KK_VARIANT_LOG", NULL);
++   const char *variant_stats_path = debug_get_option("MESA_KK_VARIANT_STATS", NULL);
++   if (variant_log_path) {
++      dev->variant_log = fopen(variant_log_path, "a");
++      if (dev->variant_log)
++         setvbuf(dev->variant_log, NULL, _IOLBF, 0);
++   }
++   if (variant_stats_path)
++      dev->variant_stats = fopen(variant_stats_path, "a");
++   dev->variant_trace_enabled = dev->variant_log || dev->variant_stats;
+    *pDevice = kk_device_to_handle(dev);
+ 
+    return VK_SUCCESS;
+@@ -589,6 +693,7 @@ kk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
+    simple_mtx_destroy(&dev->residency_set.mutex);
+ 
+    kk_release_compiler(dev);
++   kk_variant_trace_finish(dev);
+ 
+    vk_device_finish(&dev->vk);
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_device.h b/src/kosmickrisp/vulkan/kk_device.h
+index faadc04f793..f917459d3d3 100644
+--- a/src/kosmickrisp/vulkan/kk_device.h
++++ b/src/kosmickrisp/vulkan/kk_device.h
+@@ -81,6 +81,33 @@ struct kk_precompiled_cache {
+    struct kk_precompiled_shader shaders[LIBKK_NUM_PROGRAMS];
+ };
+ 
++enum kk_variant_phase {
++   KK_VARIANT_ENQUEUE,
++   KK_VARIANT_WORKER_START,
++   KK_VARIANT_FS_PREPARE,
++   KK_VARIANT_FS_WAIT,
++   KK_VARIANT_RASTER_PREPARE,
++   KK_VARIANT_RASTER_WAIT,
++   KK_VARIANT_PSO_CREATE,
++   KK_VARIANT_PSO_WAIT,
++   KK_VARIANT_ARCHIVE_LOOKUP,
++   KK_VARIANT_ARCHIVE_LOAD,
++   KK_VARIANT_NATIVE_CREATE,
++   KK_VARIANT_COMPLETE,
++   KK_VARIANT_FIRST_DEMAND,
++   KK_VARIANT_READY_HIT,
++   KK_VARIANT_FAILURE,
++   KK_VARIANT_HISTORY_LOAD,
++   KK_VARIANT_COUNT,
++};
++
++struct kk_variant_counter {
++   uint64_t count;
++   uint64_t duration_ns;
++   uint64_t draw_count;
++   uint64_t draw_duration_ns;
++};
++
+ struct kk_device {
+    struct vk_device vk;
+    const char *capture_trigger;
+@@ -90,6 +117,11 @@ struct kk_device {
+    FILE *present_log;
+    FILE *compile_log;
+    FILE *cache_log;
++   bool cache_log_hits;
++   FILE *variant_log;
++   FILE *variant_stats;
++   bool variant_trace_enabled;
++   struct kk_variant_counter variant_counters[KK_VARIANT_COUNT];
+    struct kk_metal_cache *metal_cache;
+    struct disk_cache *metal_disk;
+ 
+@@ -159,6 +191,16 @@ enum kk_compile_origin {
+ };
+ 
+ extern __THREAD_INITIAL_EXEC enum kk_compile_origin kk_compile_origin;
++extern __THREAD_INITIAL_EXEC blake3_hash kk_variant_parent_id;
++extern __THREAD_INITIAL_EXEC bool kk_variant_parent_valid;
++extern __THREAD_INITIAL_EXEC blake3_hash kk_variant_family_id;
++extern __THREAD_INITIAL_EXEC bool kk_variant_family_valid;
++
++void kk_variant_metal_event(void *data, const char *phase, const uint8_t *key,
++                            size_t key_size, int64_t start, int64_t end);
++void kk_variant_trace(struct kk_device *dev, enum kk_variant_phase phase,
++                      const void *key, size_t key_size,
++                      int64_t start, int64_t end);
+ 
+ void kk_log_compile(struct kk_device *dev, const char *kind, int64_t start);
+ void kk_log_cache_shader(struct kk_device *dev,
+diff --git a/src/kosmickrisp/vulkan/kk_metal_cache.c b/src/kosmickrisp/vulkan/kk_metal_cache.c
+index b8bf51743e0..118224058c6 100644
+--- a/src/kosmickrisp/vulkan/kk_metal_cache.c
++++ b/src/kosmickrisp/vulkan/kk_metal_cache.c
+@@ -7,6 +7,35 @@
+ #include <string.h>
+ #include <time.h>
+ 
++static _Thread_local struct kk_metal_trace kk_metal_trace;
++
++struct kk_metal_trace
++kk_metal_cache_set_trace(struct kk_metal_trace trace)
++{
++   struct kk_metal_trace previous = kk_metal_trace;
++   kk_metal_trace = trace;
++   return previous;
++}
++
++static int64_t
++kk_metal_trace_time(void)
++{
++   if (!kk_metal_trace.callback)
++      return 0;
++   struct timespec now;
++   clock_gettime(CLOCK_MONOTONIC, &now);
++   return (int64_t)now.tv_sec * 1000000000 + now.tv_nsec;
++}
++
++static void
++kk_metal_trace_event(const char *phase, const uint8_t key[CACHE_KEY_SIZE],
++                      int64_t start)
++{
++   if (kk_metal_trace.callback)
++      kk_metal_trace.callback(kk_metal_trace.data, phase, key, CACHE_KEY_SIZE,
++                             start, kk_metal_trace_time());
++}
++
+ #define KK_METAL_FORCE_FLUSH 256
+ 
+ struct kk_metal_cache_key {
+@@ -205,21 +234,25 @@ kk_metal_find_archive_locked(struct kk_metal_cache *cache, const void *ref)
+ static mtl_archive *
+ kk_metal_load(struct kk_metal_cache *cache, const uint8_t key[CACHE_KEY_SIZE])
+ {
++   int64_t lookup_start = kk_metal_trace_time();
+    cache_key reference;
+    kk_metal_reference_key(cache, key, reference);
+    size_t ref_size = 0;
+    void *ref = disk_cache_get(cache->disk, reference, &ref_size);
+    if (!ref || ref_size != CACHE_KEY_SIZE) {
++      kk_metal_trace_event("archive_lookup", key, lookup_start);
+       free(ref);
+       return NULL;
+    }
+    pthread_mutex_lock(&cache->mutex);
+    mtl_archive *archive = kk_metal_find_archive_locked(cache, ref);
+    pthread_mutex_unlock(&cache->mutex);
++   kk_metal_trace_event("archive_lookup", key, lookup_start);
+    if (archive) {
+       free(ref);
+       return archive;
+    }
++   int64_t load_start = kk_metal_trace_time();
+    size_t size = 0;
+    void *data = disk_cache_get(cache->disk, ref, &size);
+    cache_key actual;
+@@ -228,6 +261,7 @@ kk_metal_load(struct kk_metal_cache *cache, const uint8_t key[CACHE_KEY_SIZE])
+       if (!memcmp(actual, ref, CACHE_KEY_SIZE))
+          archive = mtl_new_archive(cache->device, data, size);
+    }
++   kk_metal_trace_event("archive_load", key, load_start);
+    if (archive) {
+       pthread_mutex_lock(&cache->mutex);
+       mtl_archive *existing = kk_metal_find_archive_locked(cache, ref);
+@@ -283,13 +317,19 @@ kk_metal_cache_new_render_pipeline(struct kk_metal_cache *cache,
+ {
+    *archive_hit = false;
+    mtl_archive *archive = kk_metal_load(cache, key);
+-   mtl_render_pipeline_state *pipeline = archive ?
+-      mtl_archive_new_render_pipeline(archive, descriptor) : NULL;
++   mtl_render_pipeline_state *pipeline = NULL;
++   if (archive) {
++      int64_t start = kk_metal_trace_time();
++      pipeline = mtl_archive_new_render_pipeline(archive, descriptor);
++      kk_metal_trace_event("native_create", key, start);
++   }
+    mtl_release(archive);
+    *archive_hit = pipeline != NULL;
+    if (!pipeline) {
+       pthread_rwlock_rdlock(&cache->capture_gate);
++      int64_t start = kk_metal_trace_time();
+       pipeline = mtl_new_render_pipeline(cache->compiler, descriptor);
++      kk_metal_trace_event("native_create", key, start);
+       if (pipeline) {
+          pthread_mutex_lock(&cache->mutex);
+          kk_metal_capture_locked(cache, key);
+@@ -308,13 +348,19 @@ kk_metal_cache_new_compute_pipeline(struct kk_metal_cache *cache,
+ {
+    *archive_hit = false;
+    mtl_archive *archive = kk_metal_load(cache, key);
+-   mtl_compute_pipeline_state *pipeline = archive ?
+-      mtl_archive_new_compute_pipeline(archive, function, max_threads) : NULL;
++   mtl_compute_pipeline_state *pipeline = NULL;
++   if (archive) {
++      int64_t start = kk_metal_trace_time();
++      pipeline = mtl_archive_new_compute_pipeline(archive, function, max_threads);
++      kk_metal_trace_event("native_create", key, start);
++   }
+    mtl_release(archive);
+    *archive_hit = pipeline != NULL;
+    if (!pipeline) {
+       pthread_rwlock_rdlock(&cache->capture_gate);
++      int64_t start = kk_metal_trace_time();
+       pipeline = mtl_new_compute_pipeline_state(cache->compiler, function, max_threads);
++      kk_metal_trace_event("native_create", key, start);
+       if (pipeline) {
+          pthread_mutex_lock(&cache->mutex);
+          kk_metal_capture_locked(cache, key);
+diff --git a/src/kosmickrisp/vulkan/kk_metal_cache.h b/src/kosmickrisp/vulkan/kk_metal_cache.h
+index 30a5ba6dcc5..787b2b088a1 100644
+--- a/src/kosmickrisp/vulkan/kk_metal_cache.h
++++ b/src/kosmickrisp/vulkan/kk_metal_cache.h
+@@ -6,6 +6,14 @@
+ 
+ struct kk_metal_cache;
+ 
++struct kk_metal_trace {
++   void (*callback)(void *data, const char *phase, const uint8_t *key,
++                    size_t key_size, int64_t start, int64_t end);
++   void *data;
++};
++
++struct kk_metal_trace kk_metal_cache_set_trace(struct kk_metal_trace trace);
++
+ struct kk_metal_cache *kk_metal_cache_create(struct disk_cache *disk_cache,
+                                             mtl_device *device,
+                                             mtl_compiler *compiler);
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index d7edcfe40ac..0ab7898eeb4 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -106,9 +106,15 @@ kk_new_render_pipeline(struct kk_device *dev, mtl_function_descriptor *vs,
+    _mesa_blake3_compute(key, sizeof(*key), digest);
+    bool archive_hit = false;
+    int64_t start = os_time_get_nano();
++   struct kk_metal_trace previous_trace = kk_metal_cache_set_trace((struct kk_metal_trace){
++      .callback = dev->variant_trace_enabled ? kk_variant_metal_event : NULL, .data = dev,
++   });
+    mtl_render_pipeline_state *pso = dev->metal_cache ?
+       kk_metal_cache_new_render_pipeline(dev->metal_cache, digest, desc, &archive_hit) :
+       mtl_new_render_pipeline(dev->mtl_compiler_handle, desc);
++   kk_metal_cache_set_trace(previous_trace);
++   kk_variant_trace(dev, KK_VARIANT_PSO_CREATE, key, sizeof(*key),
++                    start, os_time_get_nano());
+    kk_log_compile(dev, archive_hit ? "pso_archive" : "pso", start);
+    kk_log_cache_pso(dev, archive_hit ? "archive_hit" : "compiler_fallback",
+                      key, sizeof(*key));
+@@ -173,6 +179,8 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+          while (entry->compiling)
+             cnd_wait(&entry->ready, &cache->lock);
+          kk_log_compile(dev, "pso_wait", start);
++         kk_variant_trace(dev, KK_VARIANT_PSO_WAIT, key, sizeof(*key),
++                          start, os_time_get_nano());
+       }
+       if (KK_DEBUG(PSO))
+          mesa_logi("PSO cache hit");
+@@ -181,6 +189,8 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+          kk_log_cache_pso(dev, "prewarm_match", key, sizeof(*key));
+       kk_log_cache_pso(dev, pso ? "pso_cache_hit" : "pso_cache_failed",
+                         key, sizeof(*key));
++      if (pso)
++         kk_variant_trace(dev, KK_VARIANT_READY_HIT, key, sizeof(*key), 0, 0);
+       mtx_unlock(&cache->lock);
+       return pso;
+    }
+@@ -219,6 +229,8 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+    entry->compiling = false;
+    cnd_broadcast(&entry->ready);
+    mtx_unlock(&cache->lock);
++   kk_variant_trace(dev, pso ? KK_VARIANT_COMPLETE : KK_VARIANT_FAILURE,
++                    key, sizeof(*key), 0, 0);
+    return pso;
+ }
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 8424745f945..da3368dced5 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -1592,11 +1592,22 @@ kk_compile_compute_pipeline(struct kk_device *device,
+    _mesa_blake3_final(&hash, digest);
+    bool archive_hit = false;
+    int64_t start = os_time_get_nano();
++   struct kk_metal_trace previous_trace = {0};
++   if (device->variant_trace_enabled) {
++      struct kk_metal_trace trace = {kk_variant_metal_event, device};
++      previous_trace = kk_metal_cache_set_trace(trace);
++   }
+    mtl_compute_pipeline_state *pipeline = device->metal_cache ?
+       kk_metal_cache_new_compute_pipeline(device->metal_cache, digest, function,
+                                            local_size_threads, &archive_hit) :
+       mtl_new_compute_pipeline_state(device->mtl_compiler_handle, function,
+                                       local_size_threads);
++   if (device->variant_trace_enabled) {
++      kk_metal_cache_set_trace(previous_trace);
++      if (!device->metal_cache)
++         kk_variant_trace(device, KK_VARIANT_NATIVE_CREATE, digest,
++                          sizeof(digest), start, os_time_get_nano());
++   }
+    kk_log_compile(device, archive_hit ? "compute_archive" : "compute", start);
+    kk_log_cache_pso(device, archive_hit ? "compute_archive_hit" : "compute_fallback",
+                      digest, sizeof(digest));
+@@ -1969,6 +1980,156 @@ kk_init_fast_prerast(struct kk_device *device, struct kk_shader *vs)
+    return VK_SUCCESS;
+ }
+ 
++static void
++kk_identity_scalar(struct mesa_blake3 *hash, uint64_t value)
++{
++   uint8_t bytes[8];
++   for (unsigned i = 0; i < sizeof(bytes); i++)
++      bytes[i] = value >> (8 * i);
++   _mesa_blake3_update(hash, bytes, sizeof(bytes));
++}
++
++static void
++kk_identity_string(struct mesa_blake3 *hash, const char *string)
++{
++   size_t size = string ? strlen(string) + 1 : 0;
++   kk_identity_scalar(hash, size);
++   if (size)
++      _mesa_blake3_update(hash, string, size);
++}
++
++static void
++kk_identity_msl(struct mesa_blake3 *hash, const struct msl_compile_data *data)
++{
++   kk_identity_string(hash, data->code);
++   kk_identity_string(hash, data->entrypoint_name);
++}
++
++void
++kk_shader_variant_identity(struct kk_shader *shader, blake3_hash output)
++{
++   if (!p_atomic_read(&shader->variant_identity_ready)) {
++      mtx_lock(&shader->variants_lock);
++      if (!p_atomic_read(&shader->variant_identity_ready)) {
++         struct mesa_blake3 hash;
++         _mesa_blake3_init(&hash);
++         kk_identity_scalar(&hash, 1);
++         _mesa_blake3_update(&hash, shader->fast.hash, sizeof(blake3_hash));
++         kk_identity_scalar(&hash, shader->nir_blob_size);
++         if (shader->nir_blob_size)
++            _mesa_blake3_update(&hash, shader->nir_blob, shader->nir_blob_size);
++         for (unsigned i = 0; i < MESA_SHADER_STAGES; i++)
++            kk_identity_msl(&hash, &shader->msl_data[i]);
++         kk_identity_msl(&hash, &shader->gs_main);
++         kk_identity_msl(&hash, &shader->msl_points);
++         kk_identity_msl(&hash, &shader->msl_emu);
++         const struct kk_shader_info *info = &shader->info;
++         kk_identity_scalar(&hash, info->stage);
++         kk_identity_scalar(&hash, info->uses_per_draw_data);
++         kk_identity_scalar(&hash, info->partial);
++         kk_identity_scalar(&hash, info->shader_object);
++         kk_identity_scalar(&hash, info->so_hw);
++         kk_identity_scalar(&hash, info->so_emu);
++         kk_identity_scalar(&hash, info->num_cull_distances);
++         kk_identity_scalar(&hash, info->rast_num_cull_distances);
++         kk_identity_scalar(&hash, info->rast_primitive_id_slot);
++         kk_identity_scalar(&hash, info->rast_point_variant);
++         kk_identity_scalar(&hash, info->rast_outputs_written);
++         switch (info->stage) {
++         case MESA_SHADER_FRAGMENT:
++            kk_identity_scalar(&hash, info->fs.uses_flat_varyings);
++            kk_identity_scalar(&hash, info->fs.ms_static);
++            kk_identity_scalar(&hash, info->fs.writes_depth);
++            kk_identity_scalar(&hash, info->fs.writes_stencil);
++            kk_identity_scalar(&hash, info->fs.dual_source_blend);
++            kk_identity_scalar(&hash, info->fs.reads_primitive_id);
++            kk_identity_scalar(&hash, info->fs.color_outputs);
++            kk_identity_scalar(&hash, info->fs.inputs_read);
++            for (unsigned i = 0; i < MAX_DRAW_BUFFERS; i++)
++               kk_identity_scalar(&hash, info->fs.output_base_type[i]);
++            break;
++         case MESA_SHADER_VERTEX:
++            kk_identity_scalar(&hash, info->vs.additional_stages_bits);
++            kk_identity_scalar(&hash, info->vs.tess_local_thread_size);
++            kk_identity_scalar(&hash, info->vs.attribs_read);
++            kk_identity_scalar(&hash, info->vs.dynamic_vi);
++            kk_identity_scalar(&hash, info->vs.sample_count);
++            kk_identity_scalar(&hash, info->vs.outputs_written);
++            kk_identity_scalar(&hash, info->vs.topology);
++            kk_identity_scalar(&hash, info->vs.view_mask);
++            for (unsigned i = 0; i < MAX_DRAW_BUFFERS; i++)
++               kk_identity_scalar(&hash, info->vs.rt_formats[i]);
++            kk_identity_scalar(&hash, info->vs.d_format);
++            kk_identity_scalar(&hash, info->vs.s_format);
++            kk_identity_scalar(&hash, info->vs.depth_compare_op);
++            kk_identity_scalar(&hash, info->vs.stencil_front.depth_fail);
++            kk_identity_scalar(&hash, info->vs.stencil_front.fail);
++            kk_identity_scalar(&hash, info->vs.stencil_front.pass);
++            kk_identity_scalar(&hash, info->vs.stencil_front.compare);
++            kk_identity_scalar(&hash, info->vs.stencil_front.compare_mask);
++            kk_identity_scalar(&hash, info->vs.stencil_front.write_mask);
++            kk_identity_scalar(&hash, info->vs.stencil_back.depth_fail);
++            kk_identity_scalar(&hash, info->vs.stencil_back.fail);
++            kk_identity_scalar(&hash, info->vs.stencil_back.pass);
++            kk_identity_scalar(&hash, info->vs.stencil_back.compare);
++            kk_identity_scalar(&hash, info->vs.stencil_back.compare_mask);
++            kk_identity_scalar(&hash, info->vs.stencil_back.write_mask);
++            kk_identity_scalar(&hash, info->vs.color_attachment_count);
++            kk_identity_scalar(&hash, info->vs.has_ms);
++            kk_identity_scalar(&hash, info->vs.has_ds);
++            kk_identity_scalar(&hash, info->vs.has_depth_write);
++            kk_identity_scalar(&hash, info->vs.has_stencil_test);
++            break;
++         case MESA_SHADER_TESS_CTRL:
++         case MESA_SHADER_TESS_EVAL:
++            kk_identity_scalar(&hash, info->tess.tcs_per_vertex_outputs);
++            kk_identity_scalar(&hash, info->tess.tcs_output_stride);
++            kk_identity_scalar(&hash, info->tess.tcs_output_patch_size);
++            kk_identity_scalar(&hash, info->tess.tcs_nr_patch_outputs);
++            kk_identity_scalar(&hash, info->tess.info.mode);
++            kk_identity_scalar(&hash, info->tess.info.spacing);
++            kk_identity_scalar(&hash, info->tess.info.points);
++            kk_identity_scalar(&hash, info->tess.info.ccw);
++            kk_identity_scalar(&hash, info->tess.tes_outputs);
++            break;
++         case MESA_SHADER_GEOMETRY:
++            kk_identity_scalar(&hash, info->gs.mode);
++            kk_identity_scalar(&hash, info->gs.count_words);
++            kk_identity_scalar(&hash, info->gs.max_indices);
++            kk_identity_scalar(&hash, info->gs.xfb);
++            kk_identity_scalar(&hash, info->gs.prefix_sum);
++            kk_identity_scalar(&hash, info->gs.multistream);
++            kk_identity_scalar(&hash, info->gs.shape);
++            break;
++         case MESA_SHADER_COMPUTE:
++            kk_identity_scalar(&hash, info->cs.local_size.x);
++            kk_identity_scalar(&hash, info->cs.local_size.y);
++            kk_identity_scalar(&hash, info->cs.local_size.z);
++            break;
++         default:
++            break;
++         }
++         _mesa_blake3_final(&hash, shader->variant_identity);
++         p_atomic_set(&shader->variant_identity_ready, 1);
++      }
++      mtx_unlock(&shader->variants_lock);
++   }
++   memcpy(output, shader->variant_identity, sizeof(blake3_hash));
++}
++
++static void
++kk_variant_shader_key(struct kk_device *dev, struct kk_shader *shader,
++                      const void *key, size_t size, blake3_hash identity)
++{
++   if (!dev->variant_trace_enabled)
++      return;
++   struct mesa_blake3 state;
++   _mesa_blake3_init(&state);
++   _mesa_blake3_update(&state, shader->fast.hash, sizeof(blake3_hash));
++   _mesa_blake3_update(&state, key, size);
++   _mesa_blake3_final(&state, identity);
++}
++
+ const struct kk_fs_variant *
+ kk_shader_get_rast(struct kk_device *dev, struct kk_shader *vs, bool points)
+ {
+@@ -1976,13 +2137,25 @@ kk_shader_get_rast(struct kk_device *dev, struct kk_shader *vs, bool points)
+       return &vs->fast;
+ 
+    const struct kk_fs_variant *rast = &vs->fast_points;
+-   mtx_lock(&vs->variants_lock);
++   blake3_hash identity = {0};
++   kk_variant_shader_key(dev, vs, &points, sizeof(points), identity);
++   if (dev->variant_trace_enabled &&
++       mtx_trylock(&vs->variants_lock) != thrd_success) {
++      int64_t wait_start = os_time_get_nano();
++      mtx_lock(&vs->variants_lock);
++      kk_variant_trace(dev, KK_VARIANT_RASTER_WAIT, identity, sizeof(identity),
++                       wait_start, os_time_get_nano());
++   } else if (!dev->variant_trace_enabled) {
++      mtx_lock(&vs->variants_lock);
++   }
+    if (vs->fast_points.fn == NULL) {
+       int64_t start = os_time_get_nano();
+       VkResult result = kk_new_function(dev, &vs->msl_points,
+                                         &vs->fast_points.lib,
+                                         &vs->fast_points.fn);
+       kk_log_compile(dev, "rast_points", start);
++      kk_variant_trace(dev, KK_VARIANT_RASTER_PREPARE, identity,
++                       sizeof(identity), start, os_time_get_nano());
+       if (result == VK_SUCCESS) {
+          _mesa_blake3_compute(vs->msl_points.code,
+                               strlen(vs->msl_points.code),
+@@ -1990,6 +2163,9 @@ kk_shader_get_rast(struct kk_device *dev, struct kk_shader *vs, bool points)
+       } else {
+          rast = NULL;
+       }
++   } else {
++      kk_variant_trace(dev, KK_VARIANT_READY_HIT, identity, sizeof(identity),
++                       0, 0);
+    }
+    mtx_unlock(&vs->variants_lock);
+ 
+@@ -2920,8 +3096,18 @@ kk_shader_get_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+                          const struct kk_fs_variant **variant_out)
+ {
+    uint32_t hash = kk_fs_link_key_hash(key);
+-
+-   mtx_lock(&fs->variants_lock);
++   blake3_hash identity = {0};
++   kk_variant_shader_key(dev, fs, key, sizeof(*key), identity);
++
++   if (dev->variant_trace_enabled &&
++       mtx_trylock(&fs->variants_lock) != thrd_success) {
++      int64_t wait_start = os_time_get_nano();
++      mtx_lock(&fs->variants_lock);
++      kk_variant_trace(dev, KK_VARIANT_FS_WAIT, identity, sizeof(identity),
++                       wait_start, os_time_get_nano());
++   } else if (!dev->variant_trace_enabled) {
++      mtx_lock(&fs->variants_lock);
++   }
+    struct hash_entry *he =
+       _mesa_hash_table_search_pre_hashed(fs->variants, hash, key);
+    if (he) {
+@@ -2931,6 +3117,11 @@ kk_shader_get_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+          while (entry->compiling)
+             cnd_wait(&entry->ready, &fs->variants_lock);
+          kk_log_compile(dev, "fs_variant_wait", start);
++         kk_variant_trace(dev, KK_VARIANT_FS_WAIT, identity, sizeof(identity),
++                          start, os_time_get_nano());
++      } else if (entry->result == VK_SUCCESS) {
++         kk_variant_trace(dev, KK_VARIANT_READY_HIT, identity, sizeof(identity),
++                          0, 0);
+       }
+       VkResult result = entry->result;
+       mtx_unlock(&fs->variants_lock);
+@@ -2965,6 +3156,12 @@ kk_shader_get_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+    int64_t start = os_time_get_nano();
+    VkResult result = kk_compile_fs_variant(dev, fs, key, &variant);
+    kk_log_compile(dev, "fs_variant", start);
++   int64_t end = os_time_get_nano();
++   kk_variant_trace(dev, KK_VARIANT_FS_PREPARE, identity, sizeof(identity),
++                    start, end);
++   kk_variant_trace(dev, result == VK_SUCCESS ? KK_VARIANT_COMPLETE :
++                                             KK_VARIANT_FAILURE,
++                    identity, sizeof(identity), end, end);
+ 
+    mtx_lock(&fs->variants_lock);
+    if (result == VK_SUCCESS)
+diff --git a/src/kosmickrisp/vulkan/kk_shader.h b/src/kosmickrisp/vulkan/kk_shader.h
+index 6c815f48bd9..f1d1613b5ac 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.h
++++ b/src/kosmickrisp/vulkan/kk_shader.h
+@@ -186,6 +186,8 @@ struct kk_shader {
+ 
+    void *nir_blob;
+    size_t nir_blob_size;
++   blake3_hash variant_identity;
++   int variant_identity_ready;
+    mtx_t variants_lock;
+    struct hash_table *variants;
+ };
+@@ -207,6 +209,8 @@ struct kk_fs_link_key {
+    struct vk_color_blend_attachment_state blend[MAX_DRAW_BUFFERS];
+ };
+ 
++void kk_shader_variant_identity(struct kk_shader *shader, blake3_hash output);
++
+ VK_DEFINE_NONDISP_HANDLE_CASTS(kk_shader, vk.base, VkShaderEXT,
+                                VK_OBJECT_TYPE_SHADER_EXT);
+ 

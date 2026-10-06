@@ -1,0 +1,161 @@
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index a756c1ed58a0209eedc8d66860c7418dd54f44c7..f25d524494ed1acfeea62da8e32e78db1ca98598 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -29,6 +29,8 @@ struct kk_pso_entry {
+    mtl_render_pipeline_state *pso;
+    cnd_t ready;
+    bool compiling;
++   bool prewarmed;
++   bool drawn;
+ };
+ 
+ static uint32_t
+@@ -125,6 +127,12 @@ kk_pso_cache_finish(struct kk_pso_cache *cache)
+    if (cache->table) {
+       hash_table_foreach(cache->table, he) {
+          struct kk_pso_entry *entry = he->data;
++         if (entry->prewarmed && !entry->drawn) {
++            struct kk_device *dev =
++               container_of(cache, struct kk_device, pso_cache);
++            kk_log_cache_pso(dev, "prewarm_unused", &entry->key,
++                              sizeof(entry->key));
++         }
+          mtl_release(entry->pso);
+          cnd_destroy(&entry->ready);
+       }
+@@ -146,7 +154,12 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+       _mesa_hash_table_search_pre_hashed(cache->table, hash, key);
+    if (he) {
+       struct kk_pso_entry *entry = he->data;
++      bool first_draw = kk_compile_origin == KK_COMPILE_ORIGIN_DRAW &&
++                        !entry->drawn;
++      entry->prewarmed |= kk_compile_origin == KK_COMPILE_ORIGIN_PREWARM;
++      entry->drawn |= kk_compile_origin == KK_COMPILE_ORIGIN_DRAW;
+       if (entry->compiling) {
++         kk_log_cache_pso(dev, "pso_wait", key, sizeof(*key));
+          int64_t start = os_time_get_nano();
+          while (entry->compiling)
+             cnd_wait(&entry->ready, &cache->lock);
+@@ -155,6 +168,10 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+       if (KK_DEBUG(PSO))
+          mesa_logi("PSO cache hit");
+       mtl_render_pipeline_state *pso = entry->pso;
++      if (pso && entry->prewarmed && first_draw)
++         kk_log_cache_pso(dev, "prewarm_match", key, sizeof(*key));
++      kk_log_cache_pso(dev, pso ? "pso_cache_hit" : "pso_cache_failed",
++                        key, sizeof(*key));
+       mtx_unlock(&cache->lock);
+       return pso;
+    }
+@@ -166,6 +183,8 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+    }
+    entry->key = *key;
+    entry->compiling = true;
++   entry->prewarmed = kk_compile_origin == KK_COMPILE_ORIGIN_PREWARM;
++   entry->drawn = kk_compile_origin == KK_COMPILE_ORIGIN_DRAW;
+    if (cnd_init(&entry->ready) != thrd_success) {
+       ralloc_free(entry);
+       mtx_unlock(&cache->lock);
+@@ -180,6 +199,9 @@ kk_pso_cache_get(struct kk_device *dev, const struct kk_pso_key *key,
+    }
+    mtx_unlock(&cache->lock);
+ 
++   kk_log_cache_pso(dev, kk_compile_origin == KK_COMPILE_ORIGIN_PREWARM ?
++                          "prewarm_miss" : "pso_cache_miss",
++                     key, sizeof(*key));
+    if (KK_DEBUG(PSO))
+       mesa_logi("PSO compile");
+    int64_t start = os_time_get_nano();
+@@ -448,10 +470,12 @@ static void
+ kk_prewarm_execute(void *data, void *global_data, int thread_index)
+ {
+    struct kk_prewarm_job *job = data;
++   enum kk_compile_origin origin = kk_compile_origin;
+    kk_compile_origin = KK_COMPILE_ORIGIN_PREWARM;
+    if (KK_DEBUG(PSO))
+       mesa_logi("PSO prewarm started");
+    kk_cmd_link_pipeline(&job->cmd);
++   kk_compile_origin = origin;
+ }
+ 
+ static void
+@@ -468,6 +492,52 @@ kk_prewarm_cleanup(void *data, void *global_data, int thread_index)
+    free(job);
+ }
+ 
++static void
++kk_prewarm_dynamic_defaults(struct vk_dynamic_graphics_state *dyn,
++                            const struct vk_graphics_pipeline_state *state)
++{
++   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES))
++      dyn->ms.rasterization_samples = VK_SAMPLE_COUNT_1_BIT;
++   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_MASK))
++      dyn->ms.sample_mask = UINT16_MAX;
++   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE))
++      dyn->ms.alpha_to_coverage_enable = false;
++   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_ALPHA_TO_ONE_ENABLE))
++      dyn->ms.alpha_to_one_enable = false;
++   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE))
++      dyn->cb.logic_op_enable = false;
++   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP))
++      dyn->cb.logic_op = VK_LOGIC_OP_COPY;
++   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_ATTACHMENT_COUNT))
++      dyn->cb.attachment_count = state->rp->color_attachment_count;
++   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES))
++      dyn->cb.color_write_enables = BITFIELD_MASK(MESA_VK_MAX_COLOR_ATTACHMENTS);
++
++   for (uint32_t i = 0; i < MESA_VK_MAX_COLOR_ATTACHMENTS; ++i) {
++      struct vk_color_blend_attachment_state *att = &dyn->cb.attachments[i];
++      if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_ENABLES))
++         att->blend_enable = false;
++      if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS)) {
++         att->src_color_blend_factor = VK_BLEND_FACTOR_ONE;
++         att->dst_color_blend_factor = VK_BLEND_FACTOR_ZERO;
++         att->src_alpha_blend_factor = VK_BLEND_FACTOR_ONE;
++         att->dst_alpha_blend_factor = VK_BLEND_FACTOR_ZERO;
++         att->color_blend_op = VK_BLEND_OP_ADD;
++         att->alpha_blend_op = VK_BLEND_OP_ADD;
++      }
++      if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_WRITE_MASKS)) {
++         att->write_mask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
++                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
++      }
++      if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_ADVANCED)) {
++         att->src_premultiplied = true;
++         att->dst_premultiplied = true;
++         att->blend_overlap = VK_BLEND_OVERLAP_UNCORRELATED_EXT;
++         att->clamp_results = false;
++      }
++   }
++}
++
+ void
+ kk_prewarm_pipeline(struct vk_device *vk_dev,
+                     const struct vk_graphics_pipeline_state *state,
+@@ -481,17 +551,6 @@ kk_prewarm_pipeline(struct vk_device *vk_dev,
+ 
+    const enum mesa_vk_dynamic_graphics_state required[] = {
+       MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY,
+-      MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES,
+-      MESA_VK_DYNAMIC_MS_SAMPLE_MASK,
+-      MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE,
+-      MESA_VK_DYNAMIC_MS_ALPHA_TO_ONE_ENABLE,
+-      MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE,
+-      MESA_VK_DYNAMIC_CB_LOGIC_OP,
+-      MESA_VK_DYNAMIC_CB_BLEND_ENABLES,
+-      MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS,
+-      MESA_VK_DYNAMIC_CB_WRITE_MASKS,
+-      MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES,
+-      MESA_VK_DYNAMIC_CB_BLEND_ADVANCED,
+       MESA_VK_DYNAMIC_COLOR_ATTACHMENT_MAP,
+    };
+    for (uint32_t i = 0; i < ARRAY_SIZE(required); ++i) {
+@@ -513,6 +572,7 @@ kk_prewarm_pipeline(struct vk_device *vk_dev,
+    job->cmd.vk.base.device = vk_dev;
+    vk_dynamic_graphics_state_init(&job->cmd.vk.dynamic_graphics_state);
+    vk_dynamic_graphics_state_fill(&job->cmd.vk.dynamic_graphics_state, state);
++   kk_prewarm_dynamic_defaults(&job->cmd.vk.dynamic_graphics_state, state);
+    struct kk_rendering_state *render = &job->cmd.state.gfx.render;
+    render->view_mask = state->mv ? state->mv->view_mask : 0;
+    render->color_att_count = state->rp->color_attachment_count;

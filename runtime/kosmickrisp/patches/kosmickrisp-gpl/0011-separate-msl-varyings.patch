@@ -1,0 +1,201 @@
+diff --git a/src/kosmickrisp/compiler/msl_iomap.c b/src/kosmickrisp/compiler/msl_iomap.c
+index 669e655f109dbb1e792b75981e33946986aeefe1..62af324c6949865243ccd4473a44a97ca3c88f23 100644
+--- a/src/kosmickrisp/compiler/msl_iomap.c
++++ b/src/kosmickrisp/compiler/msl_iomap.c
+@@ -424,6 +424,26 @@ msl_gather_io_info(struct nir_to_msl_ctx *ctx,
+    };
+    nir_shader_intrinsics_pass(ctx->shader, msl_nir_gather_io_info,
+                               nir_metadata_all, &gather_ctx);
++
++   if (!ctx->separate_io)
++      return;
++
++   struct io_slot_info *varyings =
++      ctx->shader->info.stage == MESA_SHADER_VERTEX ? info_array_output
++                                                    : info_array_input;
++   for (unsigned l = VARYING_SLOT_VAR0; l <= VARYING_SLOT_VAR31; ++l) {
++      if (varyings[l].num_components) {
++         varyings[l].type = nir_type_float32;
++         varyings[l].num_components = 4u;
++      }
++   }
++}
++
++bool
++msl_is_separate_varying(struct nir_to_msl_ctx *ctx, uint32_t location)
++{
++   return ctx->separate_io && location >= VARYING_SLOT_VAR0 &&
++          location <= VARYING_SLOT_VAR31;
+ }
+ 
+ /* Generate all the struct definitions needed for shader I/O */
+diff --git a/src/kosmickrisp/compiler/msl_nir_lower_common.c b/src/kosmickrisp/compiler/msl_nir_lower_common.c
+index c4f6645da9c070959850e96c23e8b0d9d7bc3c06..98aba37065e6340947a65a799924053205f30698 100644
+--- a/src/kosmickrisp/compiler/msl_nir_lower_common.c
++++ b/src/kosmickrisp/compiler/msl_nir_lower_common.c
+@@ -992,3 +992,69 @@ msl_nir_lower_multisample_alpha(nir_shader *s, bool alpha_to_coverage,
+ 
+    return progress;
+ }
++
++static bool
++is_generic_varying(nir_intrinsic_instr *intr)
++{
++   unsigned location = nir_intrinsic_io_semantics(intr).location;
++   return location >= VARYING_SLOT_VAR0 && location <= VARYING_SLOT_VAR31;
++}
++
++static nir_def *
++convert_varying(nir_builder *b, nir_def *def, nir_alu_type base,
++                unsigned bit_size)
++{
++   switch (base) {
++   case nir_type_float:
++      return nir_f2fN(b, def, bit_size);
++   case nir_type_int:
++      return nir_i2iN(b, def, bit_size);
++   default:
++      return nir_u2uN(b, def, bit_size);
++   }
++}
++
++static bool
++widen_generic_varying(nir_builder *b, nir_intrinsic_instr *intr, void *data)
++{
++   mesa_shader_stage stage = b->shader->info.stage;
++   bool is_store = intr->intrinsic == nir_intrinsic_store_output &&
++                   stage == MESA_SHADER_VERTEX;
++   bool is_load = (intr->intrinsic == nir_intrinsic_load_input ||
++                   intr->intrinsic == nir_intrinsic_load_interpolated_input) &&
++                  stage == MESA_SHADER_FRAGMENT;
++   if ((!is_store && !is_load) || !is_generic_varying(intr))
++      return false;
++
++   if (is_store) {
++      nir_alu_type type = nir_intrinsic_src_type(intr);
++      if (nir_alu_type_get_type_size(type) != 16)
++         return false;
++
++      nir_alu_type base = nir_alu_type_get_base_type(type);
++      b->cursor = nir_before_instr(&intr->instr);
++      nir_def *wide = convert_varying(b, intr->src[0].ssa, base, 32);
++      nir_src_rewrite(&intr->src[0], wide);
++      nir_intrinsic_set_src_type(intr, base | 32);
++      return true;
++   }
++
++   nir_alu_type type = nir_intrinsic_dest_type(intr);
++   if (intr->def.bit_size != 16)
++      return false;
++
++   nir_alu_type base = nir_alu_type_get_base_type(type);
++   intr->def.bit_size = 32;
++   nir_intrinsic_set_dest_type(intr, base | 32);
++   b->cursor = nir_after_instr(&intr->instr);
++   nir_def *narrow = convert_varying(b, &intr->def, base, 16);
++   nir_def_rewrite_uses_after(&intr->def, narrow);
++   return true;
++}
++
++bool
++msl_nir_widen_generic_varyings(nir_shader *nir)
++{
++   return nir_shader_intrinsics_pass(nir, widen_generic_varying,
++                                     nir_metadata_control_flow, NULL);
++}
+diff --git a/src/kosmickrisp/compiler/msl_private.h b/src/kosmickrisp/compiler/msl_private.h
+index 75da653947a39dfba526d59741c6dc7fec7090ea..3d56b1af32e398aec2db646d9a4a041c23f14c61 100644
+--- a/src/kosmickrisp/compiler/msl_private.h
++++ b/src/kosmickrisp/compiler/msl_private.h
+@@ -25,6 +25,7 @@ struct nir_to_msl_ctx {
+    struct _mesa_string_buffer *text;
+    uint64_t disabled_workarounds;
+    bool uses_per_draw_data;
++   bool separate_io;
+    unsigned short indentlevel;
+    struct io_slot_info inputs_info[NUM_TOTAL_VARYING_SLOTS];
+    struct io_slot_info outputs_info[NUM_TOTAL_VARYING_SLOTS];
+@@ -80,6 +81,8 @@ uint32_t msl_input_num_components(struct nir_to_msl_ctx *ctx,
+ uint32_t msl_output_num_components(struct nir_to_msl_ctx *ctx,
+                                    uint32_t location);
+ 
++bool msl_is_separate_varying(struct nir_to_msl_ctx *ctx, uint32_t location);
++
+ bool msl_src_is_float(struct nir_to_msl_ctx *ctx, nir_src *src);
+ bool msl_def_is_sampler(struct nir_to_msl_ctx *ctx, nir_def *def);
+ bool msl_def_is_texture(struct nir_to_msl_ctx *ctx, nir_def *def);
+diff --git a/src/kosmickrisp/compiler/nir_to_msl.c b/src/kosmickrisp/compiler/nir_to_msl.c
+index 63d2ec1276b97162920be26b4df255e20a504e02..0354304081d30175fdb820cbf91323427c1ea5e3 100644
+--- a/src/kosmickrisp/compiler/nir_to_msl.c
++++ b/src/kosmickrisp/compiler/nir_to_msl.c
+@@ -1243,12 +1243,19 @@ intrinsic_to_msl(struct nir_to_msl_ctx *ctx, nir_intrinsic_instr *instr)
+       uint32_t component = nir_intrinsic_component(instr);
+       uint32_t location = io.location + idx;
+ 
++      bool bitcast = msl_is_separate_varying(ctx, location) &&
++                     nir_alu_type_get_base_type(nir_intrinsic_dest_type(
++                        instr)) != nir_type_float;
++      if (bitcast)
++         P(ctx, "as_type<%s>(", msl_type_for_def(ctx->types, &instr->def));
+       msl_input_name(ctx, location, component);
+       if (instr->num_components < msl_input_num_components(ctx, location)) {
+          P(ctx, ".");
+          for (unsigned i = 0; i < instr->num_components; i++)
+             P(ctx, "%c", "xyzw"[component + i]);
+       }
++      if (bitcast)
++         P(ctx, ")");
+       P(ctx, ";\n");
+       break;
+    }
+@@ -1307,6 +1314,12 @@ intrinsic_to_msl(struct nir_to_msl_ctx *ctx, nir_intrinsic_instr *instr)
+                P(ctx, "%c", "xyzw"[component + i]);
+       }
+       P(ctx, " = ");
++      bool bitcast = msl_is_separate_varying(ctx, location) &&
++                     nir_alu_type_get_base_type(nir_intrinsic_src_type(
++                        instr)) != nir_type_float;
++      if (bitcast)
++         P(ctx, "as_type<float%s>(",
++           component_str(util_bitcount(write_mask)));
+       src_to_msl(ctx, &instr->src[0]);
+       if (num_components > 1u) {
+          P(ctx, ".");
+@@ -1314,6 +1327,8 @@ intrinsic_to_msl(struct nir_to_msl_ctx *ctx, nir_intrinsic_instr *instr)
+             if ((write_mask >> i) & 1)
+                P(ctx, "%c", "xyzw"[i]);
+       }
++      if (bitcast)
++         P(ctx, ")");
+       P(ctx, ";\n");
+       break;
+    }
+@@ -2499,6 +2514,7 @@ nir_to_msl(nir_shader *shader, struct nir_to_msl_options *options)
+       .shader = shader,
+       .text = _mesa_string_buffer_create(options->mem_ctx, 1024),
+       .disabled_workarounds = options->disabled_workarounds,
++      .separate_io = options->separate_io,
+    };
+    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
+    msl_gather_info(&ctx, options);
+diff --git a/src/kosmickrisp/compiler/nir_to_msl.h b/src/kosmickrisp/compiler/nir_to_msl.h
+index 423df8ab87c46743961fac47bb5d43d60ead1aa4..e58e9556e20d80ac158cced12b4bdaed4f841596 100644
+--- a/src/kosmickrisp/compiler/nir_to_msl.h
++++ b/src/kosmickrisp/compiler/nir_to_msl.h
+@@ -23,6 +23,8 @@ struct nir_to_msl_options {
+     * the render target has. This leads to an incorrect calculation of the
+     * component count for the render target formats. */
+    uint8_t rts_component_count[MAX_DRAW_BUFFERS];
++
++   bool separate_io;
+ };
+ 
+ /* Assumes nir_shader_gather_info has been called beforehand. */
+@@ -86,6 +88,7 @@ bool msl_ensure_vertex_position_output(nir_shader *nir);
+ bool msl_ensure_vertex_point_size_output(nir_shader *nir);
+ bool msl_nir_fs_io_types(nir_shader *nir);
+ bool msl_nir_vs_io_types(nir_shader *nir);
++bool msl_nir_widen_generic_varyings(nir_shader *nir);
+ bool msl_nir_fake_guard_for_discards(struct nir_shader *nir);
+ bool msl_nir_lower_sample_shading(nir_shader *nir);
+ void msl_nir_lower_clip_cull_distance(nir_shader *nir,
