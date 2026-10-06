@@ -1,0 +1,22 @@
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index c4324c802b2..145ac617850 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -652,7 +652,7 @@ kk_recipe_get(struct kk_device *dev, struct kk_shader *vs,
+                struct kk_shader *fs, const struct kk_variant_recipe *recipe)
+ {
+    struct kk_pso_cache *cache = &dev->pso_cache;
+-   bool trace_enabled = dev->variant_trace_enabled;
++   bool trace_enabled = dev->variant_log != NULL;
+    blake3_hash previous, previous_family;
+    bool previous_valid = false, previous_family_valid = false;
+    if (trace_enabled) {
+@@ -971,7 +971,7 @@ kk_prewarm_execute(void *data, void *global_data, int thread_index)
+    struct kk_prewarm_job *job = data;
+    enum kk_compile_origin origin = kk_compile_origin;
+    kk_compile_origin = KK_COMPILE_ORIGIN_PREWARM;
+-   bool trace_enabled = job->dev->variant_trace_enabled;
++   bool trace_enabled = job->dev->variant_log != NULL;
+    blake3_hash previous_parent, previous_family;
+    bool previous_parent_valid = false, previous_family_valid = false;
+    if (trace_enabled) {

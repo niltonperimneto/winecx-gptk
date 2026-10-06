@@ -1,0 +1,360 @@
+diff --git a/src/kosmickrisp/vulkan/kk_debug.c b/src/kosmickrisp/vulkan/kk_debug.c
+index bc2c3f5ac9b896e09c964ae4c063b44273caae4d..637ebdd08892edcfc983f861bdf3b76eee268447 100644
+--- a/src/kosmickrisp/vulkan/kk_debug.c
++++ b/src/kosmickrisp/vulkan/kk_debug.c
+@@ -13,6 +13,7 @@ const struct debug_named_value debug_flags[] = {
+    {"force_robustness", KK_DEBUG_FORCE_ROBUSTNESS},
+    {"dynamic_vi", KK_DEBUG_DYNAMIC_VI},
+    {"partition", KK_DEBUG_PARTITION},
++   {"gpl_nir", KK_DEBUG_GPL_NIR},
+    {NULL, 0},
+ };
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_debug.h b/src/kosmickrisp/vulkan/kk_debug.h
+index 6abf007ffccc59a9b045bf2fa9bd30c9096cea00..ff49fc51330e52242a3495a569df4e90b4f24d9f 100644
+--- a/src/kosmickrisp/vulkan/kk_debug.h
++++ b/src/kosmickrisp/vulkan/kk_debug.h
+@@ -14,6 +14,7 @@ enum kk_debug {
+    KK_DEBUG_FORCE_ROBUSTNESS = 1ull << 2,
+    KK_DEBUG_DYNAMIC_VI = 1ull << 3,
+    KK_DEBUG_PARTITION = 1ull << 4,
++   KK_DEBUG_GPL_NIR = 1ull << 5,
+ };
+ 
+ extern enum kk_debug kk_mesa_debug_flags;
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index 8833ce693888e36b2aaae109c49215211d5f8ee1..b0f82201e7cd9eb2d0838efd8f3c19a8ffede962 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -10,6 +10,7 @@
+ #include "kk_buffer.h"
+ #include "kk_buffer_view.h"
+ #include "kk_cmd_buffer.h"
++#include "kk_debug.h"
+ #include "kk_entrypoints.h"
+ #include "kk_image.h"
+ #include "kk_image_view.h"
+@@ -289,7 +290,8 @@ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+    if (result != VK_SUCCESS)
+       goto fail_alloc;
+ 
+-   dev->vk.shader_ops = &kk_device_shader_ops;
++   dev->vk.shader_ops = KK_DEBUG(GPL_NIR) ? &kk_device_shader_ops_gpl_nir
++                                          : &kk_device_shader_ops;
+    dev->mtl_handle = pdev->mtl_dev_handle;
+    dev->vk.command_buffer_ops = &kk_cmd_buffer_ops;
+    dev->vk.command_dispatch_table = &dev->vk.dispatch_table;
+diff --git a/src/kosmickrisp/vulkan/kk_physical_device.c b/src/kosmickrisp/vulkan/kk_physical_device.c
+index 736a21f0ae47e599d0dcfce2e81dac507860a097..657816adaf838ba4a80f65551aa0029ce4112136 100644
+--- a/src/kosmickrisp/vulkan/kk_physical_device.c
++++ b/src/kosmickrisp/vulkan/kk_physical_device.c
+@@ -806,7 +806,7 @@ kk_get_device_properties(
+       .minImportedHostPointerAlignment = os_page_size,
+ 
+       /* VK_EXT_graphics_pipeline_library */
+-      .graphicsPipelineLibraryFastLinking = false,
++      .graphicsPipelineLibraryFastLinking = !KK_DEBUG(GPL_NIR),
+       .graphicsPipelineLibraryIndependentInterpolationDecoration = true,
+ 
+       /* VK_KHR_line_rasterization */
+@@ -998,10 +998,12 @@ kk_physical_device_init_pipeline_cache(struct kk_physical_device *pdev)
+    _mesa_blake3_update(&blake3_ctx, &pdev->settings.experimental_enabled,
+                       sizeof(pdev->settings.experimental_enabled));
+ 
+-   const uint32_t cache_schema = 2;
+-   const bool force_robustness = KK_DEBUG(FORCE_ROBUSTNESS);
++   const uint32_t cache_schema = 3;
++   const uint64_t compile_flags =
++      kk_mesa_debug_flags & (KK_DEBUG_FORCE_ROBUSTNESS | KK_DEBUG_DYNAMIC_VI |
++                             KK_DEBUG_PARTITION | KK_DEBUG_GPL_NIR);
+    _mesa_blake3_update(&blake3_ctx, &cache_schema, sizeof(cache_schema));
+-   _mesa_blake3_update(&blake3_ctx, &force_robustness, sizeof(force_robustness));
++   _mesa_blake3_update(&blake3_ctx, &compile_flags, sizeof(compile_flags));
+    unsigned char blake3[BLAKE3_KEY_LEN];
+    _mesa_blake3_final(&blake3_ctx, blake3);
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index f8a77e0b4251959af2b51e62d5ebf6182e9a894f..8d74bd8a96168a9ef7b2307427d284a96e6fa711 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -345,14 +345,20 @@ kk_cmd_link(struct kk_cmd_buffer *cmd, struct kk_shader *vs,
+ 
+    struct kk_pso_key key;
+    kk_pso_key_init(&key);
+-   memcpy(key.rast, vs->fast.hash, sizeof(key.rast));
++   key.topology_class = kk_cmd_topology_class(cmd);
++
++   const struct kk_fs_variant *rast = kk_shader_get_rast(
++      dev, vs, key.topology_class == MTL_PRIMITIVE_TOPOLOGY_CLASS_POINT);
++   if (rast == NULL)
++      return NULL;
++
++   memcpy(key.rast, rast->hash, sizeof(key.rast));
+    memcpy(key.fs, variant->hash, sizeof(key.fs));
+    kk_cmd_build_pso_blend(cmd, &fs_key, variant, &key);
+-   key.topology_class = kk_cmd_topology_class(cmd);
+    key.amplification = util_bitcount(cmd->state.gfx.render.view_mask);
+    key.sample_count = dyn->ms.rasterization_samples;
+ 
+-   return kk_pso_cache_get(dev, &key, vs->fast.fn, variant->fn);
++   return kk_pso_cache_get(dev, &key, rast->fn, variant->fn);
+ }
+ 
+ mtl_render_pipeline_state *
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index 20a95dc2b701294987772ae97a47589f01774bc4..a9f9dbcb382bd971dde273ec4832103910ba7c99 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -203,6 +203,10 @@ kk_make_feature_key(const struct vk_features *feats)
+    return key;
+ }
+ 
++static bool
++kk_is_possible_both_depth_clip_clamp(
++   const struct vk_graphics_pipeline_state *state, bool enabled);
++
+ static void
+ kk_hash_graphics_state(struct vk_physical_device *device,
+                        const struct vk_graphics_pipeline_state *state,
+@@ -216,6 +220,13 @@ kk_hash_graphics_state(struct vk_physical_device *device,
+       struct kk_vs_key key;
+       kk_populate_vs_key(&key, state);
+       _mesa_blake3_update(&blake3_ctx, &key, sizeof(key));
++
++      const uint32_t view_mask = state->mv ? state->mv->view_mask : 0u;
++      const bool emulate_viewport_z =
++         kk_is_possible_both_depth_clip_clamp(state, false);
++      _mesa_blake3_update(&blake3_ctx, &view_mask, sizeof(view_mask));
++      _mesa_blake3_update(&blake3_ctx, &emulate_viewport_z,
++                          sizeof(emulate_viewport_z));
+    }
+ 
+    if (stages & VK_SHADER_STAGE_FRAGMENT_BIT) {
+@@ -701,10 +712,19 @@ kk_fs_needs_forced_depth_write(const nir_shader *nir,
+ }
+ 
+ static bool
+-kk_topology_is_point(const struct vk_graphics_pipeline_state *state)
++kk_topology_is_unknown(const struct vk_graphics_pipeline_state *state,
++                       bool partition)
++{
++   return partition &&
++          (!state->ia ||
++           BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY));
++}
++
++static bool
++kk_topology_is_point(const struct vk_graphics_pipeline_state *state,
++                     bool partition)
+ {
+-   if (!state->ia ||
+-       BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY))
++   if (kk_topology_is_unknown(state, partition))
+       return true;
+ 
+    return state->ia->primitive_topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+@@ -819,7 +839,7 @@ kk_lower_nir(struct kk_device *dev, nir_shader *nir, bool emulated_stage,
+        !emulated_stage) {
+       bool is_point = nir->info.stage == MESA_SHADER_TESS_EVAL
+                          ? nir->info.tess.point_mode
+-                         : kk_topology_is_point(state);
++                         : kk_topology_is_point(state, partition);
+       kk_lower_hw_vs(nir, state, is_point);
+    } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+       kk_lower_fs(dev, nir, state, partition);
+@@ -908,6 +928,13 @@ kk_shader_destroy(struct vk_device *vk_dev, struct kk_shader *shader,
+    if (shader->fast.lib)
+       mtl_release(shader->fast.lib);
+ 
++   if (shader->fast_points.fn)
++      mtl_release(shader->fast_points.fn);
++   if (shader->fast_points.lib)
++      mtl_release(shader->fast_points.lib);
++   ralloc_free((void *)shader->msl_points.entrypoint_name);
++   ralloc_free((void *)shader->msl_points.code);
++
+    if (shader->variants) {
+       hash_table_foreach(shader->variants, he) {
+          struct kk_fs_variant *variant = he->data;
+@@ -915,8 +942,8 @@ kk_shader_destroy(struct vk_device *vk_dev, struct kk_shader *shader,
+          mtl_release(variant->lib);
+       }
+       _mesa_hash_table_destroy(shader->variants, NULL);
+-      simple_mtx_destroy(&shader->variants_lock);
+    }
++   simple_mtx_destroy(&shader->variants_lock);
+    free(shader->nir_blob);
+ 
+    vk_shader_free(&dev->vk, pAllocator, &shader->vk);
+@@ -1159,6 +1186,7 @@ kk_compile_shader(struct kk_device *dev, nir_shader *nir,
+       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+    }
+ 
++   simple_mtx_init(&shader->variants_lock, mtx_plain);
+    gather_shader_info(shader, nir, state);
+    shader->info.partial = partition;
+    shader->info.rast_num_cull_distances = shader->info.num_cull_distances;
+@@ -1170,6 +1198,7 @@ kk_compile_shader(struct kk_device *dev, nir_shader *nir,
+       if (blob.out_of_memory) {
+          blob_finish(&blob);
+          ralloc_free(nir);
++         simple_mtx_destroy(&shader->variants_lock);
+          vk_shader_free(&dev->vk, pAllocator, &shader->vk);
+          return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
+       }
+@@ -1266,6 +1295,16 @@ kk_compile_shader(struct kk_device *dev, nir_shader *nir,
+ 
+    /* The geometry stage's own slot holds its rasterization VS */
+    bool rast = nir->info.stage == MESA_SHADER_VERTEX;
++   if (rast && stage == MESA_SHADER_VERTEX &&
++       kk_topology_is_unknown(state, partition)) {
++      shader->info.rast_point_variant = true;
++      nir_shader *points = nir_shader_clone(NULL, nir);
++      nir_shader_intrinsics_pass(nir, msl_nir_vs_remove_point_size_write,
++                                 nir_metadata_control_flow, NULL);
++      kk_compile_msl(pdev, points, state, partition, &shader->msl_points,
++                     NULL);
++   }
++
+    kk_compile_msl(pdev, nir,
+                   partition && stage == MESA_SHADER_FRAGMENT ? NULL : state,
+                   partition,
+@@ -1744,6 +1783,29 @@ kk_init_fast_prerast(struct kk_device *device, struct kk_shader *vs)
+    return VK_SUCCESS;
+ }
+ 
++const struct kk_fs_variant *
++kk_shader_get_rast(struct kk_device *dev, struct kk_shader *vs, bool points)
++{
++   if (!points || !vs->info.rast_point_variant)
++      return &vs->fast;
++
++   const struct kk_fs_variant *rast = &vs->fast_points;
++   simple_mtx_lock(&vs->variants_lock);
++   if (vs->fast_points.fn == NULL) {
++      if (kk_new_function(dev, &vs->msl_points, &vs->fast_points.lib,
++                          &vs->fast_points.fn) == VK_SUCCESS) {
++         _mesa_blake3_compute(vs->msl_points.code,
++                              strlen(vs->msl_points.code),
++                              vs->fast_points.hash);
++      } else {
++         rast = NULL;
++      }
++   }
++   simple_mtx_unlock(&vs->variants_lock);
++
++   return rast;
++}
++
+ static uint32_t
+ kk_fs_link_key_hash(const void *key)
+ {
+@@ -1766,7 +1828,6 @@ kk_init_fast_fs(struct kk_device *device, struct kk_shader *fs)
+ 
+    _mesa_blake3_compute(data->code, strlen(data->code), fs->fast.hash);
+ 
+-   simple_mtx_init(&fs->variants_lock, mtx_plain);
+    fs->variants =
+       _mesa_hash_table_create(NULL, kk_fs_link_key_hash, kk_fs_link_key_equal);
+    return fs->variants ? VK_SUCCESS : VK_ERROR_OUT_OF_HOST_MEMORY;
+@@ -2133,6 +2194,9 @@ kk_shader_serialize(struct vk_device *vk_dev, const struct vk_shader *vk_shader,
+    if (kk_has_gs_main(&shader->info))
+       kk_msl_serialize(&shader->gs_main, blob);
+ 
++   if (shader->info.rast_point_variant)
++      kk_msl_serialize(&shader->msl_points, blob);
++
+    if (shader->info.partial && shader->info.stage == MESA_SHADER_FRAGMENT) {
+       blob_write_uint64(blob, shader->nir_blob_size);
+       blob_write_bytes(blob, shader->nir_blob, shader->nir_blob_size);
+@@ -2194,6 +2258,7 @@ kk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+       &dev->vk, &kk_shader_ops, info.stage, pAllocator, sizeof(*shader));
+    if (shader == NULL)
+       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
++   simple_mtx_init(&shader->variants_lock, mtx_plain);
+ 
+    shader->info = info;
+    VkResult result = kk_msl_deserialize(blob, &shader->msl_data[info.stage]);
+@@ -2216,6 +2281,12 @@ kk_deserialize_shader(struct vk_device *vk_dev, struct blob_reader *blob,
+          goto fail;
+    }
+ 
++   if (info.rast_point_variant) {
++      result = kk_msl_deserialize(blob, &shader->msl_points);
++      if (result != VK_SUCCESS)
++         goto fail;
++   }
++
+    if (info.partial && info.stage == MESA_SHADER_FRAGMENT) {
+       const uint64_t size = blob_read_uint64(blob);
+       const size_t remaining = blob->end - blob->current;
+@@ -2572,16 +2643,19 @@ static const struct vk_shader_ops kk_shader_ops = {
+       kk_shader_get_executable_internal_representations,
+ };
+ 
++#define KK_DEVICE_SHADER_OPS                                                   \
++   .get_nir_options = kk_get_nir_options,                                      \
++   .get_spirv_options = kk_get_spirv_options,                                  \
++   .preprocess_nir = kk_preprocess_nir, .hash_state = kk_hash_graphics_state,  \
++   .compile = kk_compile_shaders, .deserialize = kk_deserialize_shader,        \
++   .cmd_set_dynamic_graphics_state = vk_cmd_set_dynamic_graphics_state,        \
++   .cmd_bind_shaders = kk_cmd_bind_shaders
++
+ const struct vk_device_shader_ops kk_device_shader_ops = {
++   KK_DEVICE_SHADER_OPS,
++};
++
++const struct vk_device_shader_ops kk_device_shader_ops_gpl_nir = {
+    .graphics_pipeline_needs_full_state = true,
+-   .get_nir_options = kk_get_nir_options,
+-   .get_spirv_options = kk_get_spirv_options,
+-   .preprocess_nir = kk_preprocess_nir,
+-   .hash_state = kk_hash_graphics_state,
+-   .compile =
+-      kk_compile_shaders, /* This will only generate the MSL string we need
+-                             to use for actual library generation */
+-   .deserialize = kk_deserialize_shader,
+-   .cmd_set_dynamic_graphics_state = vk_cmd_set_dynamic_graphics_state,
+-   .cmd_bind_shaders = kk_cmd_bind_shaders,
++   KK_DEVICE_SHADER_OPS,
+ };
+diff --git a/src/kosmickrisp/vulkan/kk_shader.h b/src/kosmickrisp/vulkan/kk_shader.h
+index 92767051c596c598bcf88ae5180294b08a3dd657..da849289212dbcf7552e6b26add14dcfdc250ad7 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.h
++++ b/src/kosmickrisp/vulkan/kk_shader.h
+@@ -61,6 +61,7 @@ struct kk_shader_info {
+ 
+    uint8_t rast_num_cull_distances;
+    uint8_t rast_primitive_id_slot;
++   bool rast_point_variant;
+    uint64_t rast_outputs_written;
+ 
+    union {
+@@ -174,6 +175,8 @@ struct kk_shader {
+    struct msl_compile_data gs_main;
+ 
+    struct kk_fs_variant fast;
++   struct kk_fs_variant fast_points;
++   struct msl_compile_data msl_points;
+ 
+    void *nir_blob;
+    size_t nir_blob_size;
+@@ -203,6 +206,7 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(kk_shader, vk.base, VkShaderEXT,
+                                VK_OBJECT_TYPE_SHADER_EXT);
+ 
+ extern const struct vk_device_shader_ops kk_device_shader_ops;
++extern const struct vk_device_shader_ops kk_device_shader_ops_gpl_nir;
+ 
+ static inline nir_address_format
+ kk_buffer_addr_format(VkPipelineRobustnessBufferBehaviorEXT robustness)
+@@ -248,6 +252,10 @@ VkResult kk_compile_nir_shader(struct kk_device *dev, nir_shader *nir,
+ void kk_cmd_bind_compute_shader(struct kk_cmd_buffer *cmd,
+                                 struct kk_shader *shader);
+ 
++const struct kk_fs_variant *kk_shader_get_rast(struct kk_device *dev,
++                                               struct kk_shader *vs,
++                                               bool points);
++
+ VkResult kk_shader_get_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+                                   const struct kk_fs_link_key *key,
+                                   const struct kk_fs_variant **variant_out);

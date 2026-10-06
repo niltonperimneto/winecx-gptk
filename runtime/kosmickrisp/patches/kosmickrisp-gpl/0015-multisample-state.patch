@@ -1,0 +1,442 @@
+diff --git a/src/compiler/nir/nir_intrinsics.py b/src/compiler/nir/nir_intrinsics.py
+index c80a232f3c3a14da9ceced2e34e5e7da56cc79af..98e3fd5c2f4e4ae41f7ef2b2b5b5fa19f7f35cd8 100644
+--- a/src/compiler/nir/nir_intrinsics.py
++++ b/src/compiler/nir/nir_intrinsics.py
+@@ -3332,3 +3332,4 @@ system_value("is_depth_clamp_emulated_kk", 1, bit_sizes=[1])
+ system_value("is_viewport_z_transform_emulated_kk", 1, bit_sizes=[1])
+ # Loads the viewport Z range for a given viewport index.
+ load("viewport_z_range_kk", [1], [], [CAN_ELIMINATE, CAN_REORDER])
++system_value("api_sample_mask_kk", 1)
+diff --git a/src/kosmickrisp/bridge/mtl_compiler.h b/src/kosmickrisp/bridge/mtl_compiler.h
+index 99f53bdc7727c205c85b673a6b995a9ab08e9ec5..21acaf45815cc61704fca5ab69f5a4f2b0309873 100644
+--- a/src/kosmickrisp/bridge/mtl_compiler.h
++++ b/src/kosmickrisp/bridge/mtl_compiler.h
+@@ -63,6 +63,9 @@ void mtl_render_pipeline_descriptor_set_color_attachment_blend(
+ void mtl_render_pipeline_descriptor_set_raster_sample_count(
+    mtl_render_pipeline_descriptor *descriptor, uint32_t sample_count);
+ 
++void mtl_render_pipeline_descriptor_set_multisample_alpha(
++   mtl_render_pipeline_descriptor *descriptor, bool coverage, bool one);
++
+ void mtl_render_pipeline_descriptor_set_rasterization_enabled(
+    mtl_render_pipeline_descriptor *descriptor, bool enabled);
+ 
+diff --git a/src/kosmickrisp/bridge/mtl_compiler.m b/src/kosmickrisp/bridge/mtl_compiler.m
+index 222e3ba225bbcf2debcf5f53955b4ac8c8b4d3ba..f7f5ad044395656a4107f1c857a7fd11e134fc5e 100644
+--- a/src/kosmickrisp/bridge/mtl_compiler.m
++++ b/src/kosmickrisp/bridge/mtl_compiler.m
+@@ -188,6 +188,17 @@
+    }
+ }
+ 
++void
++mtl_render_pipeline_descriptor_set_multisample_alpha(
++   mtl_render_pipeline_descriptor *descriptor, bool coverage, bool one)
++{
++   @autoreleasepool {
++      MTL4RenderPipelineDescriptor *desc = (MTL4RenderPipelineDescriptor *)descriptor;
++      desc.alphaToCoverageState = coverage ? MTL4AlphaToCoverageStateEnabled : MTL4AlphaToCoverageStateDisabled;
++      desc.alphaToOneState = one ? MTL4AlphaToOneStateEnabled : MTL4AlphaToOneStateDisabled;
++   }
++}
++
+ void
+ mtl_render_pipeline_descriptor_set_rasterization_enabled(mtl_render_pipeline_descriptor *descriptor,
+                                                          bool enabled)
+diff --git a/src/kosmickrisp/bridge/stubs/mtl_compiler.c b/src/kosmickrisp/bridge/stubs/mtl_compiler.c
+index c04dc5a3c38816102b0ddf0a420d2d0d324adfaa..94a33c8ea7477c14c139e160d2e7bdf9a37ccb73 100644
+--- a/src/kosmickrisp/bridge/stubs/mtl_compiler.c
++++ b/src/kosmickrisp/bridge/stubs/mtl_compiler.c
+@@ -90,6 +90,12 @@ mtl_render_pipeline_descriptor_set_raster_sample_count(
+ {
+ }
+ 
++void
++mtl_render_pipeline_descriptor_set_multisample_alpha(
++   mtl_render_pipeline_descriptor *descriptor, bool coverage, bool one)
++{
++}
++
+ void
+ mtl_render_pipeline_descriptor_set_rasterization_enabled(
+    mtl_render_pipeline_descriptor *descriptor, bool enabled)
+diff --git a/src/kosmickrisp/compiler/msl_nir_lower_common.c b/src/kosmickrisp/compiler/msl_nir_lower_common.c
+index 98aba37065e6340947a65a799924053205f30698..84fe9c997494628dcd10c041a1fc2d98db7163b9 100644
+--- a/src/kosmickrisp/compiler/msl_nir_lower_common.c
++++ b/src/kosmickrisp/compiler/msl_nir_lower_common.c
+@@ -267,33 +267,49 @@ msl_replace_load_sample_mask_in_for_static_sample_mask(
+    return true;
+ }
+ 
+-bool
+-msl_lower_static_sample_mask(nir_shader *nir, uint32_t sample_mask)
++static bool
++msl_lower_sample_mask(nir_builder *b, nir_def *sample_mask)
+ {
+-   /* Only support vertex for now */
+-   assert(nir->info.stage == MESA_SHADER_FRAGMENT);
+-
+-   /* Embed sample mask */
+-   nir_function_impl *entrypoint = nir_shader_get_entrypoint(nir);
+-   nir_builder b = nir_builder_at(nir_before_impl(entrypoint));
++   nir_shader *nir = b->shader;
+ 
+    struct nir_io_semantics io_semantics = {
+       .location = FRAG_RESULT_SAMPLE_MASK,
+       .num_slots = 1u,
+    };
+-   nir_def *static_sample_mask = nir_imm_int(&b, sample_mask);
+-   nir_store_output(&b, nir_load_sample_mask_in(&b), nir_imm_int(&b, 0u),
++   nir_store_output(b, nir_load_sample_mask_in(b), nir_imm_int(b, 0u),
+                     .base = 0u, .range = 1u, .write_mask = 0x1, .component = 0u,
+                     .src_type = nir_type_uint32, .io_semantics = io_semantics);
+    BITSET_SET(nir->info.system_values_read, SYSTEM_VALUE_SAMPLE_MASK_IN);
+ 
+    nir_shader_intrinsics_pass(
+       nir, msl_replace_load_sample_mask_in_for_static_sample_mask,
+-      nir_metadata_control_flow, static_sample_mask);
++      nir_metadata_control_flow, sample_mask);
+ 
+    return true;
+ }
+ 
++bool
++msl_lower_static_sample_mask(nir_shader *nir, uint32_t sample_mask)
++{
++   /* Only support vertex for now */
++   assert(nir->info.stage == MESA_SHADER_FRAGMENT);
++
++   /* Embed sample mask */
++   nir_function_impl *entrypoint = nir_shader_get_entrypoint(nir);
++   nir_builder b = nir_builder_at(nir_before_impl(entrypoint));
++   return msl_lower_sample_mask(&b, nir_imm_int(&b, sample_mask));
++}
++
++bool
++msl_lower_dynamic_sample_mask(nir_shader *nir)
++{
++   assert(nir->info.stage == MESA_SHADER_FRAGMENT);
++
++   nir_function_impl *entrypoint = nir_shader_get_entrypoint(nir);
++   nir_builder b = nir_builder_at(nir_before_impl(entrypoint));
++   return msl_lower_sample_mask(&b, nir_load_api_sample_mask_kk(&b));
++}
++
+ static bool
+ is_color_output(const nir_intrinsic_instr *intr)
+ {
+diff --git a/src/kosmickrisp/compiler/nir_to_msl.h b/src/kosmickrisp/compiler/nir_to_msl.h
+index e58e9556e20d80ac158cced12b4bdaed4f841596..6fb35c9be74c2c3b545d56716a7f649ff11993e2 100644
+--- a/src/kosmickrisp/compiler/nir_to_msl.h
++++ b/src/kosmickrisp/compiler/nir_to_msl.h
+@@ -82,6 +82,7 @@ bool msl_lower_textures(nir_shader *s);
+ bool msl_lower_robustness2_images(nir_shader *s);
+ 
+ bool msl_lower_static_sample_mask(nir_shader *nir, uint32_t sample_mask);
++bool msl_lower_dynamic_sample_mask(nir_shader *nir);
+ bool msl_disable_triangle_merge(nir_shader *nir);
+ bool msl_ensure_depth_write(nir_shader *nir);
+ bool msl_ensure_vertex_position_output(nir_shader *nir);
+diff --git a/src/kosmickrisp/vulkan/kk_cmd_buffer.h b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
+index c63ce480911464e96b5dbbaa02eddeb4ad708d28..669e90d221defe6a441d0bdfd8795fcfc1f84ac0 100644
+--- a/src/kosmickrisp/vulkan/kk_cmd_buffer.h
++++ b/src/kosmickrisp/vulkan/kk_cmd_buffer.h
+@@ -42,6 +42,7 @@ struct kk_root_descriptor_table {
+ 
+          float blend_constant[4];
+          float clip_z_coeff;
++         uint32_t sample_mask;
+ 
+          float viewport_z_range[KK_MAX_VIEWPORTS * 2];
+          bool emulate_depth_clamp;
+diff --git a/src/kosmickrisp/vulkan/kk_cmd_draw.c b/src/kosmickrisp/vulkan/kk_cmd_draw.c
+index 0a367f07f7fefe776b6d1302a5fad224010576a6..298f456127cbf02ced1f14ddf8a5628b450be858 100644
+--- a/src/kosmickrisp/vulkan/kk_cmd_draw.c
++++ b/src/kosmickrisp/vulkan/kk_cmd_draw.c
+@@ -1512,6 +1512,11 @@ kk_flush_dynamic_state(struct kk_cmd_buffer *cmd)
+       desc->root_dirty = true;
+    }
+ 
++   if (IS_DIRTY(MS_SAMPLE_MASK)) {
++      desc->root.draw.sample_mask = dyn->ms.sample_mask;
++      desc->root_dirty = true;
++   }
++
+    if (IS_DIRTY(VI) || IS_DIRTY(VI_BINDINGS_VALID) ||
+        IS_DIRTY(VI_BINDING_STRIDES) || gfx->dirty & KK_DIRTY_VB ||
+        IS_SHADER_DIRTY(VERTEX)) {
+diff --git a/src/kosmickrisp/vulkan/kk_nir_lower_descriptors.c b/src/kosmickrisp/vulkan/kk_nir_lower_descriptors.c
+index 3b54ffddd8eadd78b3321ef130a60a81da721434..73f114cd8e30de175f4aee99aed1b79fb09cbc9a 100644
+--- a/src/kosmickrisp/vulkan/kk_nir_lower_descriptors.c
++++ b/src/kosmickrisp/vulkan/kk_nir_lower_descriptors.c
+@@ -418,6 +418,9 @@ try_lower_intrin(nir_builder *b, nir_intrinsic_instr *intrin,
+    case nir_intrinsic_load_clip_z_coeff:
+       return lower_sysval_to_root_table(b, intrin, draw.clip_z_coeff);
+ 
++   case nir_intrinsic_load_api_sample_mask_kk:
++      return lower_sysval_to_root_table(b, intrin, draw.sample_mask);
++
+    case nir_intrinsic_load_is_depth_clamp_emulated_kk: {
+       unsigned offset = kk_root_descriptor_offset(draw.emulate_depth_clamp);
+       b->cursor = nir_instr_remove(&intrin->instr);
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.c b/src/kosmickrisp/vulkan/kk_pso_cache.c
+index 8d74bd8a96168a9ef7b2307427d284a96e6fa711..0a2a852eaf429072b6539c308e2a5aba90c26fc0 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.c
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.c
+@@ -90,6 +90,9 @@ kk_new_render_pipeline(struct kk_device *dev, mtl_function_descriptor *vs,
+       mtl_render_pipeline_descriptor_set_raster_sample_count(desc,
+                                                              key->sample_count);
+ 
++   mtl_render_pipeline_descriptor_set_multisample_alpha(
++      desc, key->alpha_to_coverage, key->alpha_to_one);
++
+    mtl_render_pipeline_state *pso =
+       mtl_new_render_pipeline(dev->mtl_compiler_handle, desc);
+    mtl_release(desc);
+@@ -197,8 +200,7 @@ kk_fs_link_key_needed(const struct kk_shader *fs,
+        key->num_cull_distances || key->primitive_id_slot)
+       return true;
+ 
+-   if (key->alpha_to_coverage || key->alpha_to_one ||
+-       key->sample_mask != UINT16_MAX)
++   if (key->sample_mask)
+       return true;
+ 
+    u_foreach_bit(rt, fs->info.fs.color_outputs) {
+@@ -221,7 +223,6 @@ kk_cmd_build_fs_link_key(struct kk_cmd_buffer *cmd, const struct kk_shader *vs,
+    const struct kk_rendering_state *render = &cmd->state.gfx.render;
+ 
+    memset(key, 0, sizeof(*key));
+-   key->sample_mask = UINT16_MAX;
+ 
+    bool shader_blend = force_shader_blend || fs->info.fs.dual_source_blend ||
+                        (dyn->cb.logic_op_enable && fs->info.fs.color_outputs);
+@@ -270,12 +271,15 @@ kk_cmd_build_fs_link_key(struct kk_cmd_buffer *cmd, const struct kk_shader *vs,
+    if (fs->info.fs.reads_primitive_id)
+       key->primitive_id_slot = vs->info.rast_primitive_id_slot;
+ 
+-   if (!fs->info.fs.ms_static) {
++   if (shader_blend) {
+       key->alpha_to_coverage = dyn->ms.alpha_to_coverage_enable;
+       key->alpha_to_one = dyn->ms.alpha_to_one_enable;
+-      if (dyn->ms.rasterization_samples)
+-         key->sample_mask = dyn->ms.sample_mask;
+-      key->rasterization_samples = dyn->ms.rasterization_samples;
++   }
++
++   if (!fs->info.fs.ms_static) {
++      uint32_t all_samples = BITFIELD_MASK(dyn->ms.rasterization_samples);
++      key->sample_mask = dyn->ms.rasterization_samples &&
++                         (dyn->ms.sample_mask & all_samples) != all_samples;
+    }
+ }
+ 
+@@ -357,6 +361,9 @@ kk_cmd_link(struct kk_cmd_buffer *cmd, struct kk_shader *vs,
+    kk_cmd_build_pso_blend(cmd, &fs_key, variant, &key);
+    key.amplification = util_bitcount(cmd->state.gfx.render.view_mask);
+    key.sample_count = dyn->ms.rasterization_samples;
++   key.alpha_to_coverage =
++      !variant->shader_blend && dyn->ms.alpha_to_coverage_enable;
++   key.alpha_to_one = !variant->shader_blend && dyn->ms.alpha_to_one_enable;
+ 
+    return kk_pso_cache_get(dev, &key, rast->fn, variant->fn);
+ }
+diff --git a/src/kosmickrisp/vulkan/kk_pso_cache.h b/src/kosmickrisp/vulkan/kk_pso_cache.h
+index df2087768443373e0ff39c4f88c5b1a12ac774e4..14b30e1e986e5af8bded52b38efc0818e7532378 100644
+--- a/src/kosmickrisp/vulkan/kk_pso_cache.h
++++ b/src/kosmickrisp/vulkan/kk_pso_cache.h
+@@ -35,6 +35,8 @@ struct kk_pso_key {
+    uint32_t sample_count;
+    uint32_t topology_class;
+    uint32_t amplification;
++   uint32_t alpha_to_coverage;
++   uint32_t alpha_to_one;
+    struct kk_pso_blend blend[MAX_DRAW_BUFFERS];
+ };
+ 
+diff --git a/src/kosmickrisp/vulkan/kk_shader.c b/src/kosmickrisp/vulkan/kk_shader.c
+index a9f9dbcb382bd971dde273ec4832103910ba7c99..509f885166b501d0f61f942f5a9eb7c18ec90cef 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.c
++++ b/src/kosmickrisp/vulkan/kk_shader.c
+@@ -105,6 +105,41 @@ has_static_depth_stencil_state(const struct vk_graphics_pipeline_state *state)
+       BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK));
+ }
+ 
++static const struct vk_multiview_state kk_unknown_mv;
++static const struct vk_render_pass_state kk_unknown_rp;
++static const struct vk_graphics_pipeline_state kk_unknown_state = {
++   .dynamic = {[0 ... BITSET_WORDS(MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX) -
++               1] = ~0u},
++   .mv = &kk_unknown_mv,
++   .rp = &kk_unknown_rp,
++};
++
++static const struct vk_multisample_state *
++kk_static_ms(const struct vk_graphics_pipeline_state *state)
++{
++   if (!state || !state->ms ||
++       BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES) ||
++       BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_MASK) ||
++       BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE) ||
++       BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_ALPHA_TO_ONE_ENABLE))
++      return NULL;
++
++   return state->ms;
++}
++
++static bool
++kk_state_needs_link(const struct vk_graphics_pipeline_state *state)
++{
++   return BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE) ||
++          BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP) ||
++          BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_ENABLES) ||
++          BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS) ||
++          BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_WRITE_MASKS) ||
++          BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES) ||
++          BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_ADVANCED) ||
++          state->ms != kk_static_ms(state);
++}
++
+ static bool
+ kk_vi_is_static(const struct vk_graphics_pipeline_state *state)
+ {
+@@ -137,6 +172,8 @@ struct kk_fs_key {
+    uint32_t rasterization_samples;
+    uint16_t static_sample_mask;
+    bool sample_shading_enable;
++   bool alpha_to_coverage;
++   bool alpha_to_one;
+    bool has_depth;
+    bool has_stencil;
+    bool dynamic_input_attachment_map;
+@@ -165,8 +202,12 @@ kk_populate_fs_key(struct kk_fs_key *key,
+       key->color_blend = *(state->cb);
+ 
+    if (state->ms) {
+-      key->rasterization_samples = state->ms->rasterization_samples;
+-      key->static_sample_mask = state->ms->sample_mask;
++      if (!partition) {
++         key->rasterization_samples = state->ms->rasterization_samples;
++         key->static_sample_mask = state->ms->sample_mask;
++         key->alpha_to_coverage = state->ms->alpha_to_coverage_enable;
++         key->alpha_to_one = state->ms->alpha_to_one_enable;
++      }
+       key->sample_shading_enable = state->ms->sample_shading_enable;
+    }
+ 
+@@ -232,7 +273,8 @@ kk_hash_graphics_state(struct vk_physical_device *device,
+    if (stages & VK_SHADER_STAGE_FRAGMENT_BIT) {
+       struct kk_fs_key key;
+       kk_populate_fs_key(&key, state,
+-                         !(stages & VK_SHADER_STAGE_VERTEX_BIT));
++                         !(stages & VK_SHADER_STAGE_VERTEX_BIT) ||
++                            KK_DEBUG(PARTITION) || kk_state_needs_link(state));
+       _mesa_blake3_update(&blake3_ctx, &key, sizeof(key));
+ 
+       _mesa_blake3_update(&blake3_ctx, &state->mv->view_mask,
+@@ -526,14 +568,15 @@ kk_lower_fs(struct kk_device *dev, nir_shader *nir,
+ {
+    struct kk_physical_device *pdev = kk_device_physical(dev);
+ 
++   const struct vk_multisample_state *ms = partition ? NULL : kk_static_ms(state);
++
+    nir->info.fs.uses_sample_shading |=
+       state->ms && state->ms->sample_shading_enable;
+ 
+    /* Must be lowered before blending */
+-   if (state->ms) {
++   if (ms) {
+       NIR_PASS(_, nir, msl_nir_lower_multisample_alpha,
+-               state->ms->alpha_to_coverage_enable,
+-               state->ms->alpha_to_one_enable);
++               ms->alpha_to_coverage_enable, ms->alpha_to_one_enable);
+    }
+ 
+    /* msl_nir_lower_sample_shading needs to go before blending since
+@@ -583,8 +626,7 @@ kk_lower_fs(struct kk_device *dev, nir_shader *nir,
+ 
+    NIR_PASS(_, nir, msl_nir_fs_io_types);
+ 
+-   if (state->ms && state->ms->rasterization_samples &&
+-       state->ms->sample_mask != UINT16_MAX) {
++   if (ms && ms->rasterization_samples && ms->sample_mask != UINT16_MAX) {
+ 
+       /* KK_WORKAROUND_7 */
+       if (!(pdev->settings.disabled_workarounds & BITFIELD64_BIT(7))) {
+@@ -599,7 +641,7 @@ kk_lower_fs(struct kk_device *dev, nir_shader *nir,
+             nir_discard_if(&b, nir_ieq_imm(&b, sample_mask_bit, 0u));
+          }
+       }
+-      NIR_PASS(_, nir, msl_lower_static_sample_mask, state->ms->sample_mask);
++      NIR_PASS(_, nir, msl_lower_static_sample_mask, ms->sample_mask);
+    }
+    /* Check https://github.com/KhronosGroup/Vulkan-Portability/issues/54 for
+     * explanation on why we need this. */
+@@ -620,7 +662,7 @@ kk_lower_fs(struct kk_device *dev, nir_shader *nir,
+       bool ms_bug_present = !ns_is_os_version_at_least(27, 0, 0) &&
+                             (pdev->info.gpu_apple_family == 7 ||
+                              pdev->info.gpu_apple_family == 8) &&
+-                            state->ms && state->ms->rasterization_samples > 1;
++                            ms && ms->rasterization_samples > 1;
+       if (!ms_bug_present)
+          NIR_PASS(_, nir, msl_disable_triangle_merge);
+    }
+@@ -1035,7 +1077,8 @@ gather_shader_info(struct kk_shader *shader, nir_shader *nir,
+       if (nir->info.fs.depth_layout == FRAG_DEPTH_LAYOUT_NONE)
+          nir->info.fs.depth_layout = FRAG_DEPTH_LAYOUT_ANY;
+       shader->info.fs.uses_flat_varyings = fs_uses_flat_varying(nir);
+-      shader->info.fs.ms_static = state && state->ms;
++      shader->info.fs.ms_static =
++         !shader->info.partial && kk_static_ms(state) != NULL;
+       nir_shader_intrinsics_pass(nir, gather_fs_io, nir_metadata_all,
+                                  &shader->info);
+    } else if (nir->info.stage == MESA_SHADER_COMPUTE) {
+@@ -1187,8 +1230,8 @@ kk_compile_shader(struct kk_device *dev, nir_shader *nir,
+    }
+ 
+    simple_mtx_init(&shader->variants_lock, mtx_plain);
+-   gather_shader_info(shader, nir, state);
+    shader->info.partial = partition;
++   gather_shader_info(shader, nir, state);
+    shader->info.rast_num_cull_distances = shader->info.num_cull_distances;
+ 
+    if (partition && stage == MESA_SHADER_FRAGMENT) {
+@@ -2419,7 +2462,7 @@ kk_compile_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+             nir_metadata_control_flow, (void *)&state);
+    NIR_PASS(_, nir, msl_nir_fs_io_types);
+ 
+-   if (key->rasterization_samples && key->sample_mask != UINT16_MAX) {
++   if (key->sample_mask) {
+       if (!(pdev->settings.disabled_workarounds & BITFIELD64_BIT(7)) &&
+           !nir->info.fs.early_fragment_tests) {
+          nir_function_impl *entrypoint = nir_shader_get_entrypoint(nir);
+@@ -2431,7 +2474,7 @@ kk_compile_fs_variant(struct kk_device *dev, struct kk_shader *fs,
+             nir_iand(&b, nir_load_sample_mask_in(&b), sample_bit);
+          nir_discard_if(&b, nir_ieq_imm(&b, sample_mask_bit, 0u));
+       }
+-      NIR_PASS(_, nir, msl_lower_static_sample_mask, key->sample_mask);
++      NIR_PASS(_, nir, msl_lower_dynamic_sample_mask);
+    }
+ 
+    NIR_PASS(_, nir, kk_nir_lower_descriptors, &rs_none, 0, NULL);
+diff --git a/src/kosmickrisp/vulkan/kk_shader.h b/src/kosmickrisp/vulkan/kk_shader.h
+index da849289212dbcf7552e6b26add14dcfdc250ad7..078a98458d23058c9d8ab03f1283bbad4e466927 100644
+--- a/src/kosmickrisp/vulkan/kk_shader.h
++++ b/src/kosmickrisp/vulkan/kk_shader.h
+@@ -188,7 +188,6 @@ struct kk_fs_link_key {
+    VkFormat rt_formats[MAX_DRAW_BUFFERS];
+    uint64_t missing_inputs;
+    uint32_t advanced_blend_mask;
+-   uint16_t sample_mask;
+    uint8_t logic_op;
+    uint8_t num_cull_distances;
+    uint8_t primitive_id_slot;
+@@ -197,7 +196,7 @@ struct kk_fs_link_key {
+    bool remove_depth;
+    bool alpha_to_coverage;
+    bool alpha_to_one;
+-   uint8_t rasterization_samples;
++   bool sample_mask;
+    uint8_t pad[3];
+    struct vk_color_blend_attachment_state blend[MAX_DRAW_BUFFERS];
+ };

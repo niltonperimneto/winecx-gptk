@@ -1,0 +1,169 @@
+diff --git a/src/kosmickrisp/bridge/mtl_device.h b/src/kosmickrisp/bridge/mtl_device.h
+index 26365c14d7fad9e820e8e705c446ce9d56e2e0cc..c88b74cc675ce3f558f7fee613814168bf240e9b 100644
+--- a/src/kosmickrisp/bridge/mtl_device.h
++++ b/src/kosmickrisp/bridge/mtl_device.h
+@@ -70,3 +70,9 @@ mtl_command_allocator *mtl_new_command_allocator(mtl_device *device);
+ mtl_command_buffer *mtl_new_command_buffer(mtl_device *device);
+ 
+ #endif /* MTL_DEVICE_H */
++
++/* Diagnostic capture owned by one logical device, counted at presentation. */
++void mtl_bounded_capture_present(void *owner, mtl_device *device,
++                                const char *trigger, const char *directory,
++                                unsigned frame_count, bool success);
++void mtl_bounded_capture_finish(void *owner);
+diff --git a/src/kosmickrisp/bridge/mtl_device.m b/src/kosmickrisp/bridge/mtl_device.m
+index 753cda3615ec3e2bfd084455d7dfdd949e8c056f..359f0b1d343fca0f1bd527e22e513a2553a5b98a 100644
+--- a/src/kosmickrisp/bridge/mtl_device.m
++++ b/src/kosmickrisp/bridge/mtl_device.m
+@@ -5,6 +5,7 @@
+  */
+ 
+ #include "mtl_device.h"
++#include <unistd.h>
+ 
+ /* TODO_KOSMICKRISP Remove */
+ #include "kk_image_layout.h"
+@@ -358,3 +359,42 @@
+       return [dev newCommandBuffer];
+    }
+ }
++
++/* MTLCaptureManager is process-wide even when DXVK probes several devices. */
++static void *bounded_owner;
++static unsigned bounded_remaining;
++
++void
++mtl_bounded_capture_finish(void *owner)
++{
++   @synchronized([MTLCaptureManager sharedCaptureManager]) {
++      if (bounded_owner == owner) {
++         mtl_stop_gpu_capture();
++         bounded_owner = NULL;
++         bounded_remaining = 0;
++         fprintf(stderr, "KK capture finished\n");
++      }
++   }
++}
++
++void
++mtl_bounded_capture_present(void *owner, mtl_device *device,
++                           const char *trigger, const char *directory,
++                           unsigned frame_count, bool success)
++{
++   @synchronized([MTLCaptureManager sharedCaptureManager]) {
++      if (bounded_owner == owner) {
++         if (!success || --bounded_remaining == 0)
++            mtl_bounded_capture_finish(owner);
++      } else if (!bounded_owner && success &&
++                 ![[MTLCaptureManager sharedCaptureManager] isCapturing] &&
++                 unlink(trigger) == 0) {
++         mtl_start_gpu_capture(device, directory);
++         if ([[MTLCaptureManager sharedCaptureManager] isCapturing]) {
++            bounded_owner = owner;
++            bounded_remaining = MAX2(frame_count, 1);
++            fprintf(stderr, "KK capture started frames=%u\n", bounded_remaining);
++         }
++      }
++   }
++}
+diff --git a/src/kosmickrisp/bridge/stubs/mtl_device.c b/src/kosmickrisp/bridge/stubs/mtl_device.c
+index 68faa46ff500021059784a748ce7aec81be5fa7d..f39371affc067925ed012ad6397760be665fe1b0 100644
+--- a/src/kosmickrisp/bridge/stubs/mtl_device.c
++++ b/src/kosmickrisp/bridge/stubs/mtl_device.c
+@@ -168,3 +168,7 @@ mtl_new_command_buffer(mtl_device *device)
+ {
+    return NULL;
+ }
++
++void mtl_bounded_capture_present(void *owner, mtl_device *device,
++   const char *trigger, const char *directory, unsigned frame_count, bool success) {}
++void mtl_bounded_capture_finish(void *owner) {}
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index c0fc20780060090826d5a739eab494f7673f4806..9832c06f80bbabd697200be61961809de52ae4c0 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -349,6 +349,10 @@ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+       mtl_start_gpu_capture(dev->mtl_handle, capture_directory);
+    }
+ 
++   dev->capture_trigger = debug_get_option("MESA_KK_GPU_CAPTURE_TRIGGER", NULL);
++   dev->capture_directory = debug_get_option("MESA_KK_GPU_CAPTURE_DIRECTORY", NULL);
++   dev->capture_frames = CLAMP(debug_get_num_option("MESA_KK_GPU_CAPTURE_FRAMES", 3), 1, 120);
++   dev->present_log_path = debug_get_option("MESA_KK_PRESENT_LOG", NULL);
+    *pDevice = kk_device_to_handle(dev);
+ 
+    return VK_SUCCESS;
+@@ -393,6 +397,10 @@ kk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
+       mtl_stop_gpu_capture();
+    }
+ 
++   mtl_bounded_capture_finish(dev);
++   if (dev->present_log)
++      fclose(dev->present_log);
++
+    /* Meta first since it may destroy Vulkan objects */
+    kk_device_finish_meta(dev);
+    kk_device_finish_lib(dev);
+diff --git a/src/kosmickrisp/vulkan/kk_device.h b/src/kosmickrisp/vulkan/kk_device.h
+index e3795ba54b827d889f342fcff3da617a0266a70c..1402ef2a7e021aaec0ef9dab2c067c497f1ea7b5 100644
+--- a/src/kosmickrisp/vulkan/kk_device.h
++++ b/src/kosmickrisp/vulkan/kk_device.h
+@@ -78,6 +78,11 @@ struct kk_precompiled_cache {
+ 
+ struct kk_device {
+    struct vk_device vk;
++   const char *capture_trigger;
++   const char *capture_directory;
++   unsigned capture_frames;
++   const char *present_log_path;
++   FILE *present_log;
+ 
+    mtl_device *mtl_handle;
+    mtl_compiler *mtl_compiler_handle;
+diff --git a/src/kosmickrisp/vulkan/kk_wsi.c b/src/kosmickrisp/vulkan/kk_wsi.c
+index d86376656ef27a0ff698d155703d2254322e598c..b7bac4f6b4ce6958c4076906af04c4c0c2b09da1 100644
+--- a/src/kosmickrisp/vulkan/kk_wsi.c
++++ b/src/kosmickrisp/vulkan/kk_wsi.c
+@@ -13,6 +13,7 @@
+ #include "kk_image.h"
+ #include "kk_instance.h"
+ #include "wsi_common.h"
++#include "util/os_time.h"
+ 
+ #include "kosmickrisp/bridge/mtl_bridge.h"
+ 
+@@ -143,3 +144,33 @@ kk_finish_wsi(struct kk_physical_device *pdev)
+    pdev->vk.wsi_device = NULL;
+    wsi_device_finish(&pdev->wsi_device, &pdev->vk.instance->alloc);
+ }
++
++VKAPI_ATTR VkResult VKAPI_CALL
++kk_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *info)
++{
++   VK_FROM_HANDLE(kk_queue, queue, _queue);
++   struct kk_device *dev = kk_queue_device(queue);
++   int64_t start = dev->present_log_path ? os_time_get_nano() : 0;
++   VkResult result = wsi_common_queue_present(dev->vk.physical->wsi_device,
++                                              &queue->vk, info);
++   if (dev->present_log_path) {
++      int64_t end = os_time_get_nano();
++      if (!dev->present_log) {
++         dev->present_log = fopen(dev->present_log_path, "a");
++         if (!dev->present_log) {
++            fprintf(stderr, "KK cannot open presentation log\n");
++            dev->present_log_path = NULL;
++         } else {
++            setvbuf(dev->present_log, NULL, _IOFBF, 65536);
++         }
++      }
++      if (dev->present_log)
++         fprintf(dev->present_log, "%lld,%lld,%d,%u\n",
++                 (long long)start, (long long)end, result, info->swapchainCount);
++   }
++   if (dev->capture_trigger)
++      mtl_bounded_capture_present(dev, dev->mtl_handle, dev->capture_trigger,
++         dev->capture_directory, dev->capture_frames,
++         result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR);
++   return result;
++}

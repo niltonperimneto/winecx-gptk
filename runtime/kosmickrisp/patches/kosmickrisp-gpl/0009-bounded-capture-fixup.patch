@@ -1,0 +1,14 @@
+diff --git a/src/kosmickrisp/vulkan/kk_wsi.c b/src/kosmickrisp/vulkan/kk_wsi.c
+index b7bac4f6b4ce6958c4076906af04c4c0c2b09da1..a502edefb7a9cd6d80e5e133a4bbfa69a5ab4409 100644
+--- a/src/kosmickrisp/vulkan/kk_wsi.c
++++ b/src/kosmickrisp/vulkan/kk_wsi.c
+@@ -148,7 +148,8 @@ kk_finish_wsi(struct kk_physical_device *pdev)
+ VKAPI_ATTR VkResult VKAPI_CALL
+ kk_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *info)
+ {
+-   VK_FROM_HANDLE(kk_queue, queue, _queue);
++   VK_FROM_HANDLE(vk_queue, vk_queue, _queue);
++   struct kk_queue *queue = container_of(vk_queue, struct kk_queue, vk);
+    struct kk_device *dev = kk_queue_device(queue);
+    int64_t start = dev->present_log_path ? os_time_get_nano() : 0;
+    VkResult result = wsi_common_queue_present(dev->vk.physical->wsi_device,

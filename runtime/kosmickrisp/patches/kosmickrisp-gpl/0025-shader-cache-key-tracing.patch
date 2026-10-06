@@ -1,0 +1,461 @@
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index 1761c5db20add2da1a09de3d1fee52804811063a..5e9b27dee9b4455ecc21e38fbae7c699df42d6dd 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -6,6 +6,9 @@
+  */
+ 
+ #include "kk_device.h"
++#include "kk_metal_cache.h"
++#include "util/disk_cache.h"
++#include "vk_shader.h"
+ 
+ #include "kk_buffer.h"
+ #include "kk_buffer_view.h"
+@@ -35,6 +38,8 @@
+ struct kk_mtl_compiler {
+    mtl_compiler *handle;
+    uint32_t refcount;
++   struct disk_cache *disk;
++   struct kk_metal_cache *cache;
+ };
+ 
+ static struct hash_table compilers_ht;
+@@ -48,13 +53,35 @@ kk_init_compiler_table()
+    simple_mtx_init(&compilers_ht_lock, mtx_plain);
+ }
+ 
++static struct disk_cache *
++kk_create_metal_disk_cache(struct kk_device *dev)
++{
++   if (dev->vk.disable_internal_cache ||
++       debug_get_bool_option("MESA_KK_PSO_CACHE_DISABLE", false))
++      return NULL;
++   char identity[VK_UUID_SIZE * 2 + 1];
++   static const char hex[] = "0123456789abcdef";
++   for (unsigned i = 0; i < VK_UUID_SIZE; ++i) {
++      uint8_t value = dev->vk.physical->properties.pipelineCacheUUID[i];
++      identity[i * 2] = hex[value >> 4];
++      identity[i * 2 + 1] = hex[value & 15];
++   }
++   identity[VK_UUID_SIZE * 2] = 0;
++   return disk_cache_create("kosmickrisp-metal", identity, 0);
++}
++
+ static mtl_compiler *
+ kk_acquire_compiler(struct kk_device *dev)
+ {
+    /* KK_WORKAROUND_11 */
+    struct kk_physical_device *pdev = kk_device_physical(dev);
+    if (pdev->settings.disabled_workarounds & BITFIELD64_BIT(11)) {
+-      return mtl_new_compiler(dev->mtl_handle);
++      mtl_compiler *handle = mtl_new_compiler(dev->mtl_handle);
++      if (!handle)
++         return NULL;
++      dev->metal_disk = kk_create_metal_disk_cache(dev);
++      dev->metal_cache = kk_metal_cache_create(dev->metal_disk, dev->mtl_handle, handle);
++      return handle;
+    }
+ 
+    call_once(&compilers_ht_once, kk_init_compiler_table);
+@@ -65,7 +92,7 @@ kk_acquire_compiler(struct kk_device *dev)
+ 
+    struct kk_mtl_compiler *compiler;
+    if (ent == NULL) {
+-      compiler = ralloc(NULL, struct kk_mtl_compiler);
++      compiler = rzalloc(NULL, struct kk_mtl_compiler);
+       if (compiler == NULL) {
+          simple_mtx_unlock(&compilers_ht_lock);
+          return NULL;
+@@ -78,6 +105,9 @@ kk_acquire_compiler(struct kk_device *dev)
+          return NULL;
+       }
+ 
++      compiler->disk = kk_create_metal_disk_cache(dev);
++      compiler->cache = kk_metal_cache_create(compiler->disk, dev->mtl_handle,
++                                             compiler->handle);
+       compiler->refcount = 1;
+       _mesa_hash_table_insert(&compilers_ht, dev->mtl_handle, compiler);
+    } else {
+@@ -85,6 +115,14 @@ kk_acquire_compiler(struct kk_device *dev)
+       compiler->refcount++;
+    }
+ 
++   if (!dev->vk.disable_internal_cache && !compiler->cache) {
++      if (!compiler->disk)
++         compiler->disk = kk_create_metal_disk_cache(dev);
++      compiler->cache = kk_metal_cache_create(compiler->disk, dev->mtl_handle,
++                                             compiler->handle);
++   }
++   if (!dev->vk.disable_internal_cache)
++      dev->metal_cache = compiler->cache;
+    simple_mtx_unlock(&compilers_ht_lock);
+    return compiler->handle;
+ }
+@@ -95,6 +133,8 @@ kk_release_compiler(struct kk_device *dev)
+    /* KK_WORKAROUND_11 */
+    struct kk_physical_device *pdev = kk_device_physical(dev);
+    if (pdev->settings.disabled_workarounds & BITFIELD64_BIT(11)) {
++      kk_metal_cache_destroy(dev->metal_cache);
++      disk_cache_destroy(dev->metal_disk);
+       mtl_release(dev->mtl_compiler_handle);
+       return;
+    }
+@@ -108,6 +148,8 @@ kk_release_compiler(struct kk_device *dev)
+       --compiler->refcount;
+ 
+       if (compiler->refcount == 0) {
++         kk_metal_cache_destroy(compiler->cache);
++         disk_cache_destroy(compiler->disk);
+          _mesa_hash_table_remove(&compilers_ht, ent);
+          mtl_release(compiler->handle);
+          ralloc_free(compiler);
+@@ -272,6 +314,84 @@ kk_log_compile(struct kk_device *dev, const char *kind, int64_t start)
+            (long long)os_time_get_nano());
+ }
+ 
++static void
++kk_cache_namespace(struct vk_physical_device *physical, char out[33])
++{
++   static const char hex[] = "0123456789abcdef";
++   for (unsigned i = 0; i < VK_UUID_SIZE; ++i) {
++      uint8_t value = physical->properties.pipelineCacheUUID[i];
++      out[i * 2] = hex[value >> 4];
++      out[i * 2 + 1] = hex[value & 15];
++   }
++   out[32] = 0;
++}
++
++void
++kk_log_cache_shader(struct kk_device *dev,
++                     const struct vk_shader_cache_trace *trace,
++                     const char *outcome, int64_t start, int64_t end)
++{
++   if (!dev->cache_log || !trace)
++      return;
++   char ns[33], key[BLAKE3_HEX_LEN], precomp[BLAKE3_HEX_LEN];
++   char flags[BLAKE3_HEX_LEN], partition[BLAKE3_HEX_LEN];
++   char layout[BLAKE3_HEX_LEN], state[BLAKE3_HEX_LEN];
++   kk_cache_namespace(dev->vk.physical, ns);
++   _mesa_blake3_format(key, trace->key);
++   _mesa_blake3_format(precomp, trace->precomp_key);
++   _mesa_blake3_format(flags, trace->flags_hash);
++   _mesa_blake3_format(partition, trace->partition_hash);
++   _mesa_blake3_format(layout, trace->layout_hash);
++   _mesa_blake3_format(state, trace->state_hash);
++   fprintf(dev->cache_log,
++           "{\"event\":\"shader\",\"outcome\":\"%s\",\"stage\":%u,"
++           "\"namespace\":\"%s\",\"key\":\"%s\",\"precomp\":\"%s\","
++           "\"flags\":\"%s\",\"partition\":\"%s\",\"layout\":\"%s\","
++           "\"state\":\"%s\",\"start_ns\":%lld,\"end_ns\":%lld}\n",
++           outcome, trace->stage, ns, key, precomp, flags, partition,
++           layout, state, (long long)start, (long long)end);
++}
++
++void
++kk_log_cache_component(struct kk_physical_device *physical,
++                        VkShaderStageFlags stages, const char *name,
++                        const blake3_hash component, const blake3_hash state)
++{
++   const char *path = debug_get_option("MESA_KK_CACHE_LOG", NULL);
++   if (!path)
++      return;
++   FILE *file = fopen(path, "a");
++   if (!file)
++      return;
++   char ns[33], value[BLAKE3_HEX_LEN], full[BLAKE3_HEX_LEN];
++   kk_cache_namespace(&physical->vk, ns);
++   _mesa_blake3_format(value, component);
++   _mesa_blake3_format(full, state);
++   fprintf(file, "{\"event\":\"state_component\",\"namespace\":\"%s\","
++                 "\"stages\":%u,\"component\":\"%s\",\"hash\":\"%s\","
++                 "\"state\":\"%s\"}\n", ns, stages, name, value, full);
++   fclose(file);
++}
++
++void
++kk_log_cache_pso(struct kk_device *dev, const char *event,
++                  const void *key, size_t key_size)
++{
++   if (!dev->cache_log)
++      return;
++   blake3_hash digest;
++   char value[BLAKE3_HEX_LEN], ns[33];
++   _mesa_blake3_compute(key, key_size, digest);
++   _mesa_blake3_format(value, digest);
++   kk_cache_namespace(dev->vk.physical, ns);
++   static const char *const origins[] = {"draw", "prewarm", "create"};
++   fprintf(dev->cache_log, "{\"event\":\"pso\",\"outcome\":\"%s\","
++                           "\"origin\":\"%s\",\"namespace\":\"%s\","
++                           "\"key\":\"%s\",\"time_ns\":%lld}\n",
++           event, origins[kk_compile_origin], ns, value,
++           (long long)os_time_get_nano());
++}
++
+ VKAPI_ATTR VkResult VKAPI_CALL
+ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+                 const VkDeviceCreateInfo *pCreateInfo,
+@@ -384,6 +504,12 @@ kk_CreateDevice(VkPhysicalDevice physicalDevice,
+       else
+          fprintf(stderr, "KK cannot open compile log\n");
+    }
++   const char *cache_log_path = debug_get_option("MESA_KK_CACHE_LOG", NULL);
++   if (cache_log_path) {
++      dev->cache_log = fopen(cache_log_path, "a");
++      if (dev->cache_log)
++         setvbuf(dev->cache_log, NULL, _IOLBF, 0);
++   }
+    *pDevice = kk_device_to_handle(dev);
+ 
+    return VK_SUCCESS;
+@@ -442,6 +568,8 @@ kk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
+    kk_pso_cache_finish(&dev->pso_cache);
+    if (dev->compile_log)
+       fclose(dev->compile_log);
++   if (dev->cache_log)
++      fclose(dev->cache_log);
+    vk_pipeline_cache_destroy(dev->vk.mem_cache, NULL);
+    kk_device_finish_empty_fs(dev);
+    simple_mtx_destroy(&dev->empty_fs_lock);
+diff --git a/src/kosmickrisp/vulkan/kk_device.h b/src/kosmickrisp/vulkan/kk_device.h
+index d7ca85657b81942008674738132acbfd7ce92fa2..faadc04f79311f084605aad28b600e5377a33df5 100644
+--- a/src/kosmickrisp/vulkan/kk_device.h
++++ b/src/kosmickrisp/vulkan/kk_device.h
+@@ -27,6 +27,8 @@
+ #include "vk_meta.h"
+ #include "vk_queue.h"
+ 
++struct vk_shader_cache_trace;
++struct kk_metal_cache;
+ struct kk_bo;
+ struct kk_physical_device;
+ struct vk_pipeline_cache;
+@@ -87,6 +89,9 @@ struct kk_device {
+    const char *present_log_path;
+    FILE *present_log;
+    FILE *compile_log;
++   FILE *cache_log;
++   struct kk_metal_cache *metal_cache;
++   struct disk_cache *metal_disk;
+ 
+    mtl_device *mtl_handle;
+    mtl_compiler *mtl_compiler_handle;
+@@ -156,5 +161,13 @@ enum kk_compile_origin {
+ extern __THREAD_INITIAL_EXEC enum kk_compile_origin kk_compile_origin;
+ 
+ void kk_log_compile(struct kk_device *dev, const char *kind, int64_t start);
++void kk_log_cache_shader(struct kk_device *dev,
++                         const struct vk_shader_cache_trace *trace,
++                         const char *outcome, int64_t start, int64_t end);
++void kk_log_cache_component(struct kk_physical_device *physical,
++                            VkShaderStageFlags stages, const char *name,
++                            const blake3_hash component, const blake3_hash state);
++void kk_log_cache_pso(struct kk_device *dev, const char *event,
++                      const void *key, size_t key_size);
+ 
+ #endif // KK_DEVICE_H
+diff --git a/src/vulkan/runtime/vk_pipeline.c b/src/vulkan/runtime/vk_pipeline.c
+index b5f1695fe57a2f888b18d687472fb85cbec5df64..fe0ac554f5019291b2c83ba0a63b0a7e34a95c77 100644
+--- a/src/vulkan/runtime/vk_pipeline.c
++++ b/src/vulkan/runtime/vk_pipeline.c
+@@ -869,6 +869,7 @@ static const struct vk_pipeline_cache_object_ops pipeline_precomp_shader_cache_o
+ };
+ 
+ struct vk_pipeline_stage {
++   struct vk_shader_cache_trace cache_trace;
+    mesa_shader_stage stage;
+ 
+    /* Whether the shader was linked with others (RT pipelines only) */
+@@ -1591,6 +1592,10 @@ vk_get_graphics_pipeline_compile_info(struct vk_graphics_pipeline_compile_info *
+          _mesa_blake3_update(&blake3_ctx, &shader_flags, sizeof(shader_flags));
+       }
+ 
++      struct mesa_blake3 partition_ctx = blake3_ctx;
++      blake3_hash partition_hash;
++      _mesa_blake3_final(&partition_ctx, partition_hash);
++
+       blake3_hash state_blake3;
+       ops->hash_state(device->physical, info->state,
+                       &device->enabled_features, info->part_stages[p],
+@@ -1610,6 +1615,15 @@ vk_get_graphics_pipeline_compile_info(struct vk_graphics_pipeline_compile_info *
+          _mesa_blake3_update(&blake3_ctx, &stage->stage, sizeof(stage->stage));
+          _mesa_blake3_update(&blake3_ctx, linked_blake3, sizeof(linked_blake3));
+          _mesa_blake3_final(&blake3_ctx, stage->shader_key);
++         stage->cache_trace.stage = stage->stage;
++         memcpy(stage->cache_trace.precomp_key, stage->precomp_key, sizeof(blake3_hash));
++         VkShaderCreateFlagsEXT shader_flags =
++            vk_pipeline_to_shader_flags(pipeline_flags, stage->stage, pipeline_layout);
++         _mesa_blake3_compute(&shader_flags, sizeof(shader_flags), stage->cache_trace.flags_hash);
++         memcpy(stage->cache_trace.partition_hash, partition_hash, sizeof(blake3_hash));
++         memcpy(stage->cache_trace.layout_hash, layout_blake3, sizeof(blake3_hash));
++         memcpy(stage->cache_trace.state_hash, state_blake3, sizeof(blake3_hash));
++         memcpy(stage->cache_trace.key, stage->shader_key, sizeof(blake3_hash));
+       }
+    }
+ }
+@@ -1736,6 +1750,11 @@ vk_graphics_pipeline_compile_shaders(struct vk_device *device,
+                                                sizeof(stage->shader_key),
+                                                &pipeline_shader_cache_ops,
+                                                &cache_hit);
++            if (device->shader_ops->shader_cache_trace)
++               device->shader_ops->shader_cache_trace(
++                  device, &stage->cache_trace,
++                  cache_obj ? (cache_hit ? "application_hit" : "disk_hit") : "miss");
++
+             if (cache_obj != NULL) {
+                assert(stage->shader == NULL);
+                stage->shader = vk_shader_from_cache_obj(cache_obj);
+@@ -1824,6 +1843,7 @@ vk_graphics_pipeline_compile_shaders(struct vk_device *device,
+             get_push_range_for_stage(pipeline_layout, stage->stage);
+ 
+          infos[i] = (struct vk_shader_compile_info) {
++            .cache_trace = &stage->cache_trace,
+             .stage = stage->stage,
+             .flags = shader_flags,
+             .next_stage_mask = next_stage,
+@@ -2397,7 +2417,8 @@ vk_get_compute_pipeline_compile_info(struct vk_pipeline_stage *stage,
+       vk_pipeline_hash_precomp_shader_stage(device, pipeline_flags, pCreateInfo->pNext,
+                                             &pCreateInfo->stage, stage);
+ 
+-      struct mesa_blake3 blake3_ctx;
++      struct mesa_blake3 blake3_ctx, layout_ctx;
++      _mesa_blake3_init(&layout_ctx);
+       _mesa_blake3_init(&blake3_ctx);
+ 
+       _mesa_blake3_update(&blake3_ctx, &stage->stage, sizeof(stage->stage));
+@@ -2407,6 +2428,8 @@ vk_get_compute_pipeline_compile_info(struct vk_pipeline_stage *stage,
+ 
+       _mesa_blake3_update(&blake3_ctx, &shader_flags, sizeof(shader_flags));
+ 
++      struct mesa_blake3 partition_ctx = blake3_ctx;
++      _mesa_blake3_final(&partition_ctx, stage->cache_trace.partition_hash);
+       blake3_hash features_blake3;
+       ops->hash_state(device->physical, NULL /* state */,
+                       &device->enabled_features, VK_SHADER_STAGE_COMPUTE_BIT,
+@@ -2419,13 +2442,24 @@ vk_get_compute_pipeline_compile_info(struct vk_pipeline_stage *stage,
+                _mesa_blake3_update(&blake3_ctx,
+                                    pipeline_layout->set_layouts[i]->blake3,
+                                    sizeof(pipeline_layout->set_layouts[i]->blake3));
++               _mesa_blake3_update(&layout_ctx,
++                                   pipeline_layout->set_layouts[i]->blake3,
++                                   sizeof(pipeline_layout->set_layouts[i]->blake3));
+             }
+          }
+       }
+-      if (push_range != NULL)
++      if (push_range != NULL) {
+          _mesa_blake3_update(&blake3_ctx, push_range, sizeof(*push_range));
++         _mesa_blake3_update(&layout_ctx, push_range, sizeof(*push_range));
++      }
+ 
+       _mesa_blake3_final(&blake3_ctx, stage->shader_key);
++      stage->cache_trace.stage = stage->stage;
++      memcpy(stage->cache_trace.key, stage->shader_key, sizeof(blake3_hash));
++      memcpy(stage->cache_trace.precomp_key, stage->precomp_key, sizeof(blake3_hash));
++      _mesa_blake3_compute(&shader_flags, sizeof(shader_flags), stage->cache_trace.flags_hash);
++      memcpy(stage->cache_trace.state_hash, features_blake3, sizeof(blake3_hash));
++      _mesa_blake3_final(&layout_ctx, stage->cache_trace.layout_hash);
+    }
+ }
+ 
+@@ -2446,6 +2480,9 @@ vk_pipeline_compile_compute_stage(struct vk_device *device,
+                                          sizeof(stage->shader_key),
+                                          &pipeline_shader_cache_ops,
+                                          cache_hit);
++      if (ops->shader_cache_trace)
++         ops->shader_cache_trace(device, &stage->cache_trace,
++                                 cache_obj ? (cache_hit && *cache_hit ? "application_hit" : "disk_hit") : "miss");
+       if (cache_obj != NULL) {
+          stage->shader = vk_shader_from_cache_obj(cache_obj);
+          return VK_SUCCESS;
+@@ -2477,6 +2514,7 @@ vk_pipeline_compile_compute_stage(struct vk_device *device,
+     * returns, we own the shaders but not the NIR in infos.
+     */
+    struct vk_shader_compile_info compile_info = {
++      .cache_trace = &stage->cache_trace,
+       .stage = stage->stage,
+       .flags = shader_flags,
+       .next_stage_mask = 0,
+diff --git a/src/vulkan/runtime/vk_pipeline_cache.c b/src/vulkan/runtime/vk_pipeline_cache.c
+index 225ba3a870ff97815ae726cfb411741a61b49ee1..28c0756bd99f6e6a6418740686baa582a5ebd54e 100644
+--- a/src/vulkan/runtime/vk_pipeline_cache.c
++++ b/src/vulkan/runtime/vk_pipeline_cache.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include "vk_pipeline_cache.h"
++#include "vk_shader.h"
+ 
+ #include "vk_alloc.h"
+ #include "vk_common_entrypoints.h"
+@@ -332,6 +333,20 @@ vk_pipeline_cache_insert_object(struct vk_pipeline_cache *cache,
+    return result;
+ }
+ 
++static void
++vk_pipeline_cache_trace_rejection(struct vk_pipeline_cache *cache,
++                                  const void *key_data, size_t key_size)
++{
++   struct vk_device *device = cache->base.device;
++   if (!device->shader_ops || !device->shader_ops->shader_cache_trace ||
++       key_size != sizeof(blake3_hash))
++      return;
++   struct vk_shader_cache_trace trace = {.stage = MESA_SHADER_STAGES};
++   memcpy(trace.key, key_data, sizeof(trace.key));
++   device->shader_ops->shader_cache_trace(device, &trace,
++                                          "cache_deserialize_rejected");
++}
++
+ struct vk_pipeline_cache_object *
+ vk_pipeline_cache_lookup_object(struct vk_pipeline_cache *cache,
+                                 const void *key_data, size_t key_size,
+@@ -385,6 +400,7 @@ vk_pipeline_cache_lookup_object(struct vk_pipeline_cache *cache,
+             /* Deserialization failed, there is likely an issue with the disk
+              * cache entry, just remove it.
+              */
++            vk_pipeline_cache_trace_rejection(cache, key_data, key_size);
+             disk_cache_remove(disk_cache, cache_key);
+          }
+       }
+@@ -408,6 +424,7 @@ vk_pipeline_cache_lookup_object(struct vk_pipeline_cache *cache,
+                                               data_obj->data,
+                                               data_obj->data_size, ops);
+       if (real_object == NULL) {
++         vk_pipeline_cache_trace_rejection(cache, key_data, key_size);
+          vk_pipeline_cache_log(cache,
+                                "Deserializing pipeline cache object failed");
+ 
+diff --git a/src/vulkan/runtime/vk_shader.h b/src/vulkan/runtime/vk_shader.h
+index 3c993a44a4233c629cada667a4370324cef52ed6..25a2b835cdc7f49eab000ce051dc4aa645c1649b 100644
+--- a/src/vulkan/runtime/vk_shader.h
++++ b/src/vulkan/runtime/vk_shader.h
+@@ -75,7 +75,18 @@ int vk_shader_cmp_rt_stages(mesa_shader_stage a, mesa_shader_stage b);
+    VK_PIPELINE_CREATE_2_DISALLOW_OPACITY_MICROMAP_BIT_ARM | \
+    MESA_VK_PIPELINE_RAY_TRACING_FLAGS_BETA)
+ 
++struct vk_shader_cache_trace {
++   mesa_shader_stage stage;
++   blake3_hash precomp_key;
++   blake3_hash flags_hash;
++   blake3_hash partition_hash;
++   blake3_hash layout_hash;
++   blake3_hash state_hash;
++   blake3_hash key;
++};
++
+ struct vk_shader_compile_info {
++   const struct vk_shader_cache_trace *cache_trace;
+    mesa_shader_stage stage;
+    VkShaderCreateFlagsEXT flags;
+    /* RT flags only includes :
+@@ -222,6 +233,10 @@ vk_shader_destroy(struct vk_device *device,
+ }
+ 
+ struct vk_device_shader_ops {
++   void (*shader_cache_trace)(struct vk_device *device,
++                              const struct vk_shader_cache_trace *trace,
++                              const char *outcome);
++
+    /** Defer library compilation until all graphics stages and state are known.
+     * Libraries retain preprocessed NIR, even without RETAIN_LINK_TIME_INFO.
+     * Drivers using this must not advertise graphicsPipelineLibraryFastLinking.

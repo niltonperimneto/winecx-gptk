@@ -64,6 +64,64 @@ class PatchTests(unittest.TestCase):
         self.assertEqual(self.file.read_text(), "before\n")
         self.assertEqual((self.repo / "added.c").read_text(), "added\n")
 
+    def make_series(self):
+        self.add_file_patch()
+        self.second = self.root / "second.patch"
+        self.second.write_text("diff --git a/source.c b/source.c\n"
+            "--- a/source.c\n+++ b/source.c\n@@ -1 +1 @@\n-after\n+finished\n")
+        self.series = self.root / "series.sha256"
+        self.series.write_text("".join(
+            hashlib.sha256(path.read_bytes()).hexdigest() + "  " + path.name + "\n"
+            for path in [self.patch, self.second]))
+        self.series_digest = hashlib.sha256(self.series.read_bytes()).hexdigest()
+
+    def apply_series(self):
+        return module.apply(self.repo, self.series, self.revision, self.series_digest, series=True)
+
+    def test_series_order_and_idempotence(self):
+        self.make_series()
+        self.assertEqual(self.apply_series(), "applied")
+        self.assertEqual(self.file.read_text(), "finished\n")
+        self.assertEqual((self.repo / "added.c").read_text(), "added\n")
+        self.assertEqual(self.apply_series(), "already applied")
+        self.assertEqual(self.git("diff", "--cached"), "")
+        (self.repo / "unrelated.c").write_text("user changes\n")
+        with self.assertRaisesRegex(RuntimeError, "untracked"):
+            self.apply_series()
+
+    def test_series_checks_all_digests_before_application(self):
+        self.make_series()
+        self.second.write_text(self.second.read_text() + "corruption")
+        with self.assertRaisesRegex(RuntimeError, "checksum"):
+            self.apply_series()
+        self.assertEqual(self.file.read_text(), "before\n")
+        self.assertFalse((self.repo / "added.c").exists())
+
+    def test_series_reversed_order_preserves_checkout(self):
+        self.make_series()
+        self.series.write_text("\n".join(reversed(self.series.read_text().splitlines())) + "\n")
+        self.series_digest = hashlib.sha256(self.series.read_bytes()).hexdigest()
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.apply_series()
+        self.assertEqual(self.file.read_text(), "before\n")
+        self.assertFalse((self.repo / "added.c").exists())
+        self.assertEqual(self.git("diff", "--cached"), "")
+
+    def test_series_rejects_traversal(self):
+        self.make_series()
+        self.series.write_text(self.digest + "  ../change.patch\n")
+        self.series_digest = hashlib.sha256(self.series.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(RuntimeError, "Invalid"):
+            self.apply_series()
+        self.assertEqual(self.file.read_text(), "before\n")
+
+    def test_series_manifest_checksum(self):
+        self.make_series()
+        self.series.write_text(self.series.read_text() + "corruption")
+        with self.assertRaisesRegex(RuntimeError, "checksum"):
+            self.apply_series()
+        self.assertEqual(self.file.read_text(), "before\n")
+
     def test_corrupt_patch(self):
         self.patch.write_text(self.patch.read_text() + "corruption")
         with self.assertRaisesRegex(RuntimeError, "checksum"):

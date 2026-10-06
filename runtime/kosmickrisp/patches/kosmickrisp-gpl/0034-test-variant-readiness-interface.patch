@@ -1,0 +1,34 @@
+diff --git a/src/kosmickrisp/vulkan/kk_device.c b/src/kosmickrisp/vulkan/kk_device.c
+index fa548fcf723..e2fb4e176d8 100644
+--- a/src/kosmickrisp/vulkan/kk_device.c
++++ b/src/kosmickrisp/vulkan/kk_device.c
+@@ -705,11 +705,29 @@ kk_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
+ 
+ /* We need to implement this ourselves so we give the fake ones for vk_common_*
+  * to work when executing actual commands */
++static VkResult VKAPI_CALL
++kk_wait_variant_prewarm(VkDevice device)
++{
++   return kk_pso_prewarm_wait(kk_device_from_handle(device));
++}
++
++static VkBool32 VKAPI_CALL
++kk_variant_prewarm_ready(VkDevice device)
++{
++   return kk_pso_prewarm_ready(kk_device_from_handle(device));
++}
++
+ static PFN_vkVoidFunction
+ kk_device_get_proc_addr(const struct kk_device *device, const char *name)
+ {
+    if (device == NULL || name == NULL)
+       return NULL;
++   if (debug_get_bool_option("MESA_KK_TEST_PREWARM", false)) {
++      if (strcmp(name, "vkWaitForVariantPrewarmMESA") == 0)
++         return (PFN_vkVoidFunction)kk_wait_variant_prewarm;
++      if (strcmp(name, "vkIsVariantPrewarmReadyMESA") == 0)
++         return (PFN_vkVoidFunction)kk_variant_prewarm_ready;
++   }
+ 
+    struct vk_instance *instance = device->vk.physical->instance;
+    return vk_device_dispatch_table_get_if_supported(

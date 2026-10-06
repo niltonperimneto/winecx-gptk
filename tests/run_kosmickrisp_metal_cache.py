@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 
-SCENARIOS = ("race", "failure", "concurrency", "corruption", "disabled")
+SCENARIOS = ("race", "idle_under_load", "serialization", "failure", "concurrency", "corruption", "disabled", "capacity", "import", "eviction", "idle_only", "concurrent_idle")
 
 
 def compiler_arguments(mesa, build, output):
@@ -49,6 +49,8 @@ def compiler_arguments(mesa, build, output):
         [
             str(mesa / "src/kosmickrisp/vulkan/kk_metal_cache.c"),
             str(Path(__file__).with_name("kosmickrisp_metal_cache.c")),
+            str(mesa / "src/c11/impl/threads_posix.c"),
+            str(mesa / "src/c11/impl/time.c"),
             "-pthread",
             "-UNDEBUG",
             "-o",

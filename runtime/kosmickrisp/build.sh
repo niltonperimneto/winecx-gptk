@@ -43,7 +43,11 @@ if [ -n "${KOSMICKRISP_MESA_URL:-}" ]; then
     if [ "$(git -C "$work/recipe/externals/mesa" rev-parse HEAD 2>/dev/null || true)" != "$KOSMICKRISP_MESA_COMMIT" ]; then
         checkout "$KOSMICKRISP_MESA_URL" "$KOSMICKRISP_MESA_COMMIT" "$work/recipe/externals/mesa"
     fi
-    if [ -f "$script_dir/apply_patch.py" ] && [ -n "${KOSMICKRISP_MESA_PATCH:-}" ]; then
+    if [ -n "${KOSMICKRISP_MESA_PATCH_SERIES:-}" ]; then
+        python3 "$script_dir/apply_patch.py" --series "$work/recipe/externals/mesa" \
+            "$script_dir/patches/$KOSMICKRISP_MESA_PATCH_SERIES" \
+            "$KOSMICKRISP_MESA_COMMIT" "$KOSMICKRISP_MESA_PATCH_SERIES_SHA256"
+    elif [ -f "$script_dir/apply_patch.py" ] && [ -n "${KOSMICKRISP_MESA_PATCH:-}" ]; then
         python3 "$script_dir/apply_patch.py" "$work/recipe/externals/mesa" \
             "$script_dir/patches/$KOSMICKRISP_MESA_PATCH" \
             "$KOSMICKRISP_MESA_COMMIT" "$KOSMICKRISP_MESA_PATCH_SHA256"
@@ -147,11 +151,14 @@ for patch in "$script_dir"/patches/*.patch; do
     [ -e "$patch" ] || continue
     echo "PATCH=$(basename "$patch") $(shasum -a 256 "$patch" | cut -d' ' -f1)"
 done >> "$output/SOURCE.txt"
+if [ -n "${KOSMICKRISP_MESA_PATCH_SERIES:-}" ]; then
+    echo "PATCH_SERIES=$KOSMICKRISP_MESA_PATCH_SERIES $KOSMICKRISP_MESA_PATCH_SERIES_SHA256" >> "$output/SOURCE.txt"
+    while read -r digest patch; do
+        echo "PATCH=$patch $digest"
+    done < "$script_dir/patches/$KOSMICKRISP_MESA_PATCH_SERIES" >> "$output/SOURCE.txt"
+fi
 mkdir -p "$output/patches"
-for patch in "$script_dir"/patches/*.patch; do
-    [ -e "$patch" ] || continue
-    cp "$patch" "$output/patches/"
-done
+cp -R "$script_dir/patches/." "$output/patches/"
 {
     /usr/bin/clang --version
     cmake --version
