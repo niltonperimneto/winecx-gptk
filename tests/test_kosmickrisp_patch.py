@@ -39,6 +39,31 @@ class PatchTests(unittest.TestCase):
         self.assertEqual(self.apply(), "already applied")
         self.assertEqual(self.git("diff", "--cached"), "")
 
+    def add_file_patch(self):
+        self.patch.write_text(self.patch.read_text() +
+            "diff --git a/added.c b/added.c\nnew file mode 100644\n"
+            "--- /dev/null\n+++ b/added.c\n@@ -0,0 +1 @@\n+added\n")
+        self.digest = hashlib.sha256(self.patch.read_bytes()).hexdigest()
+
+    def test_added_files_are_idempotent(self):
+        self.add_file_patch()
+        self.assertEqual(self.apply(), "applied")
+        self.assertEqual((self.repo / "added.c").read_text(), "added\n")
+        self.assertEqual(self.apply(), "already applied")
+        self.assertEqual(self.git("diff", "--cached"), "")
+        (self.repo / "added.c").write_text("user changes\n")
+        with self.assertRaisesRegex(RuntimeError, "untracked"):
+            self.apply()
+        self.assertEqual((self.repo / "added.c").read_text(), "user changes\n")
+
+    def test_preexisting_added_file_is_preserved(self):
+        self.add_file_patch()
+        (self.repo / "added.c").write_text("added\n")
+        with self.assertRaisesRegex(RuntimeError, "untracked"):
+            self.apply()
+        self.assertEqual(self.file.read_text(), "before\n")
+        self.assertEqual((self.repo / "added.c").read_text(), "added\n")
+
     def test_corrupt_patch(self):
         self.patch.write_text(self.patch.read_text() + "corruption")
         with self.assertRaisesRegex(RuntimeError, "checksum"):
