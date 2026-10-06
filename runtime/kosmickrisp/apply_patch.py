@@ -21,14 +21,18 @@ def apply(source, patch, revision, sha256):
         raise RuntimeError("Mesa base revision mismatch")
     if git("diff", "--cached", "--quiet", "HEAD", check=False).returncode:
         raise RuntimeError("Mesa has staged changes; refusing to overwrite them")
-    if git("ls-files", "--others", "--exclude-standard").stdout:
-        raise RuntimeError("Mesa has untracked files; refusing to patch")
+    untracked = set(filter(None, git("ls-files", "--others", "--exclude-standard", "-z").stdout.split("\0")))
     with tempfile.TemporaryDirectory(prefix="kosmickrisp-index-") as directory:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(directory) / "index"))
         git("read-tree", "HEAD", env=env)
         git("apply", "--cached", str(patch), env=env)
+        added = set(filter(None, git("diff", "--cached", "--diff-filter=A", "--name-only", "-z", "HEAD", env=env).stdout.split("\0")))
+        if untracked - added:
+            raise RuntimeError("Mesa has untracked files; refusing to patch")
         if not git("diff", "--quiet", env=env, check=False).returncode:
             return "already applied"
+        if untracked:
+            raise RuntimeError("Mesa has untracked files; refusing to patch")
         if git("diff", "--quiet", check=False).returncode:
             raise RuntimeError("Mesa has incompatible local changes; refusing to overwrite them")
         git("apply", "--check", str(patch))
