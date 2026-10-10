@@ -30,7 +30,8 @@ import time
 
 GAMES_FILE = Path(__file__).with_name("stutter-games.json")
 OVERRIDES = "d3d8,d3d9,d3d10core,d3d11,dxgi=n"
-DRAW_KINDS = {"pso", "pso_wait", "fs_variant", "rast_points"}
+DRAW_KINDS = {"pso", "pso_wait", "variant_wait", "fs_variant",
+              "fs_variant_wait", "rast_points"}
 CREATE_KINDS = {"shaders", "deserialize"}
 HITCH_FLOOR_MS = 50.0
 HITCH_FACTOR = 3.0
@@ -99,11 +100,16 @@ def analyze_frames(starts, events, skip_seconds=0.0):
                               if e["kind"] in DRAW_KINDS and e["origin"] == "draw"]) / 1e6
         create = covered(a, b, [(e["start"], e["end"]) for e in events
                                 if e["kind"] in CREATE_KINDS]) / 1e6
+        combined = covered(a, b, [(e["start"], e["end"]) for e in events
+                                   if e["kind"] in CREATE_KINDS or
+                                   (e["kind"] in DRAW_KINDS and
+                                    e["origin"] == "draw")]) / 1e6
         excess = ms - median
         hitches.append({"at_s": round((a - starts[0]) / 1e9, 3), "ms": round(ms, 2),
                         "draw_compile_ms": round(draw, 2),
                         "create_compile_ms": round(create, 2),
-                        "explained": draw + create >= 0.5 * excess})
+                        "compile_overlap_ms": round(combined, 2),
+                        "explained": combined >= 0.5 * excess})
     duration = (frames[-1][1] - frames[0][0]) / 1e9
     return {
         "frames": len(times),
@@ -531,19 +537,26 @@ def run_labels(args, game, env, game_dir, prefix, live, via_steam, bundle,
             summaries.append(summary)
             continue
         with open(run_dir / "wine.log", "w") as log:
+            launched_at = time.time()
             process = subprocess.Popen([wine(args.runtime, "wine64"), executable, *game.get("arguments", [])],
                                        env=run_env, cwd=(game_dir / game["executable"]).parent,
                                        stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             try:
                 process.wait(timeout=seconds)
+                termination = "natural_exit"
                 print(f"  game exited early with code {process.returncode}")
             except subprocess.TimeoutExpired:
-                pass
+                termination = "time_limit"
             finally:
                 if live:
                     stop_game(process)
                 else:
                     stop_prefix(args.runtime, run_env, process)
+            meta["termination"] = {"reason": termination,
+                                   "returncode": process.returncode,
+                                   "pid": process.pid,
+                                   "elapsed_seconds": time.time() - launched_at}
+            (run_dir / "run.json").write_text(json.dumps(meta, indent=2) + "\n")
         summary = analyze_run(run_dir, game.get("skip_seconds", 0.0))
         print_summary(summary)
         summaries.append(summary)
