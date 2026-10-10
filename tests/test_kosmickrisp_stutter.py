@@ -49,6 +49,24 @@ class StutterTests(unittest.TestCase):
         result = stutter.analyze_frames(starts, events)
         self.assertFalse(result["worst_hitches"][0]["explained"])
 
+    def test_variant_waits_explain_draw_hitches(self):
+        starts = presents([16.7] * 100 + [120.0] + [16.7] * 100)
+        for kind in ("variant_wait", "fs_variant_wait"):
+            events = [{"kind": kind, "origin": "draw", "start": starts[100],
+                       "end": starts[100] + 100 * MS}]
+            result = stutter.analyze_frames(starts, events)
+            self.assertTrue(result["worst_hitches"][0]["explained"])
+
+    def test_create_and_draw_overlap_is_not_added_twice(self):
+        starts = presents([16.7] * 100 + [120.0] + [16.7] * 100)
+        events = [{"kind": kind, "origin": origin, "start": starts[100],
+                   "end": starts[100] + 30 * MS}
+                  for kind, origin in (("variant_wait", "draw"),
+                                       ("shaders", "create"))]
+        result = stutter.analyze_frames(starts, events)["worst_hitches"][0]
+        self.assertEqual(result["compile_overlap_ms"], 30)
+        self.assertFalse(result["explained"])
+
     def test_parallel_compiles_count_wall_clock_once(self):
         frames = [16.7] * 100 + [200.0] + [16.7] * 100
         starts = presents(frames)
