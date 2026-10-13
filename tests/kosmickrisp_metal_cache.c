@@ -7,6 +7,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <time.h>
+
+#undef atexit
+#undef calloc
 
 
 #define WORDS 32
@@ -23,6 +28,7 @@ struct stored {
 };
 struct fake_object {
    atomic_int refs;
+   bool compiler;
    struct payload payload;
 };
 struct pipeline_task {
@@ -37,6 +43,16 @@ static atomic_uint builds;
 static atomic_uint snapshots;
 static atomic_uint archive_loads;
 static atomic_uint live_objects;
+static atomic_uint uncaptured_objects;
+static atomic_uint uncaptured_builds;
+static bool fail_uncaptured;
+static atomic_bool fail_exit_registration;
+static atomic_bool fail_exit_snapshot;
+static void (*registered_exit)(void);
+static bool hold_disk;
+static bool disk_entered;
+static bool allow_disk;
+static atomic_bool destroy_finished;
 static unsigned held_archive_id;
 static bool archive_entered;
 static bool allow_archive;
@@ -46,6 +62,7 @@ static pthread_mutex_t control_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t control_cond = PTHREAD_COND_INITIALIZER;
 static struct payload captured = {.magic = 0xfade0123456789abULL};
 static unsigned blocked_id;
+static unsigned failed_compile_id;
 static bool compile_entered;
 static bool allow_compile;
 static bool hold_snapshot;
@@ -53,6 +70,21 @@ static bool snapshot_entered;
 static bool allow_snapshot;
 static bool fail_snapshot;
 static bool snapshot_completed;
+
+int kk_test_atexit(void (*callback)(void))
+{
+   if (atomic_load(&fail_exit_registration))
+      return 1;
+   registered_exit = callback;
+   return atexit(callback);
+}
+
+void *kk_test_calloc(size_t count, size_t size)
+{
+   if (atomic_load(&fail_exit_snapshot) && size == sizeof(void *))
+      return NULL;
+   return calloc(count, size);
+}
 
 static void key_for_id(unsigned id, cache_key key)
 {
@@ -73,17 +105,34 @@ static void *object(const struct payload *payload)
 
 void *mtl_retain(void *p)
 {
-   if (p)
+   if ((uintptr_t)p > WORDS * 64)
       atomic_fetch_add(&((struct fake_object *)p)->refs, 1);
    return p;
 }
 
 void mtl_release(void *p)
 {
-   if (p && atomic_fetch_sub(&((struct fake_object *)p)->refs, 1) == 1) {
+   if ((uintptr_t)p > WORDS * 64 && atomic_fetch_sub(&((struct fake_object *)p)->refs, 1) == 1) {
+      if (((struct fake_object *)p)->compiler)
+         atomic_fetch_sub(&uncaptured_objects, 1);
       atomic_fetch_sub(&live_objects, 1);
       free(p);
    }
+}
+
+static unsigned pipeline_objects(void)
+{
+   return atomic_load(&live_objects) - atomic_load(&uncaptured_objects);
+}
+
+mtl_compiler *mtl_new_uncaptured_compiler(mtl_device *device)
+{
+   if (fail_uncaptured)
+      return NULL;
+   struct fake_object *compiler = object(NULL);
+   compiler->compiler = true;
+   atomic_fetch_add(&uncaptured_objects, 1);
+   return compiler;
 }
 
 const char *debug_get_option(const char *name, const char *def)
@@ -150,6 +199,25 @@ void *disk_cache_get(struct disk_cache *cache, const cache_key key, size_t *size
 
 void disk_cache_wait_for_idle(struct disk_cache *cache)
 {
+   pthread_mutex_lock(&control_lock);
+   disk_entered = true;
+   pthread_cond_broadcast(&control_cond);
+   while (hold_disk && !allow_disk)
+      pthread_cond_wait(&control_cond, &control_lock);
+   pthread_mutex_unlock(&control_lock);
+   const char *path = getenv("KK_TEST_EXIT_MARKER");
+   if (path) {
+      pthread_mutex_lock(&storage_lock);
+      unsigned count = 0;
+      for (struct stored *entry = items; entry; entry = entry->next)
+         count++;
+      FILE *file = fopen(path, "w");
+      assert(file);
+      fprintf(file, "{\"snapshots\":%u,\"entries\":%u}\n",
+              atomic_load(&snapshots), count);
+      assert(!fclose(file));
+      pthread_mutex_unlock(&storage_lock);
+   }
 }
 
 bool mtl_compiler_has_serializer(mtl_compiler *compiler)
@@ -157,7 +225,22 @@ bool mtl_compiler_has_serializer(mtl_compiler *compiler)
    return true;
 }
 
-void mtl_pipeline_cache_identity(mtl_device *device, char *identity, size_t size)
+bool mtl_compile_phase_enabled(void)
+{
+   return false;
+}
+
+struct mtl_compile_phase mtl_compile_phase_begin(const char *operation, const void *object,
+                                                 const char *key, const char *origin)
+{
+   return (struct mtl_compile_phase){0};
+}
+
+void mtl_compile_phase_end(struct mtl_compile_phase phase, bool success)
+{
+}
+
+void mtl_pipeline_cache_identity(mtl_device *device, uint32_t gpu_family, char *identity, size_t size)
 {
    snprintf(identity, size, "test-device-1");
 }
@@ -177,7 +260,8 @@ void *mtl_compiler_serialize(mtl_compiler *compiler, size_t *size)
    assert(data);
    pthread_mutex_lock(&capture_lock);
    *data = captured;
-   memset(captured.ids, 0, sizeof(captured.ids));
+   if (!fail)
+      memset(captured.ids, 0, sizeof(captured.ids));
    pthread_mutex_unlock(&capture_lock);
    atomic_fetch_add(&snapshots, 1);
    *size = sizeof(*data);
@@ -229,7 +313,7 @@ mtl_compute_pipeline_state *mtl_archive_new_compute_pipeline(
    return from_archive(archive, (unsigned)(uintptr_t)function);
 }
 
-static void *compile(unsigned id)
+static void *compile(mtl_compiler *compiler, unsigned id)
 {
    assert(id < WORDS * 64);
    pthread_mutex_lock(&control_lock);
@@ -240,28 +324,40 @@ static void *compile(unsigned id)
          pthread_cond_wait(&control_cond, &control_lock);
    }
    pthread_mutex_unlock(&control_lock);
-   pthread_mutex_lock(&capture_lock);
-   captured.ids[id / 64] |= 1ULL << (id % 64);
-   pthread_mutex_unlock(&capture_lock);
+   bool success = id != failed_compile_id;
+   if (compiler == (void *)3 && success) {
+      pthread_mutex_lock(&capture_lock);
+      captured.ids[id / 64] |= 1ULL << (id % 64);
+      pthread_mutex_unlock(&capture_lock);
+   } else if (compiler != (void *)3) {
+      atomic_fetch_add(&uncaptured_builds, 1);
+   }
    atomic_fetch_add(&builds, 1);
-   return object(NULL);
+   return success ? object(NULL) : NULL;
 }
 
 mtl_render_pipeline_state *mtl_new_render_pipeline(
    mtl_compiler *compiler, mtl_render_pass_descriptor *descriptor)
 {
-   return compile((unsigned)(uintptr_t)descriptor);
+   return compile(compiler, (unsigned)(uintptr_t)descriptor);
+}
+
+mtl_render_pipeline_state *mtl_specialize_render_pipeline(
+   mtl_compiler *compiler, mtl_render_pipeline_descriptor *descriptor,
+   mtl_render_pipeline_state *base)
+{
+   return compile(compiler, (unsigned)(uintptr_t)descriptor);
 }
 
 mtl_compute_pipeline_state *mtl_new_compute_pipeline_state(
    mtl_compiler *compiler, mtl_function_descriptor *function, uint64_t max_threads)
 {
-   return compile((unsigned)(uintptr_t)function);
+   return compile(compiler, (unsigned)(uintptr_t)function);
 }
 
 static struct kk_metal_cache *create(void)
 {
-   struct kk_metal_cache *cache = kk_metal_cache_create((void *)1, (void *)2, (void *)3);
+   struct kk_metal_cache *cache = kk_metal_cache_create((void *)1, (void *)2, 0, (void *)3, 0);
    assert(cache);
    return cache;
 }
@@ -358,6 +454,10 @@ static void serialization_test(void)
    assert(!pthread_create(&thread, NULL, pipeline_thread, &task));
    pthread_mutex_lock(&control_lock);
    bool compile_overlapped = wait_flag(&compile_entered, 1);
+   pthread_mutex_unlock(&control_lock);
+   pipeline(cache, 5, false);
+   assert(atomic_load(&uncaptured_builds) == 1);
+   pthread_mutex_lock(&control_lock);
    allow_snapshot = true;
    allow_compile = true;
    pthread_cond_broadcast(&control_cond);
@@ -365,11 +465,13 @@ static void serialization_test(void)
    pthread_join(thread, NULL);
    pthread_join(idle, NULL);
    kk_metal_cache_destroy(cache);
-   assert(!compile_overlapped);
-   assert(atomic_load(&builds) == 2);
+   assert(compile_overlapped);
+   assert(atomic_load(&uncaptured_builds) == 2);
+   assert(atomic_load(&builds) == 5);
    cache = create();
    pipeline(cache, 1, true);
    pipeline(cache, 2, true);
+   pipeline(cache, 5, true);
    kk_metal_cache_destroy(cache);
 }
 
@@ -392,10 +494,11 @@ static void failure_test(void)
    disk_cache_compute_key((void *)1, input, sizeof(input), reference);
    size_t size;
    void *ref = disk_cache_get((void *)1, reference, &size);
-   assert(!ref);
+   assert(ref && size == CACHE_KEY_SIZE);
+   free(ref);
    cache = create();
    pipeline(cache, 2, true);
-   pipeline(cache, 1, false);
+   pipeline(cache, 1, true);
    kk_metal_cache_destroy(cache);
    cache = create();
    pipeline(cache, 1, true);
@@ -446,9 +549,9 @@ static void corruption_test(void)
 
 static void disabled_test(void)
 {
-   assert(!kk_metal_cache_create(NULL, (void *)2, (void *)3));
+   assert(!kk_metal_cache_create(NULL, (void *)2, 0, (void *)3, 0));
    setenv("MESA_KK_PSO_CACHE_DISABLE", "1", 1);
-   assert(!kk_metal_cache_create((void *)1, (void *)2, (void *)3));
+   assert(!kk_metal_cache_create((void *)1, (void *)2, 0, (void *)3, 0));
 }
 
 static void seed_archives(unsigned count)
@@ -486,7 +589,7 @@ static void capacity_test(void)
    pipeline(cache, 2, true);
    assert(atomic_load(&archive_loads) == 258);
    kk_metal_cache_destroy(cache);
-   assert(atomic_load(&live_objects) == 0);
+   assert(pipeline_objects() == 0);
    assert(atomic_load(&builds) == 0);
 }
 
@@ -502,7 +605,7 @@ static void import_test(void)
    }
    for (unsigned i = 0; i < 16; i++)
       pthread_join(threads[i], NULL);
-   assert(atomic_load(&live_objects) == 1);
+   assert(pipeline_objects() == 1);
    for (unsigned i = 2; i <= 256; i++)
       pipeline(cache, i, true);
    unsigned loads = atomic_load(&archive_loads);
@@ -510,7 +613,7 @@ static void import_test(void)
       pipeline(cache, i, true);
    assert(atomic_load(&archive_loads) == loads);
    kk_metal_cache_destroy(cache);
-   assert(atomic_load(&live_objects) == 0);
+   assert(pipeline_objects() == 0);
 }
 
 static void eviction_test(void)
@@ -526,15 +629,15 @@ static void eviction_test(void)
    pthread_mutex_unlock(&control_lock);
    for (unsigned i = 2; i <= 257; i++)
       pipeline(cache, i, true);
-   assert(atomic_load(&live_objects) == 257);
+   assert(pipeline_objects() == 257);
    pthread_mutex_lock(&control_lock);
    allow_archive = true;
    pthread_cond_broadcast(&control_cond);
    pthread_mutex_unlock(&control_lock);
    pthread_join(thread, NULL);
-   assert(atomic_load(&live_objects) == 256);
+   assert(pipeline_objects() == 256);
    kk_metal_cache_destroy(cache);
-   assert(atomic_load(&live_objects) == 0);
+   assert(pipeline_objects() == 0);
 }
 
 static void idle_only_test(void)
@@ -580,11 +683,281 @@ static void concurrent_idle_test(void)
    kk_metal_cache_destroy(cache);
 }
 
+static void wait_snapshots(unsigned count)
+{
+   struct timespec until;
+   clock_gettime(CLOCK_REALTIME, &until);
+   until.tv_sec += 5;
+   pthread_mutex_lock(&control_lock);
+   while (atomic_load(&snapshots) < count)
+      assert(!pthread_cond_timedwait(&control_cond, &control_lock, &until));
+   pthread_mutex_unlock(&control_lock);
+}
+
+static void automatic_test(bool retry)
+{
+   setenv("MESA_KK_PSO_CACHE_QUIET_MS", "10", 1);
+   setenv("MESA_KK_PSO_CACHE_MAX_AGE_MS", "100", 1);
+   struct kk_metal_cache *cache = create();
+   fail_snapshot = retry;
+   pipeline(cache, 1, false);
+   wait_snapshots(retry ? 2 : 1);
+   kk_metal_cache_flush(cache);
+   pipeline(cache, 1, true);
+   kk_metal_cache_destroy(cache);
+   assert(atomic_load(&snapshots) == (retry ? 2 : 1));
+}
+
+static void age_test(bool age)
+{
+   setenv(age ? "MESA_KK_PSO_CACHE_MAX_AGE_MS" :
+               "MESA_KK_PSO_CACHE_QUIET_MS", "100", 1);
+   struct kk_metal_cache *cache = create();
+   pipeline(cache, 1, false);
+   blocked_id = 2;
+   struct pipeline_task task = {cache, 2, false, 1};
+   pthread_t thread;
+   assert(!pthread_create(&thread, NULL, pipeline_thread, &task));
+   pthread_mutex_lock(&control_lock);
+   assert(wait_flag(&compile_entered, 5));
+   assert(!wait_flag(&snapshot_entered, 1));
+   pthread_mutex_unlock(&control_lock);
+   if (age) {
+      pipeline(cache, 3, false);
+      assert(atomic_load(&uncaptured_builds) == 1);
+   }
+   pthread_mutex_lock(&control_lock);
+   allow_compile = true;
+   pthread_cond_broadcast(&control_cond);
+   pthread_mutex_unlock(&control_lock);
+   pthread_join(thread, NULL);
+   wait_snapshots(1);
+   kk_metal_cache_flush(cache);
+   kk_metal_cache_destroy(cache);
+}
+
+static void compile_failure_test(void)
+{
+   struct kk_metal_cache *cache = create();
+   failed_compile_id = 5;
+   cache_key key;
+   key_for_id(5, key);
+   bool hit = true;
+   assert(!kk_metal_cache_new_render_pipeline(cache, key, (void *)5, &hit));
+   assert(!hit);
+   pipeline(cache, 1, false);
+   hold_snapshot = true;
+   pthread_t flusher;
+   assert(!pthread_create(&flusher, NULL, flush_thread, cache));
+   pthread_mutex_lock(&control_lock);
+   assert(wait_flag(&snapshot_entered, 5));
+   pthread_mutex_unlock(&control_lock);
+   failed_compile_id = 2;
+   key_for_id(2, key);
+   hit = true;
+   assert(!kk_metal_cache_new_compute_pipeline(cache, key, (void *)2, 64, &hit));
+   assert(!hit && atomic_load(&uncaptured_builds) == 1);
+   pthread_mutex_lock(&control_lock);
+   allow_snapshot = true;
+   pthread_cond_broadcast(&control_cond);
+   pthread_mutex_unlock(&control_lock);
+   pthread_join(flusher, NULL);
+   kk_metal_cache_destroy(cache);
+}
+
+static void degraded_test(bool disabled)
+{
+   setenv("MESA_KK_PSO_CACHE_QUIET_MS", "10", 1);
+   setenv("MESA_KK_PSO_CACHE_MAX_AGE_MS", "10", 1);
+   if (disabled)
+      setenv("MESA_KK_PSO_CACHE_BYPASS_DISABLE", "1", 1);
+   else
+      fail_uncaptured = true;
+   struct kk_metal_cache *cache = create();
+   pipeline(cache, 1, false);
+   pthread_mutex_lock(&control_lock);
+   assert(!wait_flag(&snapshot_entered, 1));
+   pthread_mutex_unlock(&control_lock);
+   kk_metal_cache_flush(cache);
+   assert(atomic_load(&snapshots) == 1);
+   kk_metal_cache_destroy(cache);
+}
+
+static void *destroy_thread(void *arg)
+{
+   kk_metal_cache_destroy(arg);
+   atomic_store(&destroy_finished, true);
+   return NULL;
+}
+
+static void destroy_bypass_test(void)
+{
+   struct kk_metal_cache *cache = create();
+   pipeline(cache, 1, false);
+   hold_snapshot = true;
+   pthread_t flusher;
+   assert(!pthread_create(&flusher, NULL, flush_thread, cache));
+   pthread_mutex_lock(&control_lock);
+   assert(wait_flag(&snapshot_entered, 5));
+   blocked_id = 2;
+   pthread_mutex_unlock(&control_lock);
+   struct pipeline_task task = {cache, 2, false, 1};
+   pthread_t producer, destroyer;
+   assert(!pthread_create(&producer, NULL, pipeline_thread, &task));
+   pthread_mutex_lock(&control_lock);
+   assert(wait_flag(&compile_entered, 5));
+   allow_snapshot = true;
+   pthread_cond_broadcast(&control_cond);
+   pthread_mutex_unlock(&control_lock);
+   pthread_join(flusher, NULL);
+   assert(!pthread_create(&destroyer, NULL, destroy_thread, cache));
+   struct timespec pause = {.tv_nsec = 100000000};
+   nanosleep(&pause, NULL);
+   assert(!atomic_load(&destroy_finished));
+   assert(atomic_load(&uncaptured_objects) == 1);
+   pthread_mutex_lock(&control_lock);
+   allow_compile = true;
+   pthread_cond_broadcast(&control_cond);
+   pthread_mutex_unlock(&control_lock);
+   pthread_join(producer, NULL);
+   pthread_join(destroyer, NULL);
+   assert(atomic_load(&destroy_finished));
+}
+
+static void destroy_flush_test(void)
+{
+   struct kk_metal_cache *cache = create();
+   pipeline(cache, 1, false);
+   hold_snapshot = true;
+   pthread_t flusher, destroyer;
+   assert(!pthread_create(&flusher, NULL, flush_thread, cache));
+   pthread_mutex_lock(&control_lock);
+   assert(wait_flag(&snapshot_entered, 5));
+   pthread_mutex_unlock(&control_lock);
+   assert(!pthread_create(&destroyer, NULL, destroy_thread, cache));
+   struct timespec pause = {.tv_nsec = 100000000};
+   nanosleep(&pause, NULL);
+   assert(!atomic_load(&destroy_finished));
+   pthread_mutex_lock(&control_lock);
+   allow_snapshot = true;
+   pthread_cond_broadcast(&control_cond);
+   pthread_mutex_unlock(&control_lock);
+   pthread_join(flusher, NULL);
+   pthread_join(destroyer, NULL);
+   assert(atomic_load(&destroy_finished));
+}
+
+static void late_recapture_test(bool shutdown, unsigned id)
+{
+   struct kk_metal_cache *cache = create();
+   pipeline(cache, 1, false);
+   hold_snapshot = true;
+   pthread_t flusher, producer, destroyer;
+   assert(!pthread_create(&flusher, NULL, flush_thread, cache));
+   pthread_mutex_lock(&control_lock);
+   assert(wait_flag(&snapshot_entered, 5));
+   blocked_id = id;
+   pthread_mutex_unlock(&control_lock);
+   struct pipeline_task task = {cache, id, false, 1};
+   assert(!pthread_create(&producer, NULL, pipeline_thread, &task));
+   pthread_mutex_lock(&control_lock);
+   assert(wait_flag(&compile_entered, 5));
+   allow_snapshot = true;
+   pthread_cond_broadcast(&control_cond);
+   pthread_mutex_unlock(&control_lock);
+   pthread_join(flusher, NULL);
+   if (shutdown) {
+      assert(!pthread_create(&destroyer, NULL, destroy_thread, cache));
+      struct timespec pause = {.tv_nsec = 100000000};
+      nanosleep(&pause, NULL);
+      assert(!atomic_load(&destroy_finished));
+   }
+   pthread_mutex_lock(&control_lock);
+   allow_compile = true;
+   pthread_cond_broadcast(&control_cond);
+   pthread_mutex_unlock(&control_lock);
+   pthread_join(producer, NULL);
+   if (shutdown) {
+      pthread_join(destroyer, NULL);
+   } else {
+      for (unsigned i = 0; atomic_load(&builds) < 3 && i < 500; i++) {
+         struct timespec pause = {.tv_nsec = 10000000};
+         nanosleep(&pause, NULL);
+      }
+      assert(atomic_load(&builds) == 3);
+      kk_metal_cache_flush(cache);
+      kk_metal_cache_destroy(cache);
+   }
+   assert(atomic_load(&uncaptured_builds) == 1);
+   cache = create();
+   pipeline(cache, id, true);
+   kk_metal_cache_destroy(cache);
+}
+
+static void *exit_thread(void *arg)
+{
+   registered_exit();
+   return NULL;
+}
+
+static void exit_race_test(void)
+{
+   struct kk_metal_cache *cache = create();
+   pipeline(cache, 1, false);
+   hold_disk = true;
+   pthread_t exiter, destroyer;
+   assert(registered_exit);
+   assert(!pthread_create(&exiter, NULL, exit_thread, NULL));
+   pthread_mutex_lock(&control_lock);
+   assert(wait_flag(&disk_entered, 5));
+   pthread_mutex_unlock(&control_lock);
+   assert(!pthread_create(&destroyer, NULL, destroy_thread, cache));
+   struct timespec pause = {.tv_nsec = 100000000};
+   nanosleep(&pause, NULL);
+   assert(!atomic_load(&destroy_finished));
+   pthread_mutex_lock(&control_lock);
+   allow_disk = true;
+   pthread_cond_broadcast(&control_cond);
+   pthread_mutex_unlock(&control_lock);
+   pthread_join(exiter, NULL);
+   pthread_join(destroyer, NULL);
+   assert(atomic_load(&destroy_finished));
+}
+
+static void invalid_timing_test(void)
+{
+   const char *values[] = {"-1", "0", "garbage", "999999999999999999999"};
+   for (unsigned i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+      setenv("MESA_KK_PSO_CACHE_QUIET_MS", values[i], 1);
+      setenv("MESA_KK_PSO_CACHE_MAX_AGE_MS", values[i], 1);
+      struct kk_metal_cache *cache = create();
+      pipeline(cache, 1 + i, false);
+      pthread_mutex_lock(&control_lock);
+      assert(!wait_flag(&snapshot_entered, 1));
+      pthread_mutex_unlock(&control_lock);
+      kk_metal_cache_destroy(cache);
+      pthread_mutex_lock(&control_lock);
+      snapshot_entered = false;
+      pthread_mutex_unlock(&control_lock);
+   }
+}
+
 int main(int argc, char **argv)
 {
    assert(argc == 2);
    unsetenv("MESA_KK_PSO_CACHE_DISABLE");
-   if (!strcmp(argv[1], "race"))
+   setenv("MESA_KK_PSO_CACHE_QUIET_MS", "2147483647", 1);
+   setenv("MESA_KK_PSO_CACHE_MAX_AGE_MS", "2147483647", 1);
+   setenv("MESA_KK_PSO_CACHE_MAX_PENDING", "2147483647", 1);
+   if (!strcmp(argv[1], "late_recapture"))
+      late_recapture_test(false, 2);
+   else if (!strcmp(argv[1], "late_recapture_render"))
+      late_recapture_test(false, 3);
+   else if (!strcmp(argv[1], "shutdown_recapture"))
+      late_recapture_test(true, 2);
+   else if (!strcmp(argv[1], "shutdown_recapture_render"))
+      late_recapture_test(true, 3);
+   else if (!strcmp(argv[1], "race"))
       race_test(64);
    else if (!strcmp(argv[1], "idle_under_load"))
       race_test(256);
@@ -608,6 +981,39 @@ int main(int argc, char **argv)
       idle_only_test();
    else if (!strcmp(argv[1], "concurrent_idle"))
       concurrent_idle_test();
+   else if (!strcmp(argv[1], "quiet"))
+      automatic_test(false);
+   else if (!strcmp(argv[1], "retry"))
+      automatic_test(true);
+   else if (!strcmp(argv[1], "age"))
+      age_test(true);
+   else if (!strcmp(argv[1], "quiet_active"))
+      age_test(false);
+   else if (!strcmp(argv[1], "compile_failure"))
+      compile_failure_test();
+   else if (!strcmp(argv[1], "uncaptured_failure"))
+      degraded_test(false);
+   else if (!strcmp(argv[1], "bypass_disabled"))
+      degraded_test(true);
+   else if (!strcmp(argv[1], "destroy_bypass"))
+      destroy_bypass_test();
+   else if (!strcmp(argv[1], "destroy_flush"))
+      destroy_flush_test();
+   else if (!strcmp(argv[1], "exit_race"))
+      exit_race_test();
+   else if (!strcmp(argv[1], "invalid_timing"))
+      invalid_timing_test();
+   else if (!strcmp(argv[1], "native_exit") || !strcmp(argv[1], "fast_exit") ||
+            !strcmp(argv[1], "exit_registration_failure") ||
+            !strcmp(argv[1], "exit_snapshot_failure")) {
+      atomic_store(&fail_exit_registration, !strcmp(argv[1], "exit_registration_failure"));
+      atomic_store(&fail_exit_snapshot, !strcmp(argv[1], "exit_snapshot_failure"));
+      struct kk_metal_cache *cache = create();
+      pipeline(cache, 1, false);
+      if (!strcmp(argv[1], "fast_exit"))
+         _exit(0);
+      return 0;
+   }
    else
       return 2;
    while (items) {
@@ -616,7 +1022,8 @@ int main(int argc, char **argv)
       free(items);
       items = next;
    }
-   assert(atomic_load(&live_objects) == 0);
+   assert(pipeline_objects() == 0);
+   assert(atomic_load(&uncaptured_objects) == 0);
    printf("PASS %s\n", argv[1]);
    return 0;
 }
