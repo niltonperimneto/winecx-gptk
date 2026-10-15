@@ -4,6 +4,7 @@ import hashlib
 import os
 from pathlib import Path
 import plistlib
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -73,6 +74,7 @@ exit "${{MOCK_SIGN_EXIT:-0}}"''')
         self.assertIn(message, result.stderr)
         self.assertFalse(self.app.exists())
 
+    @unittest.skipUnless(shutil.which('plutil'), 'the bundle is assembled with macOS plutil')
     def test_valid_profile_builds_signed_bundle(self):
         result = self.make("ntdll.so=../../../ntdll.so")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -104,6 +106,7 @@ exit "${{MOCK_SIGN_EXIT:-0}}"''')
         self.write_profile(ProvisionedDevices=["00008140-0000000000000002"])
         self.assertRefused(self.make(), "does not include this Mac")
 
+    @unittest.skipUnless(shutil.which('plutil'), 'the bundle is assembled with macOS plutil')
     def test_all_devices_profile_covers_this_mac(self):
         self.write_profile(ProvisionsAllDevices=True, ProvisionedDevices=[])
         result = self.make()
