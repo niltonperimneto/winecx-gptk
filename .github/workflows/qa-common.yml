@@ -18,6 +18,10 @@ on:
         description: ruff rule selection; the default catches syntax errors and undefined names
         type: string
         default: E9,F63,F7,F82
+      whitespace:
+        description: run git diff --check on pull requests; off for upstream trees with their own scoped check
+        type: boolean
+        default: true
   # winecx-gptk runs it on itself as well.
   pull_request:
   push:
@@ -66,5 +70,5 @@ jobs:
           xargs -0 pipx run "ruff==$RUFF_VERSION" check --select "${{ inputs.python_rules || 'E9,F63,F7,F82' }}" \
             --output-format github < "$RUNNER_TEMP/python"
       - name: whitespace in added lines
-        if: always() && github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && inputs.whitespace != false
         run: git diff --check "origin/${{ github.base_ref }}...HEAD"
