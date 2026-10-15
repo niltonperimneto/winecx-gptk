@@ -12,7 +12,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime/kosmickrisp"))
 from game import extract_archive, run_game
 from readiness import blockers
-from validate import parse_capabilities, run_probe, verify_manifest
+from validate import dxvk_evidence, parse_capabilities, run_probe, verify_manifest
 
 
 class ValidationTests(unittest.TestCase):
@@ -63,6 +63,14 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(parsed["geometryShader"], "0")
         self.assertEqual(parsed["fillModeNonSolid"], "0")
         self.assertNotIn("VK_EXT_transform_feedback", parsed["extensions"])
+
+    def test_dxvk_success_requires_the_actual_version_and_driver(self):
+        log = "DXVK: v3.1.1\nDriver : KosmicKrisp\n"
+        self.assertTrue(dxvk_evidence(0, "device passed", log, "device passed", "3.1.1"))
+        self.assertFalse(dxvk_evidence(0, "device passed", log.replace("KosmicKrisp", "MoltenVK"),
+                                       "device passed", "3.1.1"))
+        self.assertFalse(dxvk_evidence(0, "device passed", log, "device passed", "3.2"))
+        self.assertFalse(dxvk_evidence(1, "device passed", log, "device passed", "3.1.1"))
 
     def test_readiness_rejects_missing_evidence(self):
         self.assertTrue(blockers({"schema": 1, "passed": True}))
