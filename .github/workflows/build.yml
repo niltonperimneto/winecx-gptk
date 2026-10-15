@@ -44,6 +44,10 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  static-qa:
+    uses: ./.github/workflows/qa-common.yml
+    permissions:
+      contents: read
   checks:
     name: Build transport unit tests
     runs-on: ubuntu-latest
@@ -57,7 +61,7 @@ jobs:
       - name: Test build contracts and existing runtime helpers
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
   foundation:
-    needs: checks
+    needs: [checks, static-qa]
     runs-on: macos-26
     timeout-minutes: 90
     permissions:
@@ -410,7 +414,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/consumer-runtime"
           tar -xzf Libraries.tar.gz -C "$RUNNER_TEMP/consumer-runtime"
           cd ../consumer
-          swift test --package-path WhiskyKit --filter 'RuntimeContractTests|RuntimeCatalogTests|RuntimeMetadataV2Tests|KosmicKrispBackendTests|RuntimeSwitchSnapshotTests'
+          swift test --package-path WhiskyKit
   publish:
     name: publish the runtime release
     needs: [build, kosmickrisp-readiness, consumer-validation]
