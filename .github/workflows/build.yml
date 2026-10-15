@@ -425,6 +425,9 @@ jobs:
           tag="runtime-canary-v$RUNTIME_VERSION"
           sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
           published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # "Wine version 11.19" in the pinned tree, never a hard-coded guess.
+          wine_version=$(curl -fsSL "https://raw.githubusercontent.com/niltonperimneto/winecx/$WINECX_COMMIT/VERSION" | awk '{print $NF}')
+          export WINE_VERSION="$wine_version"
 
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
@@ -447,7 +450,7 @@ jobs:
                   "archiveURL": f"https://github.com/{repository}/releases/download/{tag}/Libraries.tar.gz",
                   "sha256": digest,
                   "minimumMacOS": "26.0",
-                  "wineVersion": "11.0",
+                  "wineVersion": os.environ["WINE_VERSION"],
                   "capabilities": {
                       "gptkMajorVersions": [3, 4],
                       "wsarecvmsg": True,
