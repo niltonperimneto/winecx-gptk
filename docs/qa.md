@@ -122,9 +122,11 @@ compatibility. All relevant new failures must be resolved. A locally successful
 fast build or a queued CI run is not release evidence.
 
 GitHub required checks, protected branches and auto-merge are configured outside
-these documents. The current publish job consumes the base validation output;
-do not assume every separate experimental readiness job gates that job. Inspect
-the live workflow conditions and the artifact selected for publication.
+these documents. Publication depends on base artifact validation, the complete pinned Whisky
+consumer suite, both physical GPU lanes and migration readiness. Shared static
+QA gates the build graph. The compatible-consumer availability flag additionally
+blocks publication until a layout-v2 Whisky is available. Inspect the live
+conditions and exact artifact; branch protection is a separate external control.
 
 If validation fails, keep the failing evidence, determine the owning component,
 add regression coverage and rerun affected checks after the fix. Do not weaken
