@@ -124,7 +124,7 @@ when installation of KosmicKrisp into the assembled runtime is disabled.
 | Wine core | `tools/prepare_source.sh`, `tools/configure_wine.sh`, `tools/make_wine.sh`, `tools/build_wine_core.sh` | Reproducible source preparation, compilation and staged install |
 | Payloads | `tools/fetch_payloads.sh` | Verified graphics and addon downloads |
 | Driver | `tools/build_kosmickrisp.sh`, `runtime/kosmickrisp/` | Mesa snapshot, loader, headers and driver-specific helpers |
-| Assembly | `tools/assemble_runtime.sh`, `tools/install_kosmickrisp.sh` | Consumer layout, dependency closure, loader paths, signatures and optional driver integration |
+| Assembly | `tools/assemble_runtime.sh`, `tools/install_kosmickrisp.sh` | Consumer layout, dependency closure, loader paths, signatures and required Vulkan provider integration |
 | Validation/package | `tools/run_probes.sh`, `tools/check_runtime_layout.py`, `tools/package_runtime.sh` | Tested and described `Libraries/` archive |
 | OCI transport | `tools/build/oci.sh`, `tools/build/archive.py`, `tools/import_layer.sh`, `docker/` | Digest-addressed exchange between build jobs and local workspaces |
 
@@ -152,8 +152,9 @@ saved assemblies, and [cross-repository CI](ci-integration.md) for dispatches.
 ## Consumer and release contracts
 
 - `contracts/runtime-layout.json` defines paths Whisky relies on, including a
-  separate KosmicKrisp set. The checker verifies presence; it does not by itself
-  prove architecture, executable validity or runtime behavior.
+  the required layout-v2 KosmicKrisp and DXVK3 payload. The checker verifies
+  presence and rejects legacy payloads and MoltenVK dependencies; it does not
+  by itself prove architecture, executable validity or runtime behavior.
 - `WhiskyWineVersion.plist` describes the assembled runtime's version and
   advertised capabilities. Capability changes need matching implementation and
   evidence, not just a metadata edit.
@@ -162,9 +163,10 @@ saved assemblies, and [cross-repository CI](ci-integration.md) for dispatches.
   symlinks from that inventory. Loader links still need independent validation.
 - `Libraries.tar.gz.sha256` identifies the distributed archive.
   `RuntimeNetworkVerification.txt` retains the network probe result.
-- `runtime-catalog.json` advertises the published canary archive, digest, minimum
-  OS and capabilities. It is updated by publication; do not hand-edit it to
-  advertise an unbuilt local tree.
+- `runtime-catalog-v2.json` advertises eligible canaries for compatible clients.
+  Publication preserves the legacy `runtime-catalog.json` endpoint and old
+  release assets. Do not advertise an unbuilt tree or replace a published
+  archive with different bytes.
 
 Changes to a path or schema need a coordinated producer/consumer migration,
 backward compatibility where required, and a rollback plan. A local fast build,

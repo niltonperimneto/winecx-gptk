@@ -50,14 +50,16 @@ mesa ────┘   (repository_       │   DXMT, relay12)     │          
    this table. Assembly and validation always run because they combine all
    layers.
 5. For eligible validated non-fast builds on `main`, `publish` cuts the canary
-   release, updates `runtime-catalog.json` and sends `runtime-published` to Whisky.
+   release, updates `runtime-catalog-v2.json` and sends `runtime-published` to Whisky.
    Whisky's `RuntimeIntegration.yml` downloads the archive and checks it against
    `contracts/runtime-layout.json`.
 
-The base validation output and separate experimental KosmicKrisp validation and
-readiness jobs are distinct. The current `publish` job depends on base `build`,
-not every experimental job. Inspect its conditions and selected artifact before
-claiming a graphics readiness result gates publication.
+Publication requires base artifact validation, pinned Whisky consumer tests,
+physical macOS 26 and newer-OS GPU validation, game/performance readiness and
+`WHISKY_LAYOUT_V2_AVAILABLE=true`. Shared static QA and transport/runtime unit
+tests gate the build. Hosted construction is independent of physical GPU jobs.
+See [layout v2](runtime-layout-v2.md) for the evidence contract. Old release
+assets and the v1 catalog remain untouched.
 
 ## Contract
 
@@ -83,11 +85,14 @@ actions current.
 | Name | Where | Purpose |
 |---|---|---|
 | `HUB_DISPATCH_TOKEN` | winecx, relay12, mesa, winecx-gptk | Token scoped to participating repositories for cross-repository dispatches and bump PR creation. The bump workflow uses it so the PR can trigger normal CI. |
-| `MACOS_GPU_RUNNER` (variable) | winecx-gptk | Runner label for experimental assembly and GPU validation. Unset means hosted macOS; hardware capability must still be verified. |
+| `MACOS_GPU_RUNNER_26` | winecx-gptk | Trusted physical macOS 26 Metal 4 runner label. |
+| `MACOS_GPU_RUNNER_NEWER` | winecx-gptk | Trusted physical newer-OS Metal 4 runner label. |
+| `MACOS_GPU_CAMPAIGN`, `MACOS_GPU_CAMPAIGN_SHA256` | winecx-gptk | Provisioned licensed-game campaign adapter and its immutable digest. |
+| `WHISKY_LAYOUT_V2_AVAILABLE` | winecx-gptk | Set true only after a compatible Whisky has shipped. |
 
-`MACOS_GPU_RUNNER` also selects experimental assembly and reusable validation
-hosts. A hosted macOS runner may lack a Metal 4 device; selecting a runner does
-not make unavailable hardware checks pass or change branch-protection rules.
+Missing physical runner or game-fixture configuration blocks promotion. A hosted
+macOS runner cannot replace Metal 4 device/readback/game coverage. Configuration
+does not change branch-protection rules or supply missing test evidence.
 
 Notification steps can warn and continue without `HUB_DISPATCH_TOKEN`, but
 `bump-pins.yml` explicitly requires it, including for a manual workflow dispatch.
