@@ -1,0 +1,88 @@
+name: bump component pins
+
+# winecx, mesa and relay12 send component-updated after their own CI passes
+# on main. This moves the matching pin and opens a pull request; build.yml
+# then rebuilds only the OCI layers whose inputs changed and the PR merges
+# itself once green. A newer bump of the same component closes older ones.
+on:
+  repository_dispatch:
+    types: [component-updated]
+  workflow_dispatch:
+    inputs:
+      component:
+        type: choice
+        options: [winecx, mesa, relay12]
+      sha:
+        description: full commit sha on the component's main
+        type: string
+      release_tag:
+        description: relay12 only
+        type: string
+      sha256:
+        description: relay12 only, archive sha256
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bump-${{ github.event.client_payload.component || inputs.component }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMPONENT: ${{ github.event.client_payload.component || inputs.component }}
+      SHA: ${{ github.event.client_payload.sha || inputs.sha }}
+      RELEASE_TAG: ${{ github.event.client_payload.release_tag || inputs.release_tag }}
+      SHA256: ${{ github.event.client_payload.sha256 || inputs.sha256 }}
+      # A pull request opened with GITHUB_TOKEN would not start build.yml.
+      GH_TOKEN: ${{ secrets.HUB_DISPATCH_TOKEN }}
+    steps:
+      - name: Require the dispatch token
+        run: |
+          [ -n "$GH_TOKEN" ] || { echo "::error::HUB_DISPATCH_TOKEN is not set"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.HUB_DISPATCH_TOKEN }}
+      - name: Move the pin
+        id: bump
+        run: |
+          set +e
+          args=("$COMPONENT" "$SHA")
+          [ -z "$RELEASE_TAG" ] || args+=(--release-tag "$RELEASE_TAG")
+          [ -z "$SHA256" ] || args+=(--sha256 "$SHA256")
+          python3 tools/build/bump_pin.py "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          status=${PIPESTATUS[0]}
+          set -e
+          case "$status" in
+            0) echo "changed=true" >> "$GITHUB_OUTPUT" ;;
+            3) echo "changed=false" >> "$GITHUB_OUTPUT"; echo "pin already current" ;;
+            *) exit "$status" ;;
+          esac
+      - name: Open the bump pull request
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          short=${SHA:0:7}
+          branch="bump/$COMPONENT-$short"
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git commit -qam "chore(pins): bump $COMPONENT to $short"
+          git push -f origin "$branch"
+          body="Automated pin bump from niltonperimneto/$COMPONENT@$SHA.
+
+          build.yml rebuilds only the OCI layers whose cache keys include this pin; every other layer is restored."
+          if ! gh pr view "$branch" >/dev/null 2>&1; then
+            gh pr create --base main --head "$branch" --title "chore(pins): bump $COMPONENT to $short" --body "$body"
+          fi
+          gh pr merge "$branch" --auto --squash || echo "::warning::auto-merge is not enabled for this repository"
+          # Supersede older bumps of the same component.
+          gh pr list --state open --json headRefName,number \
+            --jq ".[] | select(.headRefName | startswith(\"bump/$COMPONENT-\")) | select(.headRefName != \"$branch\") | .number" |
+          while read -r number; do
+            gh pr close "$number" --delete-branch --comment "Superseded by $branch."
+          done

@@ -167,5 +167,28 @@ class OCICacheKeyTests(unittest.TestCase):
                 self.assertNotEqual(native, keys.key('tools'))
 
 
+    def test_component_bumps_rebuild_only_their_consumers(self):
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('build_cache_key', ROOT / 'tools/build/cache_key.py')
+        keys = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(keys)
+        layers = ('sysroot', 'tools', 'core', 'payloads', 'kosmickrisp')
+        base = {'NIXPKGS_REV': 'nix', 'WINECX_COMMIT': 'wine-a', 'MACOSX_DEPLOYMENT_TARGET': '26.0',
+                'OPT_LEVEL': 'standard', 'RELAY12_COMMIT': 'relay-a', 'DXMT_COMMIT': 'dxmt-a'}
+        with patch.object(keys.subprocess, 'check_output', return_value=b'Apple toolchain fixture'), \
+             patch.dict(keys.os.environ, base):
+            before = {layer: keys.key(layer) for layer in layers}
+
+            def changed(**env):
+                with patch.dict(keys.os.environ, env):
+                    return {layer for layer in layers if keys.key(layer) != before[layer]}
+
+            self.assertEqual(changed(WINECX_COMMIT='wine-b'), {'tools', 'core'})
+            self.assertEqual(changed(RELAY12_COMMIT='relay-b'), {'payloads'})
+            self.assertEqual(changed(DXMT_COMMIT='dxmt-b'), {'payloads'})
+            self.assertEqual(changed(OPT_LEVEL='release'), {'core'})
+            self.assertEqual(changed(NIXPKGS_REV='nix-b'), {'sysroot', 'tools', 'core'})
+
+
 if __name__ == '__main__':
     unittest.main()

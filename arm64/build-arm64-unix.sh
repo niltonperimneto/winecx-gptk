@@ -42,4 +42,6 @@ nix shell nixpkgs#bison nixpkgs#flex nixpkgs#pkg-config --command bash -c '
   echo "== build '"$TARGETS"'"
   make -o config.status -o Makefile -j10 '"$TARGETS"' ${MAKEFLAGS_EXTRA:-}
 '
-ls -la $(echo "$TARGETS" | tr " " "\n" | grep "\.so$") 2>/dev/null || true
+for target in $TARGETS; do
+  case "$target" in *.so) ls -la "$target" 2>/dev/null || true ;; esac
+done
