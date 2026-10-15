@@ -8,6 +8,9 @@ require a usable Vulkan device.
 
 ## Component ownership
 
+The Wine source change is based on the previously tested hub pin; unrelated
+Wine main-branch features remain separate from this migration.
+
 WineCX owns runtime-relative discovery in `dlls/win32u/vulkan.c`. On macOS,
 Wine locates `Wine/lib/kosmickrisp` from its loaded `win32u.so`, rather than the
 working directory or a developer's home. `WINE_VULKAN_LIBRARY` and the legacy
