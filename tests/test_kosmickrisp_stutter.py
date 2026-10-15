@@ -1,5 +1,7 @@
 """Check stutter attribution on synthetic present and compile logs."""
 import importlib.util
+import plistlib
+from unittest.mock import patch
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,6 +23,22 @@ def presents(frame_ms):
 
 
 class StutterTests(unittest.TestCase):
+    def test_v2_benchmark_selects_vulkan_without_overwriting_the_game_backend(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'WhiskyWineVersion.plist').write_bytes(plistlib.dumps({'runtimeLayoutVersion': 2}))
+            with patch.dict(stutter.os.environ, {'CX_ACTIVE_GRAPHICS_BACKEND': 'dxmt'}):
+                env = stutter.wine_env(root, root / 'driver', root / 'prefix')
+            self.assertEqual(env['CX_ACTIVE_GRAPHICS_BACKEND'], 'dxmt')
+            self.assertEqual(env['WINE_VULKAN_LIBRARY'], str(root / 'driver/libvulkan.1.dylib'))
+
+    def test_legacy_benchmark_keeps_its_required_loader_selector(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env = stutter.wine_env(root, root / 'driver', root / 'prefix')
+            self.assertEqual(env['CX_ACTIVE_GRAPHICS_BACKEND'], 'wined3d')
+            self.assertNotIn('WINE_VULKAN_LIBRARY', env)
+
     def test_steady_frames_have_no_hitches(self):
         result = stutter.analyze_frames(presents([16.7] * 600), [])
         self.assertEqual(result["hitches"], 0)
