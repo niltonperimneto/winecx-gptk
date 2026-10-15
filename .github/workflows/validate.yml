@@ -97,6 +97,9 @@ jobs:
         run: |-
           mkdir -p .build/logs
           cp ./*.log .build/logs/ 2>/dev/null || true
+      - name: Collect Wine crash reports and a startup backtrace
+        if: failure()
+        run: bash tools/collect_crash_reports.sh .build/logs/crash
       - uses: actions/upload-artifact@v7
         if: always()
         with:
