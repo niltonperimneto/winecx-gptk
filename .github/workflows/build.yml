@@ -370,6 +370,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # The catalog push below authenticates with its own token; a persisted
+          # GITHUB_TOKEN header would take precedence over it.
+          persist-credentials: false
       - name: Load pinned build inputs
         run: sed -n 's/^export //p' tools/build/pins.env >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v8
@@ -420,8 +423,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUNTIME_VERSION: ${{ needs.build.outputs.runtime_version }}
+          # main is protected and Whisky reads the catalog from main. A personal
+          # repository cannot let the Actions app bypass that, but an admin can,
+          # so the push goes through the owner's PAT rather than GITHUB_TOKEN.
+          CATALOG_TOKEN: ${{ secrets.HUB_DISPATCH_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "$CATALOG_TOKEN" ]; then
+            echo "::error::HUB_DISPATCH_TOKEN is not set; protected main rejects the catalog commit from GITHUB_TOKEN"
+            exit 1
+          fi
+          git remote set-url origin "https://x-access-token:${CATALOG_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           tag="runtime-canary-v$RUNTIME_VERSION"
           sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
           published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
