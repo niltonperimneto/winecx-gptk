@@ -105,15 +105,16 @@ else:
             def call(*args, **env):
                 return subprocess.run(['bash', str(root / 'tools/build/oci.sh'), *args],
                                       env={**environment, **env}, capture_output=True, text=True)
-            result = call('push', 'core', 'staging')
+            # assembled is keyed per run, so pushing it needs no toolchain.
+            result = call('push', 'assembled', 'staging')
             self.assertEqual(result.returncode, 0, result.stderr)
             reference = (root / 'output').read_text().strip().removeprefix('ref=')
             self.assertIn('@sha256:', reference)
             shutil.rmtree(root / 'staging')
-            result = call('pull', 'core', reference)
+            result = call('pull', 'assembled', reference)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((root / 'staging/link').read_bytes(), b'fixture')
-            result = call('pull', 'core', 'ghcr.io/example/core:moving-tag')
+            result = call('pull', 'assembled', 'ghcr.io/example/assembled:moving-tag')
             self.assertNotEqual(result.returncode, 0)
             # Payload cache keys do not need Apple toolchain commands.
             result = call('restore', 'payloads', FAKE_ERROR='401 unauthorized')

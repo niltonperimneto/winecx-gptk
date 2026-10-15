@@ -212,6 +212,7 @@ class TransactionTests(unittest.TestCase):
         self.assertTrue(any('-steampid=90' in arg for arg in result))
         self.assertFalse(any('force-gpu' in arg for arg in result))
 
+    @unittest.skipUnless(sys.platform == 'darwin', 'reads the macOS continuous and uptime clocks')
     def test_gpu_off_browser_accepts_utility_and_swiftshader_children(self):
         prefix = 'C:\\Steam\\bin\\cef\\steamwebhelper.exe '
         args = ['C:\\Steam\\steam.exe -silent -cef-disable-gpu',
