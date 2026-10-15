@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import signal
 import shutil
 import subprocess
@@ -69,6 +70,11 @@ def parse_capabilities(text):
                 fields[key] = value
     fields["extensions"] = extensions
     return fields
+
+
+def dxvk_evidence(code, output, logs, marker, version):
+    return (code == 0 and marker in output and f"DXVK: v{version}" in logs and
+            re.search(r"Driver\s*:\s*KosmicKrisp\b", logs) is not None)
 
 
 def main():
@@ -181,8 +187,7 @@ def main():
         if "VK_EXT_transform_feedback" not in caps["extensions"]:
             optional_missing.append("VK_EXT_transform_feedback")
         report["migration"]["dxvk"]["known_missing"] = missing
-        # Run stock DXVK with native-only overrides in isolated application dirs.
-        # Keeping both the DLLs and EXE there prevents fallback to the shipped fork.
+        # Native-only overrides and helper-local DLLs exclude Wine builtin translation.
         pins = dict(line.split("=", 1) for line in (libraries / "DXVK3/SOURCE.txt").read_text().splitlines()
                     if line and not line.startswith("#") and "=" in line)
         version = pins["DXVK_VERSION"]
@@ -193,7 +198,7 @@ def main():
             # The shipped DXVK3 payload, so validation covers what Whisky installs.
             for dll in (libraries / "DXVK3" / dll_arch).glob("*.dll"):
                 shutil.copy2(dll, directory)
-            dxvk_env = dict(env, WINEDLLOVERRIDES="d3d9,d3d11,dxgi=n;mscoree,mshtml=",
+            dxvk_env = dict(env, WINEDLLOVERRIDES="d3d9,d3d10core,d3d11,dxgi=n;mscoree,mshtml=",
                             DXVK_LOG_LEVEL="info", DXVK_LOG_PATH=str(directory))
             for api, marker in (("d3d9", "RESULT: d3d9 device up"), ("d3d11", "[ ok ] D3D11CreateDevice"),
                                 ("d3d10", "D3D10 device creation passed"),
@@ -203,7 +208,7 @@ def main():
                 code, seconds, text = run_probe([str(wine / "bin/wine-kosmickrisp"), str(executable)],
                     dxvk_env, directory / f"{api}.log", cwd=directory)
                 logs = "\n".join(p.read_text(errors="replace") for p in directory.glob(f"{executable.stem}_*.log"))
-                ok = code == 0 and marker in text and f"DXVK: v{version}" in logs
+                ok = dxvk_evidence(code, text, logs, marker, version)
                 dxvk_results[f"{api}-{target}"] = {"status": "passed" if ok else "failed",
                                                   "exit_code": code, "seconds": seconds}
         dxvk_ok = not missing and all(result["status"] == "passed" for result in dxvk_results.values())
@@ -212,7 +217,7 @@ def main():
             "known_missing": missing, "optional_missing": optional_missing,
             "probes": dxvk_results,
             "reason": ("missing: " + ", ".join(missing)) if missing else
-                "D3D9/D3D11 initialization plus known-feature screen; game coverage is a separate gate"}
+                "D3D9/10/11 initialization and constant-array readback; game coverage is a separate gate"}
         report["migration"]["game"] = run_game(args.game_config, wine / "bin/wine-kosmickrisp", env, output, run_probe)
     except Exception as error:
         checks["validation"] = {"status": "failed", "reason": str(error)}
@@ -222,7 +227,8 @@ def main():
                 run_probe([str(wine / "bin/wineserver"), "-k"], env, output / "cleanup.log", timeout=15)
             except OSError:
                 pass
-        report["passed"] = bool(checks) and all(c["status"] == "passed" for c in checks.values())
+        report["passed"] = (bool(checks) and all(c["status"] == "passed" for c in checks.values())
+                            and report["migration"]["dxvk"]["status"] == "passed")
         (output / "results.json").write_text(json.dumps(report, indent=2) + "\n")
         summary = ["| KosmicKrisp validation | Result |", "|---|---|"]
         summary.extend(f"| {name} | {result['status']} |" for name, result in checks.items())
