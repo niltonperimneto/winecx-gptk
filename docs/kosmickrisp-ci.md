@@ -1,9 +1,10 @@
 # KosmicKrisp CI
 
-The build workflow now runs automatically on pushes to
-`feat/kosmickrisp-experimental`. It can also be dispatched with the
-`kosmickrisp` input enabled. The experimental branch always selects this lane,
-even if the checkbox is left off. Experimental artifacts never reach the
+The build workflow now includes the KosmicKrisp + upstream DXVK lane on every
+pull request, and it can also be dispatched with the `kosmickrisp` input
+enabled. The experimental branch always selects this lane, even if the
+checkbox is left off. Main pushes retain the default MoltenVK runtime unless
+the lane is explicitly enabled. Experimental artifacts never reach the
 release/catalog publishing job.
 
 The hosted macOS 26 image exposes an Apple Paravirtual Metal device, which
