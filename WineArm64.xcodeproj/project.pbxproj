@@ -1,0 +1,574 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXAggregateTarget section */
+		84F03B187DDD6FA4911A36BC /* SignRuntime */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 5584FA3E07687107C849AFA2 /* Build configuration list for PBXAggregateTarget "SignRuntime" */;
+			buildPhases = (
+				AAFBBF5CD33E9DCA7C9CF5F3 /* Sign Runtime Helper */,
+			);
+			dependencies = (
+			);
+			name = SignRuntime;
+			productName = SignRuntime;
+		};
+/* End PBXAggregateTarget section */
+
+/* Begin PBXBuildFile section */
+		14E5E0ED0307A69F1BD3328E /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C72F782E247EDF0C1598689E /* Cocoa.framework */; };
+		497BF248AA55A8E410AF851D /* pagezero_probe.c in Sources */ = {isa = PBXBuildFile; fileRef = 0CD41E56612E535C1ABA5AB9 /* pagezero_probe.c */; };
+		AD202B1913DBDE26D6FBFE04 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C72F782E247EDF0C1598689E /* Cocoa.framework */; };
+		E53863B89E67B9A0549FEB47 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = C38FE0EA6E8F51D7F6EE52F2 /* main.c */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0CD41E56612E535C1ABA5AB9 /* pagezero_probe.c */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.c; path = pagezero_probe.c; sourceTree = "<group>"; };
+		1C4DAEB7A123560BAA0E14B4 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		3854B075D489B0BAE923DD78 /* sign_runtime.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = sign_runtime.sh; sourceTree = "<group>"; };
+		6F63B154104C3A7D3DD2E1C7 /* PagezeroProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PagezeroProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8A721971D82E133656335420 /* post_build.sh */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.script.sh; path = post_build.sh; sourceTree = "<group>"; };
+		9BE3EE80DE2A7D5A06ABA044 /* PagezeroProbe.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = PagezeroProbe.entitlements; sourceTree = "<group>"; };
+		9DEEE1939C4AF570D0B8E918 /* WineApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = WineApp.app; path = wine.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C23C940C6655CD02D087F733 /* WineApp.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = WineApp.entitlements; sourceTree = "<group>"; };
+		C38FE0EA6E8F51D7F6EE52F2 /* main.c */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
+		C72F782E247EDF0C1598689E /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		CCD9C8322DCEE0FB35A86AD1 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		2AAD9FA43169F8305E81DE67 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AD202B1913DBDE26D6FBFE04 /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		83E62B0868E72F6161821C34 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				14E5E0ED0307A69F1BD3328E /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		18800FD442C2C42D119E3F33 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6F63B154104C3A7D3DD2E1C7 /* PagezeroProbe.app */,
+				9DEEE1939C4AF570D0B8E918 /* WineApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2C22BC31C837DCF2EC02FD02 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				C72F782E247EDF0C1598689E /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
+		454FD69378913CBD293677E2 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				0CD41E56612E535C1ABA5AB9 /* pagezero_probe.c */,
+			);
+			name = Tests;
+			path = tests;
+			sourceTree = "<group>";
+		};
+		4DF6E695C54FF97C3EED0D2A = {
+			isa = PBXGroup;
+			children = (
+				18800FD442C2C42D119E3F33 /* Products */,
+				774B70A7A2713E10F50F8DE3 /* Frameworks */,
+				D7C57459B9B9D9690985B179 /* PagezeroProbe */,
+				454FD69378913CBD293677E2 /* Tests */,
+				BBF96D4390815FD1CF8668C5 /* WineApp */,
+				8CE5A3BAF660A1CC61C6B523 /* Scripts */,
+			);
+			sourceTree = "<group>";
+		};
+		774B70A7A2713E10F50F8DE3 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				2C22BC31C837DCF2EC02FD02 /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		8CE5A3BAF660A1CC61C6B523 /* Scripts */ = {
+			isa = PBXGroup;
+			children = (
+				3854B075D489B0BAE923DD78 /* sign_runtime.sh */,
+			);
+			name = Scripts;
+			path = Xcode/Scripts;
+			sourceTree = "<group>";
+		};
+		BBF96D4390815FD1CF8668C5 /* WineApp */ = {
+			isa = PBXGroup;
+			children = (
+				C38FE0EA6E8F51D7F6EE52F2 /* main.c */,
+				C23C940C6655CD02D087F733 /* WineApp.entitlements */,
+				CCD9C8322DCEE0FB35A86AD1 /* Info.plist */,
+				8A721971D82E133656335420 /* post_build.sh */,
+			);
+			name = WineApp;
+			path = Xcode/WineApp;
+			sourceTree = "<group>";
+		};
+		D7C57459B9B9D9690985B179 /* PagezeroProbe */ = {
+			isa = PBXGroup;
+			children = (
+				9BE3EE80DE2A7D5A06ABA044 /* PagezeroProbe.entitlements */,
+				1C4DAEB7A123560BAA0E14B4 /* Info.plist */,
+			);
+			name = PagezeroProbe;
+			path = Xcode/PagezeroProbe;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		72A9480B78D97366908BE0B9 /* WineApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4170184E984835E6A83B07D9 /* Build configuration list for PBXNativeTarget "WineApp" */;
+			buildPhases = (
+				9E6E7542D85B0C3705DB79A2 /* Sources */,
+				83E62B0868E72F6161821C34 /* Frameworks */,
+				1611E9EE6020DD9646DDE428 /* Resources */,
+				5ADF99FECC22A367DBF99C0A /* Stage Wine Loader & Symlinks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WineApp;
+			productName = WineApp;
+			productReference = 9DEEE1939C4AF570D0B8E918 /* WineApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7D223BD2B015E260F3F0F380 /* PagezeroProbe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3D488367F97EDCACB8F07C4B /* Build configuration list for PBXNativeTarget "PagezeroProbe" */;
+			buildPhases = (
+				24D2EDE2AEB2E44180FCCA35 /* Sources */,
+				2AAD9FA43169F8305E81DE67 /* Frameworks */,
+				4E4925800EC2B9CA1A96E3AC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PagezeroProbe;
+			productName = PagezeroProbe;
+			productReference = 6F63B154104C3A7D3DD2E1C7 /* PagezeroProbe.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8EDA72024743D1446E1DD520 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 3FB4DAF3EAEC4CE644631152 /* Build configuration list for PBXProject "WineArm64" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4DF6E695C54FF97C3EED0D2A;
+			productRefGroup = 18800FD442C2C42D119E3F33 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7D223BD2B015E260F3F0F380 /* PagezeroProbe */,
+				72A9480B78D97366908BE0B9 /* WineApp */,
+				84F03B187DDD6FA4911A36BC /* SignRuntime */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1611E9EE6020DD9646DDE428 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4E4925800EC2B9CA1A96E3AC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		5ADF99FECC22A367DBF99C0A /* Stage Wine Loader & Symlinks */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Stage Wine Loader & Symlinks";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "bash \"${PROJECT_DIR}/Xcode/WineApp/post_build.sh\"";
+		};
+		AAFBBF5CD33E9DCA7C9CF5F3 /* Sign Runtime Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sign Runtime Helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "echo \"== SignRuntime Scheme ==\"\necho \"To sign a custom Wine executable or directory with make-wine-app.sh:\"\necho \"bash ${PROJECT_DIR}/Xcode/Scripts/sign_runtime.sh <EXECUTABLE> <APP_DIRECTORY> <PROFILE> [IDENTITY]\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		24D2EDE2AEB2E44180FCCA35 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				497BF248AA55A8E410AF851D /* pagezero_probe.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9E6E7542D85B0C3705DB79A2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E53863B89E67B9A0549FEB47 /* main.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1DEC970E910FF869B79F55D2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Xcode/WineApp/WineApp.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 4ULPH24442;
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = Xcode/WineApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.niltonperimneto.wine;
+				PRODUCT_NAME = wine;
+				SDKROOT = macosx;
+				WRAPPER_EXTENSION = app;
+			};
+			name = Release;
+		};
+		497E94A087838D04091A8B62 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Xcode/PagezeroProbe/PagezeroProbe.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = Xcode/PagezeroProbe/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PageZero;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.niltonperimneto.pagezero-probe";
+				PRODUCT_NAME = PagezeroProbe;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		573A75C5AE1C8F6E17E31287 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+			};
+			name = Release;
+		};
+		57E1D49936F8688A486AFCE2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+			};
+			name = Debug;
+		};
+		74A9CC90276EE810EEFF0565 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Xcode/WineApp/WineApp.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 4ULPH24442;
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = Xcode/WineApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.niltonperimneto.wine;
+				PRODUCT_NAME = wine;
+				SDKROOT = macosx;
+				WRAPPER_EXTENSION = app;
+			};
+			name = Debug;
+		};
+		771F1F0D137BE9D0F2662E0F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 4ULPH24442;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA5B88CA27BE69D7977E8CBC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Xcode/PagezeroProbe/PagezeroProbe.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				INFOPLIST_FILE = Xcode/PagezeroProbe/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = PageZero;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.niltonperimneto.pagezero-probe";
+				PRODUCT_NAME = PagezeroProbe;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		F5AF9C96195A2E3225DD68EA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 4ULPH24442;
+				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3D488367F97EDCACB8F07C4B /* Build configuration list for PBXNativeTarget "PagezeroProbe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				497E94A087838D04091A8B62 /* Release */,
+				AA5B88CA27BE69D7977E8CBC /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		3FB4DAF3EAEC4CE644631152 /* Build configuration list for PBXProject "WineArm64" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				771F1F0D137BE9D0F2662E0F /* Debug */,
+				F5AF9C96195A2E3225DD68EA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4170184E984835E6A83B07D9 /* Build configuration list for PBXNativeTarget "WineApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1DEC970E910FF869B79F55D2 /* Release */,
+				74A9CC90276EE810EEFF0565 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5584FA3E07687107C849AFA2 /* Build configuration list for PBXAggregateTarget "SignRuntime" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				573A75C5AE1C8F6E17E31287 /* Release */,
+				57E1D49936F8688A486AFCE2 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 8EDA72024743D1446E1DD520 /* Project object */;
+}
