@@ -7,5 +7,5 @@ void main() {
  float v[3]=float[3](0.2,0.6,1.0);
  int i=gl_VertexIndex%3;
  gl_Position=vec4(p[i]*w[i],0,w[i]); value=v[i];
- 
+
 }

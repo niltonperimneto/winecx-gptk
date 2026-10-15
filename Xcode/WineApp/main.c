@@ -46,7 +46,7 @@ int main(int argc, char *argv[])
     if (_NSGetExecutablePath(exec_path, &size) == 0) {
         printf("[WineApp] Executable: %s\n", exec_path);
     }
-    
+
     int ok = verify_low_4gb();
     if (!ok) {
         fprintf(stderr, "[WineApp] Note: com.apple.developer.cross-architecture-support requires an Apple-provisioned profile.\n");
