@@ -35,7 +35,10 @@ on:
   pull_request:
     paths-ignore: *docs
 env:
-  KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
+  # Pull requests exercise the complete GPTK bundle, including the
+  # experimental KosmicKrisp + upstream DXVK lane. Main remains publishable
+  # with the default MoltenVK runtime unless the lane is explicitly enabled.
+  KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp == true || github.event_name == 'pull_request' || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
   RUNTIME_SERIES: "4.8"
   OPT_LEVEL: ${{ inputs.opt || 'standard' }}
   REBUILD_ALL: ${{ inputs.rebuild_all == true }}
@@ -237,7 +240,7 @@ jobs:
         id: core_status
         run: cat core-status.env >> "$GITHUB_OUTPUT"
   assemble:
-    runs-on: ${{ (inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental') && vars.MACOS_GPU_RUNNER || 'macos-26' }}
+    runs-on: ${{ (inputs.kosmickrisp == true || github.event_name == 'pull_request' || github.ref == 'refs/heads/feat/kosmickrisp-experimental') && vars.MACOS_GPU_RUNNER || 'macos-26' }}
     timeout-minutes: 90
     permissions:
       contents: read
@@ -301,9 +304,9 @@ jobs:
       assembled_ref: ${{ needs.assemble.outputs.ref }}
       runtime_version: ${{ needs.assemble.outputs.runtime_version }}
       shippable: ${{ needs.core.outputs.shippable }}
-      kosmickrisp: ${{ inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
+      kosmickrisp: ${{ inputs.kosmickrisp == true || github.event_name == 'pull_request' || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
       opt: ${{ inputs.opt || 'standard' }}
-      artifact_name: whiskywine-gptk-libraries${{ (inputs.kosmickrisp == true || github.ref == 'refs/heads/feat/kosmickrisp-experimental') && '-kosmickrisp-experimental'
+      artifact_name: whiskywine-gptk-libraries${{ (inputs.kosmickrisp == true || github.event_name == 'pull_request' || github.ref == 'refs/heads/feat/kosmickrisp-experimental') && '-kosmickrisp-experimental'
         || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
   kosmickrisp-validation:
     name: KosmicKrisp / macOS 26 packaged runtime
@@ -362,7 +365,7 @@ jobs:
   publish:
     name: publish the runtime release
     needs: build
-    if: github.ref == 'refs/heads/main' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
+    if: github.ref == 'refs/heads/main' && needs.build.outputs.kosmickrisp != 'true' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: write
