@@ -105,15 +105,16 @@ else:
             def call(*args, **env):
                 return subprocess.run(['bash', str(root / 'tools/build/oci.sh'), *args],
                                       env={**environment, **env}, capture_output=True, text=True)
-            result = call('push', 'core', 'staging')
+            # assembled is keyed per run, so pushing it needs no toolchain.
+            result = call('push', 'assembled', 'staging')
             self.assertEqual(result.returncode, 0, result.stderr)
             reference = (root / 'output').read_text().strip().removeprefix('ref=')
             self.assertIn('@sha256:', reference)
             shutil.rmtree(root / 'staging')
-            result = call('pull', 'core', reference)
+            result = call('pull', 'assembled', reference)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((root / 'staging/link').read_bytes(), b'fixture')
-            result = call('pull', 'core', 'ghcr.io/example/core:moving-tag')
+            result = call('pull', 'assembled', 'ghcr.io/example/assembled:moving-tag')
             self.assertNotEqual(result.returncode, 0)
             # Payload cache keys do not need Apple toolchain commands.
             result = call('restore', 'payloads', FAKE_ERROR='401 unauthorized')
@@ -165,6 +166,29 @@ class OCICacheKeyTests(unittest.TestCase):
             with patch.dict(keys.os.environ, {'NIXPKGS_REV': 'nix-b'}):
                 self.assertNotEqual(sysroot, keys.key('sysroot'))
                 self.assertNotEqual(native, keys.key('tools'))
+
+
+    def test_component_bumps_rebuild_only_their_consumers(self):
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('build_cache_key', ROOT / 'tools/build/cache_key.py')
+        keys = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(keys)
+        layers = ('sysroot', 'tools', 'core', 'payloads', 'kosmickrisp')
+        base = {'NIXPKGS_REV': 'nix', 'WINECX_COMMIT': 'wine-a', 'MACOSX_DEPLOYMENT_TARGET': '26.0',
+                'OPT_LEVEL': 'standard', 'RELAY12_COMMIT': 'relay-a', 'DXMT_COMMIT': 'dxmt-a'}
+        with patch.object(keys.subprocess, 'check_output', return_value=b'Apple toolchain fixture'), \
+             patch.dict(keys.os.environ, base):
+            before = {layer: keys.key(layer) for layer in layers}
+
+            def changed(**env):
+                with patch.dict(keys.os.environ, env):
+                    return {layer for layer in layers if keys.key(layer) != before[layer]}
+
+            self.assertEqual(changed(WINECX_COMMIT='wine-b'), {'tools', 'core'})
+            self.assertEqual(changed(RELAY12_COMMIT='relay-b'), {'payloads'})
+            self.assertEqual(changed(DXMT_COMMIT='dxmt-b'), {'payloads'})
+            self.assertEqual(changed(OPT_LEVEL='release'), {'core'})
+            self.assertEqual(changed(NIXPKGS_REV='nix-b'), {'sysroot', 'tools', 'core'})
 
 
 if __name__ == '__main__':

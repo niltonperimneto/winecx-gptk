@@ -53,8 +53,20 @@ echo "deployment target: nothing newer than macOS $floor"
 # which the summary line says.
 sdkpath=$(xcrun --sdk macosx --show-sdk-path)
 sdkver=$(xcrun --sdk macosx --show-sdk-version)
+if [ "${KOSMICKRISP_ENABLED:-false}" = true ]; then
+  (cd Libraries/Wine/lib/kosmickrisp && shasum -a 256 -c SHA256SUMS)
+fi
 python3 - "$sdkpath" "$sdkver" <<'PYEOF'
-import os, re, subprocess, sys
+import json, os, re, subprocess, sys
+sys.path.insert(0, 'runtime/kosmickrisp')
+from optional_entrypoints import is_optional_import
+
+# Mesa declares optional Vulkan entrypoints weak and looks them up at run
+# time; build.sh records exactly which, so only those are excused.
+optional = {'schema': 1, 'symbols': []}
+if os.environ.get('KOSMICKRISP_ENABLED') == 'true':
+    with open('Libraries/Wine/lib/kosmickrisp/OPTIONAL-ENTRYPOINTS.json') as stream:
+        optional = json.load(stream)
 
 sdk = sys.argv[1]
 sdkver = sys.argv[2]
@@ -120,6 +132,8 @@ for p in machos:
         if not m:
             continue
         sym = m.group(1)
+        if is_optional_import(p, sym, line, optional):
+            continue
         if sym not in universe:
             kind = 'weak, so the compiler knew' if ' weak ' in line else 'strong'
             bad.setdefault(p, set()).add('%s (%s)' % (sym, kind))
@@ -174,6 +188,7 @@ done
 # through apple's opengl, frozen at 4.1, and ANGLE reports feature
 # level 9_3 against chromium's hard GLES 3.0 requirement
 [ -f Libraries/DXVK/x64/d3d11.dll ] || { echo "::error::no dxvk payload"; exit 1; }
+[ -f Libraries/DXVK/x32/dxgi.dll ] || { echo "::error::no 32-bit dxvk dxgi"; exit 1; }
 [ -f Libraries/Wine/lib/wine/x86_64-unix/winemetal.so ] || {
   echo "::error::no dxmt builtin"; exit 1; }
 [ -d Libraries/Wine/lib/external ] || {
@@ -240,6 +255,12 @@ grep -q "RESULT: windows ok" smoke.log || {
   exit 1
 }
 echo "windows: ok"
+
+# FlsGetValue2 must leave the last error alone; a kernelbase that
+# clobbered it broke steam's login, and nothing else here notices.
+x86_64-w64-mingw32-clang -O2 -Wall -Wextra -o flsgetvalue2.exe tests/flsgetvalue2.c
+WINEDEBUG=-all ./Libraries/Wine/bin/wine64 flsgetvalue2.exe
+echo "flsgetvalue2: ok"
 
 
 # and media foundation, which is the only way to tell whether the
