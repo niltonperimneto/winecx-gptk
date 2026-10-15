@@ -27,9 +27,10 @@ for target in x86_64 i686; do
     2>&1 | tee "Libraries/Wine/lib/kosmickrisp/wine-$target-probe.txt"
 done
 rm -rf Libraries/Wine/lib/kosmickrisp/headers
-source runtime/kosmickrisp/pins.env
-curl -fsSL "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_TEST_VERSION/dxvk-$DXVK_TEST_VERSION.tar.gz" \
-  -o "$probe_dir/dxvk.tar.gz"
-echo "$DXVK_TEST_SHA256  $probe_dir/dxvk.tar.gz" | shasum -a 256 -c -
-tar -xzf "$probe_dir/dxvk.tar.gz" -C Libraries/Wine/lib/kosmickrisp/tests
-cp runtime/kosmickrisp/licenses/dxvk-$DXVK_TEST_VERSION.txt Libraries/Wine/lib/kosmickrisp/licenses/
+# Upstream DXVK for KosmicKrisp ships beside Wine, with the per-prefix
+# launcher and its transactional install helper.
+install -m 755 runtime/kosmickrisp/wine-kosmickrisp-dxvk Libraries/Wine/bin/wine-kosmickrisp-dxvk
+mkdir -p Libraries/Wine/share/kosmickrisp
+install -m 644 runtime/kosmickrisp/dxvk-prefix.py Libraries/Wine/share/kosmickrisp/dxvk-prefix.py
+bash runtime/kosmickrisp/package-dxvk.sh Libraries/DXVK3
+(cd Libraries/DXVK3 && shasum -a 256 -c SHA256SUMS)
