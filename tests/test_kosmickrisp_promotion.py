@@ -23,7 +23,7 @@ class PromotionTests(unittest.TestCase):
                         visual_evidence=self.record, frame_times=self.frames)
         self.lane = dict(runtime_sha256='a' * 64,
                          warmups=[dict(completed=True, log=self.record)] * 2,
-                         measured=[self.run] * 3)
+                         measured=[copy.deepcopy(self.run) for _ in range(3)])
         self.validation = dict(manifest_sha256='b' * 64, archive_sha256='a' * 64, os='26.1')
         self.campaign = dict(schema=1, manifest_sha256='b' * 64, os='26.1', hardware='fixture GPU', cases=[])
         for title in promotion.TITLES:
@@ -67,6 +67,30 @@ class PromotionTests(unittest.TestCase):
         for run in case['candidate']['measured']:
             run['frame_times'] = slower
         self.assertTrue(self.blocked())
+
+    def replace_candidate_frames(self, times):
+        case = next(c for c in self.campaign['cases'] if c['id'] != 'steam-cef')
+        record = self.file('candidate-frames.json', json.dumps(times).encode())
+        for run in case['candidate']['measured']:
+            run['frame_times'] = record
+        return case
+
+    def test_tail_latency_alone_blocks_even_when_mean_fps_is_within_tolerance(self):
+        self.replace_candidate_frames([10] * 2940 + [12] * 60)
+        self.assertTrue(self.blocked())
+
+    def test_mean_fps_alone_blocks_even_when_p99_is_within_tolerance(self):
+        self.replace_candidate_frames([10.6] * 3000)
+        self.assertTrue(self.blocked())
+
+    def test_performance_within_tolerance_is_accepted(self):
+        self.replace_candidate_frames([10.5] * 3000)
+        self.assertFalse(self.blocked())
+
+    def test_a_single_outlier_does_not_count_as_a_repeatable_regression(self):
+        case = next(c for c in self.campaign['cases'] if c['id'] != 'steam-cef')
+        case['candidate']['measured'][0]['frame_times'] = self.file('outlier.json', json.dumps([12] * 3000).encode())
+        self.assertFalse(self.blocked())
 
     def test_missing_physical_campaigns_block(self):
         self.assertTrue(promotion.blockers(self.root))
