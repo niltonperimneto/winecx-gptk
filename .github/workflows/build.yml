@@ -10,10 +10,6 @@ on:
           - standard
           - release
           - fast
-      kosmickrisp:
-        description: bundle experimental x86_64 KosmicKrisp and run loader probes; never publish
-        type: boolean
-        default: false
       runtime_version:
         description: override the stamped version; leave empty for RUNTIME_SERIES.<commits since the series bump>
         type: string
@@ -30,15 +26,14 @@ on:
       - 'docs/**'
       - LICENSE
       - runtime-catalog.json
+      - runtime-catalog-v2.json
   # Every pull request, including the pin bumps opened by bump-pins.yml,
   # builds the full runtime; cached layers make that cost only what changed.
   pull_request:
     paths-ignore: *docs
 env:
-  # Pull requests exercise the complete GPTK bundle, including the
-  # experimental KosmicKrisp + upstream DXVK lane. Main remains publishable
-  # with the default MoltenVK runtime unless the lane is explicitly enabled.
-  KOSMICKRISP_ENABLED: ${{ inputs.kosmickrisp == true || github.event_name == 'pull_request' || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
+  # All new layouts carry the same Vulkan provider.
+  KOSMICKRISP_ENABLED: true
   RUNTIME_SERIES: "4.8"
   OPT_LEVEL: ${{ inputs.opt || 'standard' }}
   REBUILD_ALL: ${{ inputs.rebuild_all == true }}
@@ -240,7 +235,7 @@ jobs:
         id: core_status
         run: cat core-status.env >> "$GITHUB_OUTPUT"
   assemble:
-    runs-on: ${{ (inputs.kosmickrisp == true || github.event_name == 'pull_request' || github.ref == 'refs/heads/feat/kosmickrisp-experimental') && vars.MACOS_GPU_RUNNER || 'macos-26' }}
+    runs-on: macos-26
     timeout-minutes: 90
     permissions:
       contents: read
@@ -282,9 +277,7 @@ jobs:
         run: bash tools/assemble_runtime.sh
       - name: Restore kosmickrisp
         run: bash tools/build/oci.sh pull kosmickrisp "${{ needs.graphics.outputs.ref }}"
-        if: env.KOSMICKRISP_ENABLED == 'true'
-      - name: Install and probe optional KosmicKrisp
-        if: env.KOSMICKRISP_ENABLED == 'true'
+      - name: Install KosmicKrisp payload
         run: bash tools/install_kosmickrisp.sh
       - name: Publish assembled OCI layer
         id: push_assembled
@@ -304,16 +297,23 @@ jobs:
       assembled_ref: ${{ needs.assemble.outputs.ref }}
       runtime_version: ${{ needs.assemble.outputs.runtime_version }}
       shippable: ${{ needs.core.outputs.shippable }}
-      kosmickrisp: ${{ inputs.kosmickrisp == true || github.event_name == 'pull_request' || github.ref == 'refs/heads/feat/kosmickrisp-experimental' }}
+      kosmickrisp: true
       opt: ${{ inputs.opt || 'standard' }}
-      artifact_name: whiskywine-gptk-libraries${{ (inputs.kosmickrisp == true || github.event_name == 'pull_request' || github.ref == 'refs/heads/feat/kosmickrisp-experimental') && '-kosmickrisp-experimental'
-        || '' }}${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+      artifact_name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
   kosmickrisp-validation:
-    name: KosmicKrisp / macOS 26 packaged runtime
+    name: KosmicKrisp / ${{ matrix.platform }} packaged runtime
     needs: build
     if: needs.build.outputs.kosmickrisp == 'true'
-    runs-on: ${{ vars.MACOS_GPU_RUNNER || 'macos-26' }}
-    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos26
+            runner: ${{ vars.MACOS_GPU_RUNNER_26 || 'macos-26' }}
+          - platform: newer
+            runner: ${{ vars.MACOS_GPU_RUNNER_NEWER || 'macos-26' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
     permissions:
       contents: read
     steps:
@@ -322,23 +322,40 @@ jobs:
         with:
           name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
           path: downloaded
+      - name: Require a trusted physical GPU runner
+        env:
+          GPU_RUNNER: ${{ matrix.platform == 'macos26' && vars.MACOS_GPU_RUNNER_26 || vars.MACOS_GPU_RUNNER_NEWER }}
+        run: test -n "$GPU_RUNNER" || { echo '::error::Physical Metal 4 GPU runner is not configured for this OS lane'; exit 1; }
       - name: verify and unpack in a relocated directory
         run: |
           cd downloaded
           shasum -a 256 -c Libraries.tar.gz.sha256
+          echo "RUNTIME_ARCHIVE_SHA256=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/kosmickrisp relocated runtime"
           tar -xzf Libraries.tar.gz -C "$RUNNER_TEMP/kosmickrisp relocated runtime"
-      - name: validate the packaged runtime on macOS 26
+      - name: validate the packaged runtime on physical hardware
         run: |
           /usr/sbin/softwareupdate --install-rosetta --agree-to-license
           python3 runtime/kosmickrisp/validate.py \
             --libraries "$RUNNER_TEMP/kosmickrisp relocated runtime/Libraries" \
-            --output "$PWD/kosmickrisp-results"
+            --output "$PWD/kosmickrisp-results" --platform "${{ matrix.platform }}"
+      - name: Run the pinned physical game campaign
+        env:
+          CAMPAIGN: ${{ vars.MACOS_GPU_CAMPAIGN }}
+          CAMPAIGN_SHA256: ${{ vars.MACOS_GPU_CAMPAIGN_SHA256 }}
+        run: |
+          test -n "$CAMPAIGN" && test -n "$CAMPAIGN_SHA256" || {
+            echo '::error::Licensed game fixtures and the frozen campaign harness must be provisioned'; exit 1;
+          }
+          echo "$CAMPAIGN_SHA256  $CAMPAIGN" | shasum -a 256 -c -
+          python3 "$CAMPAIGN" --libraries "$RUNNER_TEMP/kosmickrisp relocated runtime/Libraries" \
+            --output "$PWD/kosmickrisp-results" --archive-sha256 "$RUNTIME_ARCHIVE_SHA256"
+          python3 runtime/kosmickrisp/promotion.py "$PWD/kosmickrisp-results" --attach
       - name: retain results even when a probe fails
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: kosmickrisp-validation-results
+          name: kosmickrisp-validation-results-${{ matrix.platform }}
           path: |
             kosmickrisp-results/
             !kosmickrisp-results/prefix/**
@@ -358,14 +375,46 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          name: kosmickrisp-validation-results
+          pattern: kosmickrisp-validation-results-*
           path: kosmickrisp-results
       - name: require migration evidence
-        run: python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/results.json
+        run: |
+          python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/kosmickrisp-validation-results-macos26/results.json
+          python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/kosmickrisp-validation-results-newer/results.json --platform newer
+          python3 runtime/kosmickrisp/promotion.py kosmickrisp-results
+  consumer-validation:
+    name: Whisky / packaged layout v2
+    needs: build
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load consumer pin
+        run: sed -n 's/^export //p' tools/build/pins.env >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          repository: niltonperimneto/Whisky
+          ref: ${{ env.WHISKY_CONSUMER_COMMIT }}
+          path: consumer
+      - uses: actions/download-artifact@v8
+        with:
+          name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+          path: downloaded
+      - name: Validate exact packaged bytes with the consumer
+        env:
+          WHISKY_RUNTIME_LIBRARIES: ${{ runner.temp }}/consumer-runtime/Libraries
+          WHISKY_RUNTIME_CONTRACT: ${{ github.workspace }}/contracts/runtime-layout.json
+          WHISKY_RUNTIME_CATALOG: ${{ github.workspace }}/runtime-catalog-v2.json
+        run: |
+          cd downloaded
+          shasum -a 256 -c Libraries.tar.gz.sha256
+          mkdir -p "$RUNNER_TEMP/consumer-runtime"
+          tar -xzf Libraries.tar.gz -C "$RUNNER_TEMP/consumer-runtime"
+          cd ../consumer
+          swift test --package-path WhiskyKit --filter 'RuntimeContractTests|RuntimeCatalogTests|RuntimeMetadataV2Tests|KosmicKrispBackendTests|RuntimeSwitchSnapshotTests'
   publish:
     name: publish the runtime release
-    needs: build
-    if: github.ref == 'refs/heads/main' && needs.build.outputs.kosmickrisp != 'true' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
+    needs: [build, kosmickrisp-readiness, consumer-validation]
+    if: github.ref == 'refs/heads/main' && vars.WHISKY_LAYOUT_V2_AVAILABLE == 'true' && needs.kosmickrisp-readiness.result == 'success' && needs.consumer-validation.result == 'success' && inputs.opt != 'fast' && needs.build.outputs.shippable != 'false'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -377,47 +426,13 @@ jobs:
         run: sed -n 's/^export //p' tools/build/pins.env >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v8
         with:
-          name: whiskywine-gptk-libraries
+          name: whiskywine-gptk-libraries-kosmickrisp-experimental
       - name: cut the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUNTIME_VERSION: ${{ needs.build.outputs.runtime_version }}
-        run: |
-          set -euo pipefail
-          [ -n "$RUNTIME_VERSION" ] || { echo "::error::build did not report a version"; exit 1; }
-
-          sha256sum -c Libraries.tar.gz.sha256
-          tag="runtime-canary-v$RUNTIME_VERSION"
-          sha=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)
-
-          {
-            echo "| | |"
-            echo "|---|---|"
-            echo "| winecx | \`$WINECX_COMMIT\` |"
-            echo "| dxvk | $DXVK_VERSION |"
-            echo "| dxmt | \`$DXMT_COMMIT\` |"
-            echo "| moltenvk | $MOLTENVK_VERSION |"
-            echo "| sha256 | \`$sha\` |"
-            echo
-            echo "Built from ${{ github.sha }} with DXMT main at \`$DXMT_COMMIT\`."
-            echo "This prerelease is exposed only through the opt-in canary catalog."
-          } > notes.md
-
-          # re-running a build of the same tree stamps the same version, so
-          # replacing the assets has to be the normal path rather than an error
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "$tag exists, replacing its assets"
-            gh release upload "$tag" Libraries.tar.gz Libraries.tar.gz.sha256 \
-              WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt --clobber
-            gh release edit "$tag" --notes-file notes.md
-          else
-            gh release create "$tag" Libraries.tar.gz Libraries.tar.gz.sha256 \
-              WhiskyWineVersion.plist RuntimeManifest.json RuntimeNetworkVerification.txt \
-              --target "${{ github.sha }}" \
-              --prerelease --title "canary runtime $RUNTIME_VERSION" --notes-file notes.md
-          fi
-          echo "published $tag" >> "$GITHUB_STEP_SUMMARY"
+        run: bash tools/publish_runtime.sh
       - name: publish the opt-in canary catalog
         env:
           GH_TOKEN: ${{ github.token }}
@@ -445,7 +460,7 @@ jobs:
           version, tag, digest, published_at = sys.argv[1:]
           repository = os.environ["GH_REPO"]
           catalog = {
-              "catalogVersion": 1,
+              "catalogVersion": 2,
               "runtimes": [{
                   "identifier": f"winecx-gptk-canary-{version}",
                   "version": version,
@@ -454,8 +469,10 @@ jobs:
                   "sha256": digest,
                   "minimumMacOS": "26.0",
                   "wineVersion": os.environ["WINE_VERSION"],
+                  "runtimeLayoutVersion": 2,
                   "capabilities": {
-                      "gptkMajorVersions": [3, 4],
+                      "vulkanProvider": "kosmickrisp",
+                      "gptkMajorVersions": [4],
                       "wsarecvmsg": True,
                       "ipv4ReceiveTOS": True,
                       "ipv6ReceiveTrafficClass": True,
@@ -472,12 +489,12 @@ jobs:
                   "publishedAt": published_at
               }]
           }
-          with open("runtime-catalog.json", "w") as stream:
+          with open("runtime-catalog-v2.json", "w") as stream:
               json.dump(catalog, stream, indent=2)
               stream.write("\n")
           PY
 
-            git add runtime-catalog.json
+            git add runtime-catalog-v2.json
             if git diff --cached --quiet; then
               echo "catalog already current"
               exit 0
@@ -506,7 +523,8 @@ jobs:
             -F "client_payload[archiveURL]=$base/Libraries.tar.gz" \
             -F "client_payload[sha256]=$(cut -d' ' -f1 < Libraries.tar.gz.sha256)" \
             -F "client_payload[manifestURL]=$base/RuntimeManifest.json" \
-            -F "client_payload[hubCommit]=${{ github.sha }}"
+            -F "client_payload[hubCommit]=${{ github.sha }}" \
+            -F "client_payload[runtimeLayoutVersion]=2"
   oci-images:
     name: Dockerfile OCI distribution images
     if: github.event_name != 'pull_request'

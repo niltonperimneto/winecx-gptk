@@ -68,10 +68,12 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(blockers({"schema": 1, "passed": True}))
 
     def test_readiness_rejects_known_missing_features(self):
-        report = {"schema": 1, "passed": True,
+        report = {"schema": 1, "passed": True, "os": "26.1",
                   "checks": {key: {"status": "passed"} for key in
-                             ("macos26", "manifest", "host", "loader-override-negative", "wine-x86_64", "wine-i686")},
+                             ("macos26", "manifest", "host", "loader-override-negative", "loader-override-empty-negative", "loader-missing-negative",
+                              "loader-corrupt-negative", "wine-without-vulkan", "wine-x86_64", "wine-i686")},
                   "migration": {key: {"status": "passed"} for key in ("dxvk", "shader_correctness", "game")}}
+        report["checks"]["platform"] = {"status": "passed", "lane": "macos26"}
         self.assertFalse(blockers(report))
         report["migration"]["dxvk"]["known_missing"] = ["geometryShader"]
         self.assertTrue(blockers(report))

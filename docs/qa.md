@@ -74,9 +74,10 @@ tests. Validate a relocated artifact, including paths containing spaces.
 
 Hosted macOS availability does not imply a compatible Metal 4 GPU. Driver
 compilation, physical-device enumeration, shader readback, presentation and
-packaged-runtime readiness are separate results. The current workflows route
-experimental stages using `MACOS_GPU_RUNNER` when set, otherwise hosted macOS;
-an unsupported hosted device is not successful GPU validation.
+packaged-runtime readiness are separate results. The workflows require physical runner labels `MACOS_GPU_RUNNER_26` and
+`MACOS_GPU_RUNNER_NEWER` for deployment-floor and newer-OS validation. Missing
+configuration fails readiness; hosted compilation cannot satisfy these gates.
+See [layout v2 promotion](runtime-layout-v2.md) for the exact game/performance contract.
 
 Check the actual backend, driver revision and 32/64-bit coverage in logs. Keep
 experimental driver readiness and migration checks distinct from the base

@@ -76,12 +76,14 @@ def main():
     parser.add_argument("--libraries", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--game-config", type=Path, default=Path(__file__).with_name("game.json"))
+    parser.add_argument("--platform", choices=("macos26", "newer"), default="macos26")
     args = parser.parse_args()
     libraries, output = args.libraries.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     wine = libraries / "Wine"
     bundle = wine / "lib/kosmickrisp"
     report = {"schema": 1, "commit": os.environ.get("GITHUB_SHA"),
+              "archive_sha256": os.environ.get("RUNTIME_ARCHIVE_SHA256"),
               "os": platform.mac_ver()[0], "machine": platform.machine(), "checks": {},
               "migration": {
                   "dxvk": {"status": "blocked", "reason": "version-specific DXVK validation not yet run"},
@@ -109,11 +111,14 @@ def main():
         return text
 
     try:
-        if platform.system() != "Darwin" or report["os"].split(".")[0] != "26":
-            raise ValueError("this gate must execute on macOS 26, not merely target it")
+        major = int(report["os"].split(".")[0] or 0)
+        if platform.system() != "Darwin" or (major != 26 if args.platform == "macos26" else major <= 26):
+            raise ValueError(f"this gate must execute on {args.platform}, not merely target it")
         if platform.machine() != "arm64":
             raise ValueError("Apple Silicon runner required")
-        checks["macos26"] = {"status": "passed"}
+        checks["platform"] = {"status": "passed", "lane": args.platform, "major": major}
+        if args.platform == "macos26":
+            checks["macos26"] = {"status": "passed"}
         verify_manifest(libraries)
         checks["manifest"] = {"status": "passed"}
         report["manifest_sha256"] = hashlib.sha256((libraries / "RuntimeManifest.json").read_bytes()).hexdigest()
@@ -133,7 +138,25 @@ def main():
         env["WINEDEBUG"] = "+vulkan"
         check("loader-override-negative", [wine / "bin/wine64", bundle / "tests/x86_64.exe"],
               required=("Failed to load", "deliberately-missing-loader.dylib"), expected_failure=True)
+        env["WINE_VULKAN_LIBRARY"] = ""
+        check("loader-override-empty-negative", [wine / "bin/wine64", bundle / "tests/x86_64.exe"],
+              required=("Empty Vulkan loader override",), expected_failure=True)
         env.pop("WINE_VULKAN_LIBRARY")
+        loader = bundle / "libvulkan.1.dylib"
+        saved_loader = bundle / "libvulkan.1.dylib.validation-backup"
+        loader.rename(saved_loader)
+        try:
+            check("loader-missing-negative", [wine / "bin/wine64", bundle / "tests/x86_64.exe"],
+                  required=("No Vulkan loader available",), expected_failure=True)
+            check("wine-without-vulkan", [wine / "bin/wine64", "cmd", "/c", "echo", "BASE_WINE_OK"],
+                  required=("BASE_WINE_OK",))
+            loader.write_bytes(b"deliberately corrupt loader")
+            check("loader-corrupt-negative", [wine / "bin/wine64", bundle / "tests/x86_64.exe"],
+                  required=("Failed to load", "libvulkan.1.dylib"), expected_failure=True)
+        finally:
+            loader.unlink(missing_ok=True)
+            saved_loader.rename(loader)
+        verify_manifest(libraries)
         env["WINEDEBUG"] = "-all"
         for target in ("x86_64", "i686"):
             text = check(f"wine-{target}", [wine / "bin/wine-kosmickrisp", bundle / f"tests/{target}.exe", "--present"],
@@ -160,9 +183,9 @@ def main():
         report["migration"]["dxvk"]["known_missing"] = missing
         # Run stock DXVK with native-only overrides in isolated application dirs.
         # Keeping both the DLLs and EXE there prevents fallback to the shipped fork.
-        pins = dict(line.split("=", 1) for line in report["sources"].splitlines()
+        pins = dict(line.split("=", 1) for line in (libraries / "DXVK3/SOURCE.txt").read_text().splitlines()
                     if line and not line.startswith("#") and "=" in line)
-        version = pins["DXVK_KOSMICKRISP_VERSION"]
+        version = pins["DXVK_VERSION"]
         dxvk_results = {}
         for target, dll_arch in (("x86_64", "x64"), ("i686", "x32")):
             directory = output / f"dxvk-{target}"
@@ -172,7 +195,9 @@ def main():
                 shutil.copy2(dll, directory)
             dxvk_env = dict(env, WINEDLLOVERRIDES="d3d9,d3d11,dxgi=n;mscoree,mshtml=",
                             DXVK_LOG_LEVEL="info", DXVK_LOG_PATH=str(directory))
-            for api, marker in (("d3d9", "RESULT: d3d9 device up"), ("d3d11", "[ ok ] D3D11CreateDevice")):
+            for api, marker in (("d3d9", "RESULT: d3d9 device up"), ("d3d11", "[ ok ] D3D11CreateDevice"),
+                                ("d3d10", "D3D10 device creation passed"),
+                                ("d3d11-constants", "RESULT: constant-array readback passed")):
                 executable = directory / f"{api}-{target}.exe"
                 shutil.copy2(bundle / "tests" / executable.name, executable)
                 code, seconds, text = run_probe([str(wine / "bin/wine-kosmickrisp"), str(executable)],

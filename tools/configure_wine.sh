@@ -44,9 +44,8 @@ export LDFLAGS="$NIX_LDFS"
 export ac_cv_func_pipe2=no
 export ac_cv_lib_soname_freetype="libfreetype.6.dylib"
 export ac_cv_lib_soname_gnutls="libgnutls.30.dylib"
-# wine dlopens MoltenVK by soname; the bundled copy is found via
-# the loader fallback path whisky already sets for its runtime
-export ac_cv_lib_soname_MoltenVK="libMoltenVK.dylib"
+# The loader is staged after compilation and resolved relative to win32u.
+export ac_cv_lib_soname_vulkan="libvulkan.1.dylib"
 mkdir -p build && cd build
 ../winecx/configure \
   --host=x86_64-apple-darwin24 \

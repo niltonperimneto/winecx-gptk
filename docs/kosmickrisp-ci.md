@@ -1,21 +1,16 @@
 # KosmicKrisp CI
 
-The build workflow now includes the KosmicKrisp + upstream DXVK lane on every
-pull request, and it can also be dispatched with the `kosmickrisp` input
-enabled. The experimental branch always selects this lane, even if the
-checkbox is left off. Main pushes retain the default MoltenVK runtime unless
-the lane is explicitly enabled. Experimental artifacts never reach the
-release/catalog publishing job.
+Every newly assembled runtime uses layout v2: Khronos Vulkan Loader,
+KosmicKrisp and upstream DXVK. Assembly and base artifact checks run on hosted
+macOS. Physical macOS 26 and newer-OS validation, pinned Whisky consumer tests
+and game/performance evidence explicitly gate publication. There is no optional
+MoltenVK packaging lane. Older installed runtimes and the v1 catalog remain
+available.
 
-The hosted macOS 26 image exposes an Apple Paravirtual Metal device, which
-could not enumerate a Vulkan device with KosmicKrisp. CI now compiles a small Metal device probe before the
-KosmicKrisp build. When Metal is unavailable or virtualized, it still builds and audits the
-runtime artifact, then records a notice and skips GPU execution and the separate
-validation/readiness jobs. Skipped GPU jobs are **not** evidence of runtime or
-migration readiness. On a GPU-capable runner, probe failures stop the build
-instead of being hidden by `tee`, and validation logs are uploaded even on
-failure. A physical Apple Silicon macOS 26 runner is needed to complete the
-full gate. See the [CI failure investigation](kosmickrisp-ci-failure-2026-09-29.md).
+See [runtime layout v2](runtime-layout-v2.md) for the current runner variables,
+versioned contracts, recoverable bottle switches and promotion requirements.
+Historical investigations below describe earlier artifacts and are not proof
+that a layout-v2 archive passed its release gates.
 
 ## Checks
 

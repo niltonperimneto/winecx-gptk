@@ -29,8 +29,6 @@ def environment(prefix, backend, bundle=None, debug="-all"):
         env.update(CX_LIBVULKAN=str(bundle / "libvulkan.1.dylib"),
                    CX_ACTIVE_GRAPHICS_BACKEND="wined3d",
                    VK_DRIVER_FILES=str(bundle / "kosmickrisp_icd.json"))
-    elif backend == "moltenvk":
-        env["CX_ACTIVE_GRAPHICS_BACKEND"] = "wined3d"
     return env
 
 
@@ -100,7 +98,7 @@ def main():
     parser.add_argument("--wine", type=Path, required=True, help="Wine directory containing bin/")
     parser.add_argument("--prefix", type=Path, required=True, help="new or harness-owned prefix")
     parser.add_argument("--output", type=Path, required=True, help="new evidence directory per run")
-    parser.add_argument("--backend", choices=("kosmickrisp", "legacy-kosmickrisp", "moltenvk"),
+    parser.add_argument("--backend", choices=("kosmickrisp", "legacy-kosmickrisp"),
                         default="kosmickrisp")
     parser.add_argument("--bundle", type=Path, help="required for legacy diagnostic override")
     parser.add_argument("--interactive", action="store_true", help="no automatic timeout")
@@ -117,9 +115,8 @@ def main():
     launcher = wine / "bin" / ("wine-kosmickrisp" if args.backend == "kosmickrisp" else "wine64")
     bundle = args.bundle.resolve() if args.bundle else wine / "lib/kosmickrisp"
     required = [executable, game / "Content", launcher, wine / "bin/wineserver"]
-    if args.backend != "moltenvk":
-        required += [bundle / name for name in
-                     ("libvulkan.1.dylib", "libvulkan_kosmickrisp.dylib", "kosmickrisp_icd.json")]
+    required += [bundle / name for name in
+                 ("libvulkan.1.dylib", "libvulkan_kosmickrisp.dylib", "kosmickrisp_icd.json")]
     for path in required:
         if not path.exists():
             parser.error(f"missing required component: {path}")
@@ -144,7 +141,7 @@ def main():
     try:
         report["wine_version"] = subprocess.check_output([str(wine / "bin/wine64"), "--version"],
                                                          env=env, text=True, timeout=15).strip()
-        if (bundle / "SOURCE.txt").exists() and args.backend != "moltenvk":
+        if (bundle / "SOURCE.txt").exists():
             shutil.copyfile(bundle / "SOURCE.txt", output / "driver-source.txt")
         setup_env = dict(env, WINEDEBUG="-all", WINEDLLOVERRIDES="mscoree,mshtml=")
         ready = prefix / ".hades-runtime-ready"

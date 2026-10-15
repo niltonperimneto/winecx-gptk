@@ -13,7 +13,7 @@ Component CI is necessary; hub integration QA must still verify the combination.
 | `niltonperimneto/relay12` | D3D11On12 translation, COM/DDI behavior, synchronization and resource translation | A source-identified release archive and checksum |
 | `niltonperimneto/mesa` | KosmicKrisp Vulkan-to-Metal behavior, NIR/Poly shader lowering and driver caches | A pinned Mesa tree built through the KosmicKrisp recipe |
 | `niltonperimneto/dxmt` | Direct D3D11-to-Metal translation | A pinned release artifact tied to a source commit |
-| External DXVK, MoltenVK and Khronos components | Their translators, Vulkan loader and headers | The exact source/archive versions and integrity data in the pins and fetch recipes |
+| External DXVK and Khronos components | Their translators, Vulkan loader and headers | The exact source/archive versions and integrity data in the pins and fetch recipes |
 | This repository | Build recipes, integration adapters, payload layout, checks, packaging, OCI transport and release metadata | The assembled runtime |
 | `niltonperimneto/Whisky` | macOS UI, bottle configuration, runtime selection, launcher policy, installation and consumer validation | The catalog, runtime archive and manifests |
 
@@ -56,12 +56,10 @@ flowchart TD
     R --> DM
     W --> MT[DXMT: D3D11 to Metal]
     W --> VK[DXVK: Direct3D to Vulkan]
-    VK --> MV[Packaged MoltenVK path]
-    VK --> KK[Opt-in KosmicKrisp path]
+    VK --> KK[Khronos loader and KosmicKrisp]
     W --> WD[WineD3D fallback]
     DM --> GPU[macOS graphics APIs and Apple GPU]
     MT --> GPU
-    MV --> GPU
     KK --> GPU
     WD --> GPU
 ```
@@ -78,9 +76,10 @@ compatible. A successful Wine rebase or `wine64 --version` does not prove that
 the imported Apple payload can still initialize and render. Validate the affected
 interface through the complete graphics path.
 
-`DXVK/` carries the legacy packaged path. Experimental `DXVK3/` is a separate
-upstream DXVK payload paired with KosmicKrisp. Do not overwrite one with the other
-or infer default-backend changes from an experimental build. Apple's D3DMetal
+`DXVK3/` carries upstream DXVK for both Windows architectures. New layouts
+require KosmicKrisp as their sole bundled Vulkan provider; `DXVK/` is reserved
+for reading old runtimes during migration. See [layout v2](runtime-layout-v2.md).
+Apple's D3DMetal
 payload is supplied through the application's GPTK import/deployment path; the
 hub preserves the required interfaces and stages its own video interposer.
 
