@@ -58,7 +58,9 @@ class DxvkLauncherTests(unittest.TestCase):
         self.assertEqual(report['env']['DXVK_SHADER_CACHE_PATH'], 'C:\\ShaderCaches\\kosmickrisp\\dxvk')
         self.assertEqual(report['env']['MESA_SHADER_CACHE_DIR'], str(self.prefix / 'drive_c/ShaderCaches/kosmickrisp/mesa'))
         self.assertEqual(report['env']['WINEDLLOVERRIDES'], 'd3d11=b;mscoree=d;d3d8,d3d9,d3d10core,d3d11,dxgi=n')
-        self.assertNotIn('WINE_VULKAN_LIBRARY', report['env'])
+        # The fork loads WINE_VULKAN_LIBRARY first, so a foreign value must be
+        # replaced by the bundled KosmicKrisp loader, never passed through.
+        self.assertTrue(report['env']['WINE_VULKAN_LIBRARY'].endswith('/lib/kosmickrisp/libvulkan.1.dylib'))
         self.assertTrue((self.prefix / 'drive_c/ShaderCaches/kosmickrisp/dxvk').is_dir())
 
     def test_explicit_cache_overrides_and_exit_status(self):

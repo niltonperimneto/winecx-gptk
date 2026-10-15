@@ -18,3 +18,4 @@ __pycache__/
 /nix-tool-outs.txt
 /sysroot.env
 /closure-paths.txt
+xcuserdata/
