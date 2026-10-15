@@ -187,6 +187,7 @@ class OCICacheKeyTests(unittest.TestCase):
             self.assertEqual(changed(WINECX_COMMIT='wine-b'), {'tools', 'core'})
             self.assertEqual(changed(RELAY12_COMMIT='relay-b'), {'payloads'})
             self.assertEqual(changed(DXMT_COMMIT='dxmt-b'), {'payloads'})
+            self.assertEqual(changed(DXVK_KOSMICKRISP_VERSION='next'), {'payloads'})
             self.assertEqual(changed(OPT_LEVEL='release'), {'core'})
             self.assertEqual(changed(NIXPKGS_REV='nix-b'), {'sysroot', 'tools', 'core'})
 

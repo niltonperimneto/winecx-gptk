@@ -14,6 +14,9 @@ phase() { echo "::notice::phase $1: $((SECONDS-_tp))s (total $((SECONDS-_t0))s)"
 mkdir -p "$PWD/staging/opt/whiskywine/share/wine/mono" "$PWD/staging/opt/whiskywine/share/wine/gecko"
 cp -R "$PWD/addons/mono"/* "$PWD/staging/opt/whiskywine/share/wine/mono/"
 cp -R "$PWD/addons/gecko"/* "$PWD/staging/opt/whiskywine/share/wine/gecko/"
+if [ -e Libraries ] || [ -L Libraries ]; then
+  echo "::error::assembly requires a fresh Libraries directory"; exit 1
+fi
 mkdir -p Libraries/Wine
 cp -R staging/opt/whiskywine/bin Libraries/Wine/bin
 cp -R staging/opt/whiskywine/lib Libraries/Wine/lib
@@ -56,16 +59,9 @@ if [ -f "$dxmt/i386-windows/winemetal.dll" ]; then
 fi
 
 # and the per-bottle payloads whisky's backend picker offers
-dxvk=payload/dxvk-macOS-async-v$DXVK_VERSION-20230507-repack
-mkdir -p Libraries/DXVK Libraries/DXMT
-cp -R "$dxvk/." Libraries/DXVK/
-# the macos repack ships d3d11 and d3d10core only, no dxgi, because a
-# 64-bit bottle already has a real DXGI beside it. a 32-bit one does
-# not: d3dmetal has no i386 half, so syswow64 keeps wine's builtin
-# dxgi, dxvk's d3d11 warns "Adapter is not a DXVK adapter" and the
-# game gets no device. upstream's dxgi from the same release pairs
-# with it; x32 only, the 64-bit half keeps the prefix's DXGI.
-cp "payload/dxvk-$DXVK_VERSION/x32/dxgi.dll" Libraries/DXVK/x32/dxgi.dll
+mkdir -p Libraries/DXMT
+cp -R payload/DXVK3 Libraries/DXVK3
+(cd Libraries/DXVK3 && shasum -a 256 -c SHA256SUMS)
 cp -R "$dxmt/x86_64-windows" Libraries/DXMT/x64
 cp -R "$dxmt/i386-windows" Libraries/DXMT/x32
 
@@ -161,17 +157,6 @@ done
 echo "gstreamer plugins: $(ls "$LIBDIR/gstreamer-1.0" | wc -l | tr -d ' ')"
 phase "copy gstreamer plugins"
 
-# MoltenVK is the one dlopened library that no longer comes out of the
-# nix closure, so it is placed by hand. it needs no closure walk: its
-# only dependencies are system frameworks and libc++, nothing in
-# /nix/store. fixup() below still gives it a @loader_path id and an
-# ad-hoc signature along with everything else in LIBDIR.
-[ -f payload/libMoltenVK.dylib ] || {
-  echo "::error::no libMoltenVK.dylib in payload, the fetch step did not run"; exit 1; }
-cp payload/libMoltenVK.dylib "$LIBDIR/libMoltenVK.dylib"
-chmod u+w "$LIBDIR/libMoltenVK.dylib"
-echo "moltenvk: $MOLTENVK_VERSION $(lipo -archs "$LIBDIR/libMoltenVK.dylib")"
-
 queue=""
 for d in $(cat store-outs.txt); do
   for so in libfreetype.6.dylib libgnutls.30.dylib; do
@@ -243,7 +228,7 @@ phase "fixup: install_name_tool and codesign"
 # the reference runtime ships both names; match it
 ln -sf libfreetype.6.dylib "$LIBDIR/libfreetype.dylib"
 
-# the unix modules dlopen libgnutls/libfreetype/libMoltenVK by bare
+# the unix modules dlopen libgnutls/libfreetype by bare
 # soname. dlopen searches the caller's rpaths, and lib/wine/<arch>-unix
 # is two levels below the bundled dylibs, so without this entry none of
 # them resolve: no tls, no fonts, no vulkan. reference runtimes carry it.
@@ -360,6 +345,8 @@ cat > Libraries/WhiskyWineVersion.plist <<'PLIST'
 <dict>
   <key>gptkCapable</key>
   <true/>
+  <key>runtimeLayoutVersion</key>
+  <integer>2</integer>
   <key>manifestVersion</key>
   <integer>2</integer>
   <key>releaseChannel</key>
@@ -367,7 +354,7 @@ cat > Libraries/WhiskyWineVersion.plist <<'PLIST'
   <key>name</key>
   <string>winecx-gptk</string>
   <key>wineVersion</key>
-  <string>11.0</string>
+  <string>WINE_RELEASE</string>
   <key>wineSourceRevision</key>
   <string>WINE_SOURCE_REV</string>
   <key>patchset</key>
@@ -392,6 +379,7 @@ cat > Libraries/WhiskyWineVersion.plist <<'PLIST'
       <string>d3d11</string><string>dxgi</string><string>d3d12</string>
       <string>d3d12core</string><string>vulkan</string>
     </array>
+    <key>vulkanProvider</key><string>kosmickrisp</string>
     <key>dxvk</key><true/>
     <key>dxmt</key><true/>
     <key>wined3d</key><true/>
@@ -425,7 +413,10 @@ case "$rv" in
   [0-9]*.[0-9]*.[0-9]*) ;;
   *) echo "::error::runtime_version '$rv' is not major.minor.patch"; exit 1;;
 esac
-sed -i '' "s/DXVK_VER/$DXVK_VERSION/; s/DXMT_VER/$DXMT_VERSION/" Libraries/WhiskyWineVersion.plist
+sed -i '' "s/DXVK_VER/$DXVK_KOSMICKRISP_VERSION/; s/DXMT_VER/$DXMT_VERSION/" Libraries/WhiskyWineVersion.plist
+wine_release=$(sed -n 's/^Wine version //p' winecx/VERSION)
+[ -n "$wine_release" ] || { echo "::error::missing Wine source version"; exit 1; }
+sed -i '' "s/WINE_RELEASE/$wine_release/" Libraries/WhiskyWineVersion.plist
 sed -i '' "s/WINE_SOURCE_REV/$WINECX_COMMIT/; s/PATCHSET_REV/${GITHUB_SHA}/" Libraries/WhiskyWineVersion.plist
 sed -i '' "s/VER_MAJOR/${rv%%.*}/; s/VER_MINOR/$(echo "$rv" | cut -d. -f2)/; s/VER_PATCH/${rv##*.}/" \
   Libraries/WhiskyWineVersion.plist
