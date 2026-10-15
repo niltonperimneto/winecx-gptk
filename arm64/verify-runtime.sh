@@ -23,7 +23,7 @@ for f in xtajit64.dll xtajit.dll winemetal.dll lsteamclient.dll; do printf "%s "
 
 echo "== .net"
 printf 'class P{static void Main(){System.Console.WriteLine("dotnet ok "+System.Environment.Version+" "+System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);}}' > "$PFX/drive_c/hello.cs"
-cd "$PFX/drive_c"
+cd "$PFX/drive_c" || exit 1
 MONOD='C:\windows\mono\mono-2.0\lib\mono\4.5'
 /usr/bin/timeout 120 "$RT/bin/wine" "$MONOD\\mcs.exe" /out:hi.exe hello.cs > "$LOG-csc.log" 2>&1; echo "csc exit=$?"
 /usr/bin/timeout 60 "$RT/bin/wine" hi.exe 2>&1 | grep -v 'err:\|fixme:' | tail -2
@@ -32,7 +32,7 @@ echo "== casualties unknown"
 export WINEDLLOVERRIDES="mscoree,mshtml=;d3d11,d3d10core,dxgi=n,b;winemetal=b"
 P="$PFX/drive_c/users/crossover/AppData/LocalLow/Orsoniks/CasualtiesUnknown/Player.log"
 rm -f "$P"
-cd "$GAME"
+cd "$GAME" || exit 1
 /usr/bin/timeout 60 "$RT/bin/wine" ./CasualtiesUnknown.exe > "$LOG-cu.log" 2>&1; echo "cu exit=$? (124 = still running at timeout)"
 "$RT/bin/wineserver" -k 2>/dev/null
 grep -iE 'Direct3D:|Version:|Renderer|d3d11:|Failed|Input initialized' "$P" 2>/dev/null | head -8
