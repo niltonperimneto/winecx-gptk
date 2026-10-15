@@ -4,6 +4,11 @@ These instructions apply throughout this repository. Read [SKILLS.md](SKILLS.md)
 for the workflow relevant to the task and honor more specific instructions in
 subdirectories. Explicit user instructions take precedence.
 
+Use the [architecture and ownership guide](docs/architecture.md) to choose the
+correct repository and code location. Follow [CONTRIBUTING.md](CONTRIBUTING.md)
+for commits and review, and [the QA guide](docs/qa.md) for validation evidence
+and release readiness.
+
 ## Priority: QA and no regressions
 
 Quality assurance is the highest priority. Preserve working behavior before

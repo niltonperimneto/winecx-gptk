@@ -4,6 +4,10 @@ Read [AGENTS.md](AGENTS.md) first. These task-specific workflows describe how to
 work on this repository; the live scripts and workflows are authoritative when
 commands or build structure change.
 
+Start with [architecture and ownership](docs/architecture.md) when locating a
+change, [CONTRIBUTING.md](CONTRIBUTING.md) when preparing it for review, and
+[QA and release readiness](docs/qa.md) when deciding what validation proves.
+
 ## Select the required QA
 
 Use the smallest verification scope that establishes the change is correct.
