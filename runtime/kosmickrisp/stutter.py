@@ -19,6 +19,7 @@ import csv
 import hashlib
 import json
 import os
+import plistlib
 from pathlib import Path
 import re
 import shutil
@@ -297,10 +298,21 @@ def wine_env(runtime, bundle, prefix):
         "WINEPREFIX": str(prefix),
         "WINEDEBUG": "-all",
         "CX_LIBVULKAN": str(bundle / "libvulkan.1.dylib"),
-        "CX_ACTIVE_GRAPHICS_BACKEND": "wined3d",
         "VK_DRIVER_FILES": str(bundle / "kosmickrisp_icd.json"),
         "WINEDLLOVERRIDES": OVERRIDES,
     })
+    metadata = Path(runtime) / "WhiskyWineVersion.plist"
+    try:
+        with metadata.open('rb') as stream:
+            layout = plistlib.load(stream).get('runtimeLayoutVersion', 1)
+    except FileNotFoundError:
+        layout = 1
+    if layout not in (1, 2):
+        raise ValueError('unsupported runtime layout')
+    if layout == 2:
+        env['WINE_VULKAN_LIBRARY'] = str(bundle / 'libvulkan.1.dylib')
+    else:
+        env['CX_ACTIVE_GRAPHICS_BACKEND'] = 'wined3d'
     return env
 
 
