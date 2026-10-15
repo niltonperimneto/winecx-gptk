@@ -65,7 +65,7 @@ actions current.
 
 | Name | Where | Purpose |
 |---|---|---|
-| `HUB_DISPATCH_TOKEN` | winecx, relay12, mesa, winecx-gptk | Fine-grained PAT with Contents and Actions write on the five repositories. It sends the dispatches, opens bump pull requests and, as an admin of the protected `main`, pushes the canary catalog. GITHUB_TOKEN cannot, because pull requests it opens do not start workflows. |
+| `HUB_DISPATCH_TOKEN` | winecx, relay12, mesa, winecx-gptk | Fine-grained PAT with Contents, Actions and Pull requests write on the five repositories. It sends the dispatches, opens bump pull requests and, as an admin of the protected `main`, pushes the canary catalog. GITHUB_TOKEN cannot, because pull requests it opens do not start workflows. |
 | `MACOS_GPU_RUNNER` (variable) | winecx-gptk | Optional runner label for physical-GPU KosmicKrisp validation. Unset means the hosted runner. It is never a required check. |
 
 Without the token, every notify step only warns, and pins can still be bumped
