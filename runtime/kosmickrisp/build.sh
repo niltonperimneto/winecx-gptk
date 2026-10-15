@@ -6,13 +6,19 @@ set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
 source "$script_dir/pins.env"
 work=${1:?usage: build.sh BUILD_DIRECTORY OUTPUT_DIRECTORY}
-output=${2:?usage: build.sh BUILD_DIRECTORY OUTPUT_DIRECTORY}
+output=${2:?usage: build.sh BUILD_DIRECTORY OUTPUT_DIRECTORY [SOURCE_SNAPSHOT_DIRECTORY]}
+snapshot=${3:-}
 arch=${KK_ARCH:-x86_64}
 case "$arch" in
     x86_64|arm64) ;;
     *) echo "KK_ARCH must be x86_64 or arm64, not $arch" >&2; exit 1 ;;
 esac
-mkdir -p "$work" "$output"
+mkdir -p "$work"
+if [ -e "$output" ]; then
+    [ -d "$output" ] && [ -z "$(ls -A "$output")" ] || { echo "Driver output must be new or empty: $output" >&2; exit 1; }
+else
+    mkdir -p "$output"
+fi
 work=$(cd "$work" && pwd -P)
 output=$(cd "$output" && pwd -P)
 export MACOSX_DEPLOYMENT_TARGET=26.0
@@ -20,56 +26,58 @@ python3 -c 'import sys; assert sys.version_info >= (3, 10), "Mesa requires Pytho
 
 checkout() {
     local url=$1 revision=$2 directory=$3
-    if [ ! -e "$directory/.git" ]; then
+    if [ ! -d "$directory/.git" ]; then
         git init "$directory"
         git -C "$directory" remote add origin "$url"
     fi
-    if [ -n "$(git -C "$directory" status --porcelain --ignore-submodules=all)" ]; then
-        echo "Local changes in $directory; refusing to change the checkout" >&2
-        return 1
-    fi
-    if [ "$(git -C "$directory" rev-parse HEAD 2>/dev/null || true)" = "$revision" ]; then
-        return 0
-    fi
-    git -C "$directory" fetch --depth=1 "$url" "$revision"
+    git -C "$directory" fetch --depth=1 origin "$revision"
     git -C "$directory" checkout --detach FETCH_HEAD
     [ "$(git -C "$directory" rev-parse HEAD)" = "$revision" ]
 }
-checkout https://github.com/shadexternals/mesa-kosmickrisp.git "$KOSMICKRISP_BUILD_COMMIT" "$work/recipe"
-
-# Use upstream Mesa rather than the recipe's independently maintained fork.
-# Leave an already pinned tree to apply_patch.py, which validates its full state.
-if [ -n "${KOSMICKRISP_MESA_URL:-}" ]; then
-    if [ "$(git -C "$work/recipe/externals/mesa" rev-parse HEAD 2>/dev/null || true)" != "$KOSMICKRISP_MESA_COMMIT" ]; then
-        checkout "$KOSMICKRISP_MESA_URL" "$KOSMICKRISP_MESA_COMMIT" "$work/recipe/externals/mesa"
+if [ -z "$snapshot" ] && [ -n "${KOSMICKRISP_MESA_REPO:-}" ]; then
+    mesa_source="$work/mesa-$KOSMICKRISP_MESA_COMMIT"
+    checkout "$KOSMICKRISP_MESA_REPO" "$KOSMICKRISP_MESA_COMMIT" "$mesa_source"
+    snapshot="$work/mesa-snapshot-$KOSMICKRISP_MESA_COMMIT"
+    if [ ! -e "$snapshot" ]; then
+        python3 "$script_dir/source-snapshot.py" export \
+            --source "$mesa_source" --commit "$KOSMICKRISP_MESA_COMMIT" --out "$snapshot"
     fi
-    if [ -n "${KOSMICKRISP_MESA_PATCH_SERIES:-}" ]; then
-        python3 "$script_dir/apply_patch.py" --series "$work/recipe/externals/mesa" \
-            "$script_dir/patches/$KOSMICKRISP_MESA_PATCH_SERIES" \
-            "$KOSMICKRISP_MESA_COMMIT" "$KOSMICKRISP_MESA_PATCH_SERIES_SHA256"
-    elif [ -f "$script_dir/apply_patch.py" ] && [ -n "${KOSMICKRISP_MESA_PATCH:-}" ]; then
-        python3 "$script_dir/apply_patch.py" "$work/recipe/externals/mesa" \
-            "$script_dir/patches/$KOSMICKRISP_MESA_PATCH" \
-            "$KOSMICKRISP_MESA_COMMIT" "$KOSMICKRISP_MESA_PATCH_SHA256"
+    python3 "$script_dir/source-snapshot.py" verify "$snapshot" > "$work/pinned-snapshot-verified.json"
+    [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["commit"])' "$work/pinned-snapshot-verified.json")" = "$KOSMICKRISP_MESA_COMMIT" ]
+fi
+if [ -n "$snapshot" ]; then
+    snapshot=$(cd -- "$snapshot" && pwd -P)
+    python3 "$script_dir/source-snapshot.py" verify "$snapshot" > "$work/snapshot-verified.json"
+    source_key=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["archive_sha256"])' "$work/snapshot-verified.json")
+    mesa_commit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["commit"])' "$work/snapshot-verified.json")
+    recipe="$work/recipe-$KOSMICKRISP_BUILD_COMMIT-$source_key"
+    checkout https://github.com/shadexternals/mesa-kosmickrisp.git "$KOSMICKRISP_BUILD_COMMIT" "$recipe"
+    if [ ! -f "$recipe/externals/mesa/meson.build" ]; then
+        rmdir "$recipe/externals/mesa"
+        python3 "$script_dir/source-snapshot.py" extract "$snapshot" "$recipe/externals/mesa"
     fi
+    python3 "$script_dir/source-snapshot.py" check-source "$snapshot" "$recipe/externals/mesa"
+    export MESA_GIT_SHA1_OVERRIDE="$mesa_commit"
 else
-    git -C "$work/recipe" submodule update --init --recursive --depth=1
-    [ "$(git -C "$work/recipe/externals/mesa" rev-parse HEAD)" = "$KOSMICKRISP_MESA_COMMIT" ]
-    git -C "$work/recipe/externals/mesa" reset --hard --quiet "$KOSMICKRISP_MESA_COMMIT"
+    recipe="$work/recipe"
+    checkout https://github.com/shadexternals/mesa-kosmickrisp.git "$KOSMICKRISP_BUILD_COMMIT" "$recipe"
+    git -C "$recipe" submodule update --init --recursive --depth=1
+    [ "$(git -C "$recipe/externals/mesa" rev-parse HEAD)" = "$KOSMICKRISP_MESA_COMMIT" ]
+    git -C "$recipe/externals/mesa" reset --hard --quiet "$KOSMICKRISP_MESA_COMMIT"
     for patch in "$script_dir"/patches/*.patch; do
         [ -e "$patch" ] || continue
-        git -C "$work/recipe/externals/mesa" apply --index "$patch"
+        git -C "$recipe/externals/mesa" apply --index "$patch"
     done
+    source_key=$(git -C "$recipe/externals/mesa" write-tree)
+    mesa_commit="$KOSMICKRISP_MESA_COMMIT"
+    unset MESA_GIT_SHA1_OVERRIDE
 fi
-
+driver_build="$work/driver-build-$arch-$source_key"
+loader_build="$work/loader-build-$arch"
 checkout https://github.com/KhronosGroup/Vulkan-Loader.git "$VULKAN_LOADER_COMMIT" "$work/loader"
 checkout https://github.com/KhronosGroup/Vulkan-Headers.git "$VULKAN_HEADERS_COMMIT" "$work/headers"
 
-# Per-architecture build directories: the recipe's Meson configuration and
-# the loader's CMake cache are architecture specific.
-driver_build="$work/driver-build-$arch-${KOSMICKRISP_BUILD_COMMIT}-${KOSMICKRISP_MESA_COMMIT}"
-loader_build="$work/loader-build-$arch"
-cmake -S "$work/recipe" -B "$driver_build" \
+cmake -S "$recipe" -B "$driver_build" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$arch" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0
 cmake --build "$driver_build" --parallel "$(sysctl -n hw.ncpu)"
@@ -91,10 +99,6 @@ cmake --fresh -S "$work/loader" -B "$loader_build" \
 cmake --build "$loader_build" --parallel "$(sysctl -n hw.ncpu)"
 
 cp -L "$driver_build/outputs/libvulkan_kosmickrisp.dylib" "$output/"
-if [ -f "$script_dir/weak_dispatch.py" ] && [ -d "$driver_build/externals/mesa/build-target/src" ]; then
-    python3 "$script_dir/weak_dispatch.py" \
-        "$driver_build/externals/mesa/build-target/src" "$output/optional-dispatch.json" || true
-fi
 cp -L "$loader_build/loader/libvulkan.1.dylib" "$output/"
 # --prefer-static does not force Mesa's zlib fallback to build statically.
 # Bundle the exact target build, never the Homebrew copy.
@@ -134,33 +138,42 @@ for library in "$output"/*.dylib; do
     codesign --verify --strict "$library"
 done
 mkdir -p "$output/licenses"
-cp "$work/recipe/LICENSE.txt" "$output/licenses/build-recipe.txt"
-cp "$work/recipe/externals/mesa/docs/license.rst" "$output/licenses/mesa.rst"
+cp "$recipe/LICENSE.txt" "$output/licenses/build-recipe.txt"
+cp "$recipe/externals/mesa/docs/license.rst" "$output/licenses/mesa.rst"
 mkdir -p "$output/licenses/mesa" "$output/licenses/vulkan-headers"
-cp -R "$work/recipe/externals/mesa/licenses/." "$output/licenses/mesa/"
+cp -R "$recipe/externals/mesa/licenses/." "$output/licenses/mesa/"
 cp "$work/loader/LICENSE.txt" "$output/licenses/vulkan-loader.txt"
 cp "$work/headers/LICENSE.md" "$output/licenses/vulkan-headers.md"
 cp -R "$work/headers/LICENSES/." "$output/licenses/vulkan-headers/"
 # Cross builds use Mesa's pinned zlib fallback when no target pkg-config exists.
-if [ -f "$work/recipe/externals/mesa/subprojects/zlib-1.3.1/README" ]; then
-    cp "$work/recipe/externals/mesa/subprojects/zlib-1.3.1/README" "$output/licenses/zlib.txt"
+if [ -f "$recipe/externals/mesa/subprojects/zlib-1.3.1/README" ]; then
+    cp "$recipe/externals/mesa/subprojects/zlib-1.3.1/README" "$output/licenses/zlib.txt"
 fi
 cp "$script_dir/pins.env" "$output/SOURCE.txt"
-echo "ARCH=$arch" >> "$output/SOURCE.txt"
+printf 'ARCH=%s\nMESA_EFFECTIVE_COMMIT=%s\nMESA_SOURCE_KEY=%s\n' "$arch" "$mesa_commit" "$source_key" >> "$output/SOURCE.txt"
+if [ -n "$snapshot" ]; then
+    cp "$snapshot/snapshot.json" "$output/SOURCE-SNAPSHOT.json"
+    echo 'MESA_SOURCE_PROFILE=committed-snapshot' >> "$output/SOURCE.txt"
+else
+    echo 'MESA_SOURCE_PROFILE=pinned-with-patches' >> "$output/SOURCE.txt"
+fi
 for patch in "$script_dir"/patches/*.patch; do
+    [ -z "$snapshot" ] || break
     [ -e "$patch" ] || continue
     echo "PATCH=$(basename "$patch") $(shasum -a 256 "$patch" | cut -d' ' -f1)"
 done >> "$output/SOURCE.txt"
-if [ -n "${KOSMICKRISP_MESA_PATCH_SERIES:-}" ]; then
-    echo "PATCH_SERIES=$KOSMICKRISP_MESA_PATCH_SERIES $KOSMICKRISP_MESA_PATCH_SERIES_SHA256" >> "$output/SOURCE.txt"
-    while read -r digest patch; do
-        echo "PATCH=$patch $digest"
-    done < "$script_dir/patches/$KOSMICKRISP_MESA_PATCH_SERIES" >> "$output/SOURCE.txt"
-fi
-mkdir -p "$output/patches"
-cp -R "$script_dir/patches/." "$output/patches/"
 {
+    clang --version
     /usr/bin/clang --version
+    xcrun --sdk macosx --show-sdk-version
     cmake --version
-    "$work/driver-build-$arch-${KOSMICKRISP_BUILD_COMMIT}-${KOSMICKRISP_MESA_COMMIT}/externals/mesa/subprojects/subprojects/bin/meson" --version 2>/dev/null || meson --version
+    meson --version
+    python3 --version
+    brew list --versions llvm spirv-tools spirv-llvm-translator libclc python@3.13
+    python3 -m pip freeze
 } > "$output/BUILD-TOOLS.txt"
+cp "$driver_build/externals/mesa/build-target/meson-info/intro-buildoptions.json" "$output/BUILD-OPTIONS.json"
+cp "$driver_build/externals/mesa/build-target/meson-info/intro-compilers.json" "$output/BUILD-COMPILERS.json"
+python3 "$script_dir/optional_entrypoints.py" "$driver_build/externals/mesa/build-target" "$output/OPTIONAL-ENTRYPOINTS.json"
+
+(cd "$output" && shasum -a 256 ./*.dylib kosmickrisp_icd.json SOURCE.txt BUILD-TOOLS.txt BUILD-OPTIONS.json BUILD-COMPILERS.json OPTIONAL-ENTRYPOINTS.json > SHA256SUMS)

@@ -162,12 +162,13 @@ def main():
         # Keeping both the DLLs and EXE there prevents fallback to the shipped fork.
         pins = dict(line.split("=", 1) for line in report["sources"].splitlines()
                     if line and not line.startswith("#") and "=" in line)
-        version = pins["DXVK_TEST_VERSION"]
+        version = pins["DXVK_KOSMICKRISP_VERSION"]
         dxvk_results = {}
         for target, dll_arch in (("x86_64", "x64"), ("i686", "x32")):
             directory = output / f"dxvk-{target}"
             directory.mkdir()
-            for dll in (bundle / f"tests/dxvk-{version}/{dll_arch}").glob("*.dll"):
+            # The shipped DXVK3 payload, so validation covers what Whisky installs.
+            for dll in (libraries / "DXVK3" / dll_arch).glob("*.dll"):
                 shutil.copy2(dll, directory)
             dxvk_env = dict(env, WINEDLLOVERRIDES="d3d9,d3d11,dxgi=n;mscoree,mshtml=",
                             DXVK_LOG_LEVEL="info", DXVK_LOG_PATH=str(directory))

@@ -30,6 +30,11 @@ with open(os.path.join(root, "RuntimeManifest.json"), "w") as stream:
     stream.write("\n")
 PY
 
+# Whisky depends on these paths; refuse to package a tree that breaks them.
+layout_args=()
+[ "${KOSMICKRISP_ENABLED:-false}" != true ] || layout_args+=(--kosmickrisp)
+python3 tools/check_runtime_layout.py Libraries ${layout_args[@]+"${layout_args[@]}"}
+
 # the plist rides alongside the tarball so the publish job, and then
 # the mirror in dappermint/Whisky, can read the version without
 # decompressing 434MB to reach one file

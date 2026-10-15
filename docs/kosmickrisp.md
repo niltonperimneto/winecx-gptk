@@ -16,8 +16,18 @@ dispatch `build.yml` with the `kosmickrisp` box ticked. the artifact is named
 `whiskywine-gptk-libraries-kosmickrisp-experimental`, and publish refuses it, on
 `main` too; a push never builds this lane.
 
+Hosted builds validate compilation, relocation, windows and media on macOS 26.
+They require `gpu_runner_label` to run the complete GPU suite as a second job
+on a physical Metal 4 GPU, using the exact uploaded runtime and its checksums.
+The dispatch must come from the repository owner. Self-hosted builds run the
+same GPU suite in the build job.
+
 `runtime/kosmickrisp/pins.env` pins the shadexternals cross-build recipe, the
-mesa commit its submodule must resolve to, and the khronos loader and headers.
+complete Mesa tree from `niltonperimneto/mesa`, and the Khronos loader and headers.
+The default build exports a verified snapshot of the pinned fork commit and
+replaces the recipe's older Mesa submodule. The fork already contains the carried
+driver fixes, so the old patches are not reapplied. Updating the fork requires an
+explicit pin update here; CI never follows a moving branch tip.
 `build.sh` builds them for x86_64, because an arm64 icd cannot load into this
 wine host. the build fails if a library is not x86_64-only, links anything
 outside `/usr/lib` and `/System`, or fails codesign verification. mesa's zlib
@@ -31,6 +41,13 @@ the bundle records what built it.
 `libvulkan_kosmickrisp.dylib`, `kosmickrisp_icd.json` (relative library path),
 zlib when mesa needs it, licenses, and `SOURCE.txt` with the pins.
 
+`DXVK3/x32/` and `DXVK3/x64/` contain upstream DXVK 3.1.1's `d3d8.dll`,
+`d3d9.dll`, `d3d10core.dll`, `d3d11.dll`, and `dxgi.dll`. The payload includes
+`LICENSE.txt`, `SOURCE.txt` with the release URL and verified archive hash,
+and `SHA256SUMS` for the packaged files. The experimental CI probes use these
+same DLLs. This payload is separate from the existing `DXVK/` backend; bottle
+installation and an app backend selector are follow-up work.
+
 ```sh
 WINEPREFIX=/path/to/prefix Libraries/Wine/bin/wine-kosmickrisp program.exe
 ```
@@ -43,46 +60,60 @@ loads `CX_LIBVULKAN` as the host vulkan library while
 implementation for dxvk or a native vulkan program; it only unlocks the
 override. whisky can set the same variables per program.
 
-## Rosetta fallback branch
+## Managed DXVK setup
 
-`kk/08-rosetta` keeps the x86_64 runtime available while native arm64 Wine/FEX
-porting continues separately. The launcher explicitly uses
-`/usr/bin/arch -x86_64` and clears `WINE_VULKAN_LIBRARY` along with inherited
-ICD selection. Rosetta translates the Wine Unix host and the x86_64 driver on
-Apple Silicon. The Metal API remains the graphics backend; FEX is not required
-for this lane. Windows 32-bit programs use this runtime's existing WoW64 support.
-
-To add the bundle to a staged copy of a compatible CrossOver Wine runtime:
+Experimental artifacts include `wine-kosmickrisp-dxvk` and a prefix helper.
+They require Python 3.9 or newer on PATH. Close applications in the selected
+prefix and wait for its wineserver to exit before installation or restoration.
+The helper checks that both Windows architectures are initialized, verifies
+payload checksums and PE architectures, backs up existing DLLs and registry
+values, and writes a recovery journal before making changes.
 
 ```sh
-bash runtime/kosmickrisp/build.sh /path/to/kk-build /path/to/kk-bundle
-bash runtime/kosmickrisp/install-rosetta.sh /path/to/staged/Wine /path/to/kk-bundle
-WINEPREFIX=/path/to/test-prefix /path/to/staged/Wine/bin/wine-kosmickrisp program.exe
+export WINEPREFIX=/absolute/path/to/initialized/prefix
+Libraries/Wine/bin/wine-kosmickrisp-dxvk --install-prefix
+Libraries/Wine/bin/wine-kosmickrisp-dxvk --status-prefix
+Libraries/Wine/bin/wine-kosmickrisp-dxvk game.exe
+Libraries/Wine/bin/wine-kosmickrisp-dxvk --restore-prefix
 ```
 
-The installer verifies x86_64 Wine binaries, the `CX_LIBVULKAN` override,
-bundle architecture, signatures, dependency closure and relative ICD path
-before installing. It refuses an existing KosmicKrisp installation. Rosetta
-must already be available on Apple Silicon. The dispatch-only CI lane uses this
-installer and continues testing both PE architectures with native Vulkan and
-upstream DXVK. DXVK test DLLs remain beside the probes, outside runtime defaults.
+Installation changes DLLs and native overrides for the selected prefix. Use the
+KosmicKrisp launcher for its D3D programs; restore the installation before
+selecting another graphics backend. Status reports modified DLLs or overrides;
+restoration refuses to overwrite changes made outside the transaction. Interrupted
+installation or restoration can be recovered with `--restore-prefix`. Keep the
+prefix at its original path until restoration is complete. Restore does not
+require the DXVK payload or driver to remain installed.
 
-### Local validation — 2026-10-03
+For a game that loads a DLL from its own directory, include that directory in
+installation so it participates in the same backup and restoration transaction:
 
-A fresh pinned x86_64 driver build was installed into an isolated clone of
-`winecx-gptk-4.7.71` (Wine 11.18), relocated into a path containing spaces.
-Rosetta availability was confirmed with `sysctl.proc_translated=1`. Installed
-runtimes were not modified. The fresh test prefix booted successfully.
+```sh
+Libraries/Wine/bin/wine-kosmickrisp-dxvk --install-prefix \
+  --game-dir '/absolute/path/to/Portal 2/bin' --arch x32 --dll d3d9
+```
 
-Both x86_64 and i686 probes selected KosmicKrisp driver ID 28 on Apple A18 Pro,
-reported `geometryShader=1` and `fillModeNonSolid=1`, and passed exact compute
-readback plus windowed, resized, borderless and restored presentation. Upstream
-DXVK 3.1.1 created D3D9 devices and D3D11 devices at feature level 11_1 for both
-architectures. Driver signatures, the three launcher tests, installer rejection
-of an arm64 bundle and existing installation, shell syntax and workflow lint
-passed. The workflow itself was not dispatched. Transform feedback remains
-absent; these device tests do not establish game compatibility or performance.
+Default caches live under the prefix's `drive_c/ShaderCaches/kosmickrisp/`.
+DXVK receives a Windows `C:\ShaderCaches\kosmickrisp\dxvk` path; Mesa receives
+its host path. Explicit `DXVK_SHADER_CACHE_PATH` and `MESA_SHADER_CACHE_DIR`
+overrides are preserved. Installation and restoration do not delete caches.
 
-The runnable staged Wine directory is
-`~/Library/Caches/winecx-kosmickrisp-rosetta/relocated runtime/Wine`.
-Logs, source pins and `validation.json` are in the parent cache directory.
+## Building a committed candidate
+
+The default CI pin remains separate from the experimental GPL/cache candidate.
+Freeze a complete committed Mesa tree, including its existing driver changes,
+without editing the working checkout:
+
+```sh
+python3 runtime/kosmickrisp/source-snapshot.py export \
+  --source ../mesa --commit FULL_COMMIT_HASH --out /tmp/mesa-snapshot
+bash runtime/kosmickrisp/build.sh /tmp/kk-build /tmp/kk-driver /tmp/mesa-snapshot
+```
+
+The optional third argument replaces the recipe's Mesa submodule with the
+verified archive. It does not apply the default lane's patches again. Source
+archives have deterministic compression, a commit/tree identity and SHA-256.
+Builds use separate source-specific directories and recheck extracted source
+contents on reuse. Use a fresh build root when changing build tools or SDKs.
+Bundles record effective source identity, build tools and binary checksums.
+The candidate remains experimental until rendering and gameplay gates pass.

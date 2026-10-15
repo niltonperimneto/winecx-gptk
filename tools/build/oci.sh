@@ -65,7 +65,7 @@ with (root / 'layer.tar.zst').open('rb') as stream:
 (root / 'metadata.json').write_text(json.dumps({'schema': 1, 'component': sys.argv[2],
     'sha256': h.hexdigest(), 'source': os.environ['GITHUB_SHA']}, indent=2) + '\n')
 PY
-        if [[ "$component" == core || "$component" == assembled || "$component" == runtime ]]; then
+        if [[ "$component" == assembled || "$component" == runtime ]]; then
             key="${GITHUB_SHA}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
         else
             key=$(python3 tools/build/cache_key.py "$component")
