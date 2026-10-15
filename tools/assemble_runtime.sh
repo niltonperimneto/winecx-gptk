@@ -59,6 +59,13 @@ fi
 dxvk=payload/dxvk-macOS-async-v$DXVK_VERSION-20230507-repack
 mkdir -p Libraries/DXVK Libraries/DXMT
 cp -R "$dxvk/." Libraries/DXVK/
+# the macos repack ships d3d11 and d3d10core only, no dxgi, because a
+# 64-bit bottle already has a real DXGI beside it. a 32-bit one does
+# not: d3dmetal has no i386 half, so syswow64 keeps wine's builtin
+# dxgi, dxvk's d3d11 warns "Adapter is not a DXVK adapter" and the
+# game gets no device. upstream's dxgi from the same release pairs
+# with it; x32 only, the 64-bit half keeps the prefix's DXGI.
+cp "payload/dxvk-$DXVK_VERSION/x32/dxgi.dll" Libraries/DXVK/x32/dxgi.dll
 cp -R "$dxmt/x86_64-windows" Libraries/DXMT/x64
 cp -R "$dxmt/i386-windows" Libraries/DXMT/x32
 

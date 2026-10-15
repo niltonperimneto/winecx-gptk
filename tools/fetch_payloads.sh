@@ -58,9 +58,12 @@ du -sh addons/mono addons/gecko
 mkdir -p payload
 fetch "https://github.com/Gcenx/DXVK-macOS/releases/download/v$DXVK_VERSION-20230507-repack/dxvk-macOS-async-v$DXVK_VERSION-20230507-repack.tar.gz" \
       dxvk.tar.gz acd1520ad105d8ef124a09c8e11a259a5dc8bdc565ad18e0e52693f9807b2477
-fetch "https://github.com/$DXMT_REPO/releases/download/$DXMT_RELEASE_TAG/dxmt-7c8dee1c-builtin.tar.gz" \
+fetch "https://github.com/$DXMT_REPO/releases/download/$DXMT_RELEASE_TAG/$DXMT_ARTIFACT" \
       dxmt.tar.gz "$DXMT_ARTIFACT_SHA256"
+fetch "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_VERSION/dxvk-$DXVK_VERSION.tar.gz" \
+      dxvk-upstream.tar.gz "$DXVK_UPSTREAM_SHA256"
 tar -xzf dxvk.tar.gz -C payload
+tar -xzf dxvk-upstream.tar.gz -C payload
 tar -xzf dxmt.tar.gz -C payload
 fetch "https://github.com/$RELAY12_REPO/releases/download/$RELAY12_RELEASE_TAG/relay12-$RELAY12_RELEASE_TAG.tar.gz" \
       relay12.tar.gz "$RELAY12_ARTIFACT_SHA256"
