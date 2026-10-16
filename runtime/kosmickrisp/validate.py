@@ -77,6 +77,10 @@ def dxvk_evidence(code, output, logs, marker, version):
             re.search(r"Driver\s*:\s*KosmicKrisp\b", logs) is not None)
 
 
+def probe_passed(code, text, required=(), expected_failure=False):
+    return code == (1 if expected_failure else 0) and all(marker in text for marker in required)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--libraries", type=Path, required=True)
@@ -108,8 +112,7 @@ def main():
 
     def check(name, command, required=(), expected_failure=False):
         code, elapsed, text = run_probe([str(x) for x in command], env, output / f"{name}.log")
-        ok = code not in (0, 124) if expected_failure else code == 0
-        ok = ok and all(marker in text for marker in required)
+        ok = probe_passed(code, text, required, expected_failure)
         checks[name] = {"status": "passed" if ok else "failed", "exit_code": code, "seconds": elapsed}
         if not ok:
             checks[name]["missing_markers"] = [marker for marker in required if marker not in text]

@@ -12,10 +12,18 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime/kosmickrisp"))
 from game import extract_archive, run_game
 from readiness import blockers
-from validate import dxvk_evidence, parse_capabilities, run_probe, verify_manifest
+from validate import dxvk_evidence, parse_capabilities, probe_passed, run_probe, verify_manifest
 
 
 class ValidationTests(unittest.TestCase):
+    def test_negative_probe_requires_clean_failure_not_a_crash(self):
+        message = "Failed to load Vulkan loader: libvulkan.1.dylib"
+        required = ("Failed to load", "libvulkan.1.dylib")
+        self.assertTrue(probe_passed(1, message, required, expected_failure=True))
+        for code in (0, 56, 124, 134, -6, -11):
+            self.assertFalse(probe_passed(code, message, required, expected_failure=True))
+        self.assertFalse(probe_passed(1, "", required, expected_failure=True))
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
