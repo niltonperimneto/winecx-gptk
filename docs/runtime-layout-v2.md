@@ -84,6 +84,10 @@ rollback.
 The build must pass static/unit checks, compiled subsystem checks, complete
 assembly, relocation and base Wine/media/network/dependency/floor probes.
 The packaged archive also runs through the pinned Whisky consumer tests.
+`consumer-runtime.yml` is the same full-suite check used by the build and can
+be dispatched with `source_run_id` to recheck an existing immutable archive
+after a consumer-only change. Its run records the archive digest and uses the
+current immutable consumer pin; retain both source revisions with the results.
 Physical validation runs the same archive on macOS 26 and on a newer supported
 OS. It checks real device creation, missing/corrupt/invalid-override loader
 failures, Wine operation with Vulkan absent, 32/64-bit compute and geometry /
