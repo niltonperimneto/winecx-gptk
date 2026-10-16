@@ -389,32 +389,12 @@ jobs:
   consumer-validation:
     name: Whisky / packaged layout v2
     needs: build
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v7
-      - name: Load consumer pin
-        run: sed -n 's/^export //p' tools/build/pins.env >> "$GITHUB_ENV"
-      - uses: actions/checkout@v7
-        with:
-          repository: niltonperimneto/Whisky
-          ref: ${{ env.WHISKY_CONSUMER_COMMIT }}
-          path: consumer
-      - uses: actions/download-artifact@v8
-        with:
-          name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
-          path: downloaded
-      - name: Validate exact packaged bytes with the consumer
-        env:
-          WHISKY_RUNTIME_LIBRARIES: ${{ runner.temp }}/consumer-runtime/Libraries
-          WHISKY_RUNTIME_CONTRACT: ${{ github.workspace }}/contracts/runtime-layout.json
-          WHISKY_RUNTIME_CATALOG: ${{ github.workspace }}/runtime-catalog-v2.json
-        run: |
-          cd downloaded
-          shasum -a 256 -c Libraries.tar.gz.sha256
-          mkdir -p "$RUNNER_TEMP/consumer-runtime"
-          tar -xzf Libraries.tar.gz -C "$RUNNER_TEMP/consumer-runtime"
-          cd ../consumer
-          swift test --package-path WhiskyKit
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/consumer-runtime.yml
+    with:
+      artifact_name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
   publish:
     name: publish the runtime release
     needs: [build, kosmickrisp-readiness, consumer-validation]
