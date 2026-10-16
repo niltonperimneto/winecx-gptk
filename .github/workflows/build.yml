@@ -13,6 +13,10 @@ on:
       runtime_version:
         description: override the stamped version; leave empty for RUNTIME_SERIES.<commits since the series bump>
         type: string
+      consumer_source_run_id:
+        description: Recheck only the consumer against this existing build archive
+        type: string
+        default: ''
       rebuild_all:
         description: Rebuild OCI foundation, tools and payload layers instead of restoring cached layers
         type: boolean
@@ -61,6 +65,7 @@ jobs:
       - name: Test build contracts and existing runtime helpers
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
   foundation:
+    if: inputs.consumer_source_run_id == ''
     needs: [checks, static-qa]
     runs-on: macos-26
     timeout-minutes: 90
@@ -117,6 +122,7 @@ jobs:
         if: steps.restore_tools.outputs.hit != 'true'
         run: bash tools/build/oci.sh push tools build-tools
   payloads:
+    if: inputs.consumer_source_run_id == ''
     needs: checks
     runs-on: macos-26
     timeout-minutes: 90
@@ -154,9 +160,9 @@ jobs:
         id: push_payloads
         if: steps.restore_payloads.outputs.hit != 'true'
         run: bash tools/build/oci.sh push payloads addons payload
-  # The driver layer is cached by the Mesa pin, so building it on every run
-  # costs a restore unless Mesa moved; installing it stays opt-in.
+  # Mesa and loader inputs determine this layer; every new runtime installs it.
   graphics:
+    if: inputs.consumer_source_run_id == ''
     needs: checks
     uses: ./.github/workflows/kosmickrisp.yml
     with:
@@ -394,6 +400,17 @@ jobs:
       actions: read
     uses: ./.github/workflows/consumer-runtime.yml
     with:
+      artifact_name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
+  consumer-recheck:
+    name: Whisky / recheck existing archive
+    if: inputs.consumer_source_run_id != ''
+    needs: [checks, static-qa]
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/consumer-runtime.yml
+    with:
+      source_run_id: ${{ inputs.consumer_source_run_id }}
       artifact_name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
   publish:
     name: publish the runtime release
