@@ -127,7 +127,8 @@ loader=Libraries/Wine/lib/wine/x86_64-unix/wine
 for n in wine wine64 wineloader; do
   ln -sf ../lib/wine/x86_64-unix/wine "Libraries/Wine/bin/$n"
 done
-./Libraries/Wine/bin/wine64 --version
+wine_release=$(bash tools/build/wine_version.sh ./Libraries/Wine/bin/wine64)
+echo "wine-$wine_release"
 
 # bundle the nix dylib closure flat into Wine/lib and rewrite
 # store references to loader-relative so the tarball is portable
@@ -414,8 +415,6 @@ case "$rv" in
   *) echo "::error::runtime_version '$rv' is not major.minor.patch"; exit 1;;
 esac
 sed -i '' "s/DXVK_VER/$DXVK_KOSMICKRISP_VERSION/; s/DXMT_VER/$DXMT_VERSION/" Libraries/WhiskyWineVersion.plist
-wine_release=$(sed -n 's/^Wine version //p' winecx/VERSION)
-[ -n "$wine_release" ] || { echo "::error::missing Wine source version"; exit 1; }
 sed -i '' "s/WINE_RELEASE/$wine_release/" Libraries/WhiskyWineVersion.plist
 sed -i '' "s/WINE_SOURCE_REV/$WINECX_COMMIT/; s/PATCHSET_REV/${GITHUB_SHA}/" Libraries/WhiskyWineVersion.plist
 sed -i '' "s/VER_MAJOR/${rv%%.*}/; s/VER_MINOR/$(echo "$rv" | cut -d. -f2)/; s/VER_PATCH/${rv##*.}/" \
