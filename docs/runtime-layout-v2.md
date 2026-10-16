@@ -60,6 +60,17 @@ owned backend/helper DLLs using the old payload, updates Wine, and verifies
 the selected available backend. Registry and settings data are included in
 the clone. Launches through Whisky are blocked during a switch.
 
+Archive installation still verifies the complete producer manifest and rejects
+undeclared files. An installed tree is mutable: GPTK deployment replaces graphics
+files, and removal can remove the original `external/README`. Applying the archive
+inventory again when selecting that tree would reject supported installations.
+Switch preflight instead checks the installed layout and producer hashes of the
+Wine loader, server, Unix ntdll/win32u and both Windows core/Vulkan DLL lanes.
+Executable links must resolve inside the runtime to a verified manifest entry.
+Backend availability, staging verification and the transactional Wine refresh
+remain separate checks. Regression tests preserve strict archive rejection and
+reject altered Wine core files, missing manifests and escaping executable links.
+
 A failed refresh restores the clone and old settings. An interrupted switch
 leaves a sibling `.<bottle>-runtime-rollback` directory and blocks normal
 launches. The picker offers **Restore interrupted runtime switch** once the
