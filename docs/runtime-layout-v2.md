@@ -88,6 +88,10 @@ The packaged archive also runs through the pinned Whisky consumer tests.
 be dispatched with `source_run_id` to recheck an existing immutable archive
 after a consumer-only change. Its run records the archive digest and uses the
 current immutable consumer pin; retain both source revisions with the results.
+Before that workflow reaches the default branch, dispatch the existing build
+entry point with `consumer_source_run_id`. This runs static/unit QA and the same
+consumer check against the chosen archive. A normal build retains the complete
+producer and publication dependency chain.
 Physical validation runs the same archive on macOS 26 and on a newer supported
 OS. It checks real device creation, missing/corrupt/invalid-override loader
 failures, Wine operation with Vulkan absent, 32/64-bit compute and geometry /
