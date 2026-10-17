@@ -307,6 +307,18 @@ static unsigned int npairs;
  * when the last video texture is destroyed. Changed only under cs. */
 static volatile LONG live_pairs;
 
+/* Set once the app queries ID3D12VideoDevice, queries NV12/AYUV format
+ * support, creates a video queue/allocator/command list, or creates a
+ * resource with a video format or video resource state. Until then, the
+ * per-frame command-list, queue and device slots point directly at
+ * D3DMetal's own entry points so a game without video executes zero shim
+ * instructions on its rendering hot path. */
+static volatile LONG video_active;
+static volatile LONG ayuv_active;
+static volatile LONG live_vlists;
+
+static void sync_hot_vtables(void);
+
 /* Slots are never compacted and the array is static, so the returned pointer
  * stays valid memory; a dropped slot just stops matching. The one window left is
  * an app destroying a texture while another thread records a barrier on it, which
@@ -387,6 +399,8 @@ static void pair_drop(unsigned int slot)
             npairs--;
     }
     LeaveCriticalSection(&cs);
+
+    sync_hot_vtables();
 
     if (chroma)
     {
@@ -527,6 +541,7 @@ static void watch_resource(void *res, UINT w, UINT h, UINT fmt)
     watched[nwatched].h = h;
     watched[nwatched].fmt = fmt;
     nwatched++;
+    sync_hot_vtables();
     LOG("watching video texture %p (%ux%u fmt=%u)\n", res, w, h, fmt);
 }
 
@@ -626,8 +641,17 @@ static const char *guidstr(const GUID *g)
  * actually needs, so an app that follows the api contract leaves every resource
  * exactly as the conversion pass wants it and no extra barriers are needed:
  * process reads are sampled, process writes are drawn into. */
+#define SHIM_VIDEO_STATES (D3D12_RESOURCE_STATE_VIDEO_DECODE_READ \
+        | D3D12_RESOURCE_STATE_VIDEO_DECODE_WRITE \
+        | D3D12_RESOURCE_STATE_VIDEO_PROCESS_READ \
+        | D3D12_RESOURCE_STATE_VIDEO_PROCESS_WRITE \
+        | D3D12_RESOURCE_STATE_VIDEO_ENCODE_READ \
+        | D3D12_RESOURCE_STATE_VIDEO_ENCODE_WRITE)
+
 static D3D12_RESOURCE_STATES fix_state(D3D12_RESOURCE_STATES state)
 {
+    if (!(state & SHIM_VIDEO_STATES))
+        return state;
     if (state & (D3D12_RESOURCE_STATE_VIDEO_PROCESS_WRITE | D3D12_RESOURCE_STATE_VIDEO_ENCODE_WRITE))
         return D3D12_RESOURCE_STATE_RENDER_TARGET;
     if (state & D3D12_RESOURCE_STATE_VIDEO_DECODE_WRITE)
@@ -757,8 +781,13 @@ static ULONG WINAPI vobj_Release(void *this_)
 
     if (!ref && o != &video_device)
     {
-        if ((o->vtbl == vlist_vtbl || o->vtbl == vproc_vtbl) && ((struct vlist *)o)->inner)
-            ID3D12GraphicsCommandList_Release(((struct vlist *)o)->inner);
+        if (o->vtbl == vlist_vtbl || o->vtbl == vproc_vtbl)
+        {
+            if (((struct vlist *)o)->inner)
+                ID3D12GraphicsCommandList_Release(((struct vlist *)o)->inner);
+            InterlockedDecrement(&live_vlists);
+            sync_hot_vtables();
+        }
         HeapFree(GetProcessHeap(), 0, o);
     }
     return ref;
@@ -1854,20 +1883,29 @@ static void WINAPI shim_ExecuteCommandLists(void *queue, UINT count, ID3D12Comma
 static void wrap_queue(void *queue)
 {
     void ***obj = queue;
+    void **orig = *(void **volatile *)&queue_orig;
     unsigned int i;
 
     if (*obj == (void **)queue_vtbl)
         return;
+    if (orig)
+    {
+        if (*obj == orig)
+            *obj = (void **)queue_vtbl;
+        return;
+    }
+    EnterCriticalSection(&cs);
     if (!queue_orig)
     {
-        queue_orig = *obj;
         for (i = 0; i < 19; i++)
-            queue_vtbl[i] = queue_orig[i];
-        queue_vtbl[SLOT(ID3D12CommandQueueVtbl, ExecuteCommandLists)] = (void *)shim_ExecuteCommandLists;
+            queue_vtbl[i] = (*obj)[i];
+        InterlockedExchangePointer((void **)&queue_orig, *obj);
+        sync_hot_vtables();
         LOG("command queue vtable wrapped\n");
     }
     if (*obj == queue_orig)
         *obj = (void **)queue_vtbl;
+    LeaveCriticalSection(&cs);
 }
 
 static HRESULT WINAPI shim_CreateCommandQueue(void *dev, const D3D12_COMMAND_QUEUE_DESC *desc,
@@ -1879,6 +1917,8 @@ static HRESULT WINAPI shim_CreateCommandQueue(void *dev, const D3D12_COMMAND_QUE
 
     if (desc && is_video_type(desc->Type))
     {
+        InterlockedExchange(&video_active, 1);
+        sync_hot_vtables();
         fixed = *desc;
         fixed.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         hr = ((pfn_ccq)dev_orig[slot])(dev, &fixed, riid, out);
@@ -1902,6 +1942,8 @@ static HRESULT WINAPI shim_CreateCommandAllocator(void *dev, D3D12_COMMAND_LIST_
 
     if (is_video_type(type))
     {
+        InterlockedExchange(&video_active, 1);
+        sync_hot_vtables();
         hr = ((pfn_cca)dev_orig[slot])(dev, D3D12_COMMAND_LIST_TYPE_DIRECT, riid, out);
         LOG("CreateCommandAllocator type=%d -> direct allocator 0x%08lx %p\n", type, hr,
             out ? *out : NULL);
@@ -1917,19 +1959,26 @@ static HRESULT create_video_list(void *dev, UINT mask, D3D12_COMMAND_LIST_TYPE t
     struct vlist *l;
     HRESULT hr;
 
+    InterlockedExchange(&video_active, 1);
     hr = ((pfn_ccl)dev_orig[12])(dev, mask, D3D12_COMMAND_LIST_TYPE_DIRECT, alloc, NULL,
             &IID_ID3D12GraphicsCommandList, (void **)&inner);
     LOG("CreateCommandList type=%d -> inner direct list 0x%08lx %p\n", type, hr, (void *)inner);
     if (FAILED(hr))
+    {
+        sync_hot_vtables();
         return hr;
+    }
     if (!(l = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*l))))
     {
         ID3D12GraphicsCommandList_Release(inner);
+        sync_hot_vtables();
         return E_OUTOFMEMORY;
     }
     l->vtbl = type == D3D12_COMMAND_LIST_TYPE_VIDEO_PROCESS ? vproc_vtbl : vlist_vtbl;
     l->ref = 1;
     l->inner = inner;
+    InterlockedIncrement(&live_vlists);
+    sync_hot_vtables();
     *out = l;
     LOG("  -> video list %p (%s)\n", (void *)l,
         type == D3D12_COMMAND_LIST_TYPE_VIDEO_PROCESS ? "process" : "decode");
@@ -1947,6 +1996,8 @@ static HRESULT WINAPI shim_QueryInterface(void *dev, REFIID riid, void **out)
             || IsEqualGUID(riid, &IID_ID3D12VideoDevice2)
             || IsEqualGUID(riid, &IID_ID3D12VideoDevice3)))
     {
+        InterlockedExchange(&video_active, 1);
+        sync_hot_vtables();
         *out = &video_device;
         vobj_AddRef(&video_device);
         LOG("device QI %s -> our video device %p\n", guidstr(riid), (void *)&video_device);
@@ -1997,6 +2048,10 @@ static HRESULT WINAPI shim_CheckFeatureSupport(void *dev, D3D12_FEATURE feature,
          * RGB conversion. NV12 is handled by the plane pair below. */
         if ((fs->Format == DXGI_FORMAT_NV12 || fs->Format == DXGI_FORMAT_AYUV) && !fs->Support1)
         {
+            if (fs->Format == DXGI_FORMAT_AYUV)
+                InterlockedExchange(&ayuv_active, 1);
+            InterlockedExchange(&video_active, 1);
+            sync_hot_vtables();
             fs->Support1 = D3D12_FORMAT_SUPPORT1_TEXTURE2D | D3D12_FORMAT_SUPPORT1_SHADER_LOAD
                     | D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE;
             LOG("  -> claiming fmt=%u supported\n", fs->Format);
@@ -2016,6 +2071,8 @@ static HRESULT WINAPI shim_CreateCommittedResource(void *dev, const D3D12_HEAP_P
 
     if (fix_state(state) != state)
     {
+        InterlockedExchange(&video_active, 1);
+        sync_hot_vtables();
         LOG("CreateCommittedResource state 0x%x is video only, using 0x%x\n", state, fix_state(state));
         state = fix_state(state);
     }
@@ -2024,6 +2081,9 @@ static HRESULT WINAPI shim_CreateCommittedResource(void *dev, const D3D12_HEAP_P
     {
         D3D12_RESOURCE_DESC sub = *desc;
 
+        InterlockedExchange(&ayuv_active, 1);
+        InterlockedExchange(&video_active, 1);
+        sync_hot_vtables();
         sub.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
         hr = ((pfn_ccr)dev_orig[27])(dev, heap, flags, &sub, state, clear, riid, out);
         LOG("CreateCommittedResource AYUV %ux%u -> rgba 0x%08lx %p\n",
@@ -2080,6 +2140,7 @@ static HRESULT WINAPI shim_CreateCommittedResource(void *dev, const D3D12_HEAP_P
     for (slot = 0; slot < npairs; slot++)
         if (!pairs[slot].luma)
             break;
+    InterlockedExchange(&video_active, 1);
     if (slot < MAX_NV12)
     {
         /* luma last: find_chroma reads without the lock, and a matching luma
@@ -2094,6 +2155,7 @@ static HRESULT WINAPI shim_CreateCommittedResource(void *dev, const D3D12_HEAP_P
         LOG("  pair %u registered\n", slot);
     }
     LeaveCriticalSection(&cs);
+    sync_hot_vtables();
 
     if (slot < MAX_NV12)
         pair_watch_attach(*out, slot);
@@ -2322,13 +2384,6 @@ static void WINAPI shim_CopyTextureRegion(void *list, const D3D12_TEXTURE_COPY_L
     ((pfn_ctr)list_orig[16])(list, dst, x, y, z, src, box);
 }
 
-static BOOL barrier_needs_fix(const D3D12_RESOURCE_BARRIER *bar)
-{
-    return bar->Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION
-            && (fix_state(bar->Transition.StateBefore) != bar->Transition.StateBefore
-            || fix_state(bar->Transition.StateAfter) != bar->Transition.StateAfter);
-}
-
 static void WINAPI shim_ResourceBarrier(void *list, UINT count, const D3D12_RESOURCE_BARRIER *bars)
 {
     D3D12_RESOURCE_BARRIER stack[32], *fixed = stack;
@@ -2344,7 +2399,9 @@ static void WINAPI shim_ResourceBarrier(void *list, UINT count, const D3D12_RESO
     if (!live_pairs)
     {
         for (i = 0; i < count; i++)
-            if (barrier_needs_fix(&bars[i]) || barrier_is_noop(&bars[i]))
+            if (bars[i].Type == D3D12_RESOURCE_BARRIER_TYPE_TRANSITION
+                    && (((bars[i].Transition.StateBefore | bars[i].Transition.StateAfter) & SHIM_VIDEO_STATES)
+                    || bars[i].Transition.StateBefore == bars[i].Transition.StateAfter))
                 break;
         if (i == count)
         {
@@ -2373,26 +2430,78 @@ static void WINAPI shim_ResourceBarrier(void *list, UINT count, const D3D12_RESO
         free(fixed);
 }
 
+/* Bind or unbind the hot-path vtable slots based on whether video is active.
+ * When no video format, video resource or video command list is in use, the
+ * command list, command queue and device slots hold D3DMetal's own function
+ * pointers, so per-frame calls jump directly into D3DMetal without entering
+ * the shim. Because wrapped objects already point at dev_vtbl, list_vtbl and
+ * queue_vtbl, updating a slot here takes effect on existing objects too. */
+static void sync_hot_vtables(void)
+{
+    BOOL v_active = *(volatile LONG *)&video_active > 0;
+    BOOL a_active = *(volatile LONG *)&ayuv_active > 0;
+    BOOL pairs_alive = *(volatile LONG *)&live_pairs > 0;
+    BOOL vlists_alive = *(volatile LONG *)&live_vlists > 0;
+    BOOL watched_alive = *(volatile unsigned int *)&nwatched > 0;
+    BOOL log_on = want_log();
+    void **d_orig = *(void **volatile *)&dev_orig;
+    void **l_orig = *(void **volatile *)&list_orig;
+    void **q_orig = *(void **volatile *)&queue_orig;
+
+    if (d_orig)
+    {
+        InterlockedExchangePointer(&dev_vtbl[18],
+                (pairs_alive || a_active) ? (void *)shim_CreateShaderResourceView : d_orig[18]);
+        InterlockedExchangePointer(&dev_vtbl[29],
+                (v_active || log_on) ? (void *)shim_CreatePlacedResource : d_orig[29]);
+        InterlockedExchangePointer(&dev_vtbl[38],
+                v_active ? (void *)shim_GetCopyableFootprints : d_orig[38]);
+    }
+    if (l_orig)
+    {
+        InterlockedExchangePointer(&list_vtbl[16],
+                (pairs_alive || watched_alive || log_on) ? (void *)shim_CopyTextureRegion : l_orig[16]);
+        InterlockedExchangePointer(&list_vtbl[26],
+                v_active ? (void *)shim_ResourceBarrier : l_orig[26]);
+    }
+    if (q_orig)
+    {
+        UINT slot = SLOT(ID3D12CommandQueueVtbl, ExecuteCommandLists);
+        InterlockedExchangePointer(&queue_vtbl[slot],
+                vlists_alive ? (void *)shim_ExecuteCommandLists : q_orig[slot]);
+    }
+}
+
 static void wrap_command_list(void *list)
 {
     void ***obj = list;
+    void **orig = *(void **volatile *)&list_orig;
     unsigned int i;
 
     if (*obj == (void **)list_vtbl)
         return;
-    if (list_orig && *obj != list_orig)
-        LOG("second command list vtable seen, not wrapping\n");
+    if (orig)
+    {
+        if (*obj == orig)
+            *obj = (void **)list_vtbl;
+        else
+            LOG("second command list vtable seen, not wrapping\n");
+        return;
+    }
+    EnterCriticalSection(&cs);
     if (!list_orig)
     {
-        list_orig = *obj;
         for (i = 0; i < LIST_SLOTS; i++)
-            list_vtbl[i] = list_orig[i];
-        list_vtbl[16] = (void *)shim_CopyTextureRegion;
-        list_vtbl[26] = (void *)shim_ResourceBarrier;
+            list_vtbl[i] = (*obj)[i];
+        InterlockedExchangePointer((void **)&list_orig, *obj);
+        sync_hot_vtables();
         LOG("command list vtable wrapped\n");
     }
     if (*obj == list_orig)
         *obj = (void **)list_vtbl;
+    else
+        LOG("second command list vtable seen, not wrapping\n");
+    LeaveCriticalSection(&cs);
 }
 
 static void wrap_device(void *dev)
@@ -2410,18 +2519,16 @@ static void wrap_device(void *dev)
     real_device = dev;
     init_video_vtables();
 
-    dev_orig = *obj;
     for (i = 0; i < DEV_SLOTS; i++)
-        dev_vtbl[i] = dev_orig[i];
+        dev_vtbl[i] = (*obj)[i];
     dev_vtbl[0] = (void *)shim_QueryInterface;
     dev_vtbl[SLOT(ID3D12DeviceVtbl, CreateCommandQueue)] = (void *)shim_CreateCommandQueue;
     dev_vtbl[SLOT(ID3D12DeviceVtbl, CreateCommandAllocator)] = (void *)shim_CreateCommandAllocator;
     dev_vtbl[12] = (void *)shim_CreateCommandList;
     dev_vtbl[13] = (void *)shim_CheckFeatureSupport;
-    dev_vtbl[18] = (void *)shim_CreateShaderResourceView;
     dev_vtbl[27] = (void *)shim_CreateCommittedResource;
-    dev_vtbl[29] = (void *)shim_CreatePlacedResource;
-    dev_vtbl[38] = (void *)shim_GetCopyableFootprints;
+    InterlockedExchangePointer((void **)&dev_orig, *obj);
+    sync_hot_vtables();
     *obj = (void **)dev_vtbl;
     LOG("device %p wrapped\n", dev);
 }
@@ -2442,10 +2549,10 @@ static void wrap_device(void *dev)
  *
  * So when RELAY12_EXPERIMENTAL_FRAME=1, the stub itself becomes an absolute
  * jump to the core. Every D3D11On12 caller creates its D3D12 device first,
- * through this shim, so this runs before the first call. Only a byte-exact
- * stub is patched: a D3DMetal that implements D3D11On12 is left alone, and
- * every other d3d11 entry point stays Apple's. Without the variable nothing
- * here runs and d3d11.dll is not even loaded. */
+ * through this shim, so this runs before the first call. Only recognized
+ * unsupported stubs are patched: a D3DMetal that implements D3D11On12 is
+ * left alone, and every other d3d11 entry point stays Apple's. Without the
+ * variable nothing here runs and d3d11.dll is not even loaded. */
 static const BYTE apple_on12_stub[16] =
 {
     0xb8, 0x04, 0x00, 0x7a, 0x88, 0xc3, 0xcc, 0xcc,
@@ -2453,6 +2560,39 @@ static const BYTE apple_on12_stub[16] =
 };
 
 #define RELAY12_COUNT(array) (sizeof(array) / sizeof((array)[0]))
+
+static BOOL apple_on12_unsupported(const BYTE *stub)
+{
+    /* GPTK 4.0b3 initializes DXGI before returning the same refusal. Match
+     * every instruction, branch and HRESULT; only RIP-relative addresses vary
+     * with the PE layout. A return code alone cannot identify a safe patch. */
+    static const BYTE initialized_stub[] =
+    {
+        0x48, 0x83, 0xec, 0x28, 0x48, 0x8b, 0x05, 0, 0, 0, 0,
+        0x48, 0x85, 0xc0, 0x75, 0x29, 0x48, 0x8d, 0x0d, 0, 0, 0, 0,
+        0xff, 0x15, 0, 0, 0, 0, 0x48, 0x8d, 0x15, 0, 0, 0, 0,
+        0x48, 0x89, 0xc1, 0xff, 0x15, 0, 0, 0, 0,
+        0x48, 0x89, 0x05, 0, 0, 0, 0, 0x48, 0x85, 0xc0, 0x74, 0x0e,
+        0x48, 0x8d, 0x15, 0, 0, 0, 0, 0x31, 0xc9, 0x45, 0x31, 0xc0,
+        0xff, 0xd0, 0xb8, 0x04, 0x00, 0x7a, 0x88, 0x48, 0x83, 0xc4, 0x28, 0xc3,
+    };
+    static const unsigned int displacements[] = { 7, 19, 25, 32, 41, 48, 60 };
+    unsigned int i, address = 0;
+
+    if (!memcmp(stub, apple_on12_stub, sizeof(apple_on12_stub)))
+        return TRUE;
+    for (i = 0; i < sizeof(initialized_stub); i++)
+    {
+        if (address < RELAY12_COUNT(displacements) && i == displacements[address])
+        {
+            i += 3;
+            address++;
+        }
+        else if (stub[i] != initialized_stub[i])
+            return FALSE;
+    }
+    return TRUE;
+}
 
 /* Whether `name` is one of the ';'- or ','-separated file names in the
  * environment variable `variable`, ignoring case. An unset variable holds
@@ -2540,7 +2680,7 @@ static void route_d3d11on12(void)
         LOG("relay12: d3d11.dll has no D3D11On12CreateDevice (err %lu), not routed\n", GetLastError());
         return;
     }
-    if (memcmp(stub, apple_on12_stub, sizeof(apple_on12_stub)))
+    if (!apple_on12_unsupported(stub))
     {
         LOG("relay12: D3D11On12CreateDevice is not Apple's unsupported stub, left alone\n");
         return;

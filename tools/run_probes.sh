@@ -348,7 +348,10 @@ x86_64-w64-mingw32-clang -O2 -Wall -Werror -o d3d12shim-test/d3d12shim_test.exe 
   tests/d3d12shim.c -luuid -ldxguid
 # For the Relay12 route: Apple's exact D3D11On12CreateDevice stub as
 # d3d11.dll, and a d3d11on12core.dll that proves the call arrived.
-x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -o d3d12shim-test/d3d11.dll \
+x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -o d3d12shim-test/d3d11-legacy.dll \
+  tests/d3d11_on12stub_mock.c tests/d3d11_on12stub_mock.def
+x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -DINITIALIZED_STUB \
+  -o d3d12shim-test/d3d11-initialized.dll \
   tests/d3d11_on12stub_mock.c tests/d3d11_on12stub_mock.def
 x86_64-w64-mingw32-clang -shared -O2 -Wall -Werror -o d3d12shim-test/d3d11on12core.dll \
   tests/d3d11on12core_mock.c tests/d3d11on12core_mock.def
@@ -377,16 +380,19 @@ tr -d '\r' < d3d12shim.log | grep -q '^RESULT: d3d12shim ok$' || {
 # on12-launcher runs the same test as steamwebhelper.exe, one of the
 # launcher processes the route must never touch.
 cp d3d12shim-test/d3d12shim_test.exe d3d12shim-test/steamwebhelper.exe
-for mode in on12-off on12-on on12-foreign on12-listed on12-unlisted on12-skipped on12-launcher; do
-  exe=d3d12shim_test.exe
-  [ "$mode" = on12-launcher ] && exe=steamwebhelper.exe
-  (cd d3d12shim-test && env -u RELAY12_EXPERIMENTAL_FRAME -u RELAY12_EXPERIMENTAL_FRAME_APPS \
-    -u RELAY12_EXPERIMENTAL_FRAME_SKIP WINEDEBUG=-all \
-    WINEDLLOVERRIDES="d3d11,d3d11on12core=n;mscoree,mshtml=d" \
-    ../Libraries/Wine/bin/wine64 "$exe" "$mode") > "d3d12shim-$mode.log" 2>&1 || true
-  tr -d '\r' < "d3d12shim-$mode.log" | grep -E '^\[|^RESULT' | tee -a "$GITHUB_STEP_SUMMARY"
-  tr -d '\r' < "d3d12shim-$mode.log" | grep -q "^RESULT: d3d12shim $mode ok\$" || {
-    echo "::error::the d3d12 interposer's Relay12 route failed its $mode case"
-    exit 1
-  }
+for stub in legacy initialized; do
+  cp "d3d12shim-test/d3d11-$stub.dll" d3d12shim-test/d3d11.dll
+  for mode in on12-off on12-on on12-foreign on12-listed on12-unlisted on12-skipped on12-launcher; do
+    exe=d3d12shim_test.exe
+    [ "$mode" = on12-launcher ] && exe=steamwebhelper.exe
+    (cd d3d12shim-test && env -u RELAY12_EXPERIMENTAL_FRAME -u RELAY12_EXPERIMENTAL_FRAME_APPS \
+      -u RELAY12_EXPERIMENTAL_FRAME_SKIP WINEDEBUG=-all \
+      WINEDLLOVERRIDES="d3d11,d3d11on12core=n;mscoree,mshtml=d" \
+      ../Libraries/Wine/bin/wine64 "$exe" "$mode") > "d3d12shim-$stub-$mode.log" 2>&1 || true
+    tr -d '\r' < "d3d12shim-$stub-$mode.log" | grep -E '^\[|^RESULT' | tee -a "$GITHUB_STEP_SUMMARY"
+    tr -d '\r' < "d3d12shim-$stub-$mode.log" | grep -q "^RESULT: d3d12shim $mode ok\$" || {
+      echo "::error::the d3d12 interposer's Relay12 route failed its $stub $mode case"
+      exit 1
+    }
+  done
 done
