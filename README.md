@@ -1,87 +1,93 @@
-# winecx-gptk
+# winecx-gptk: the Wine runtime integration hub
 
-CI build of a Game Porting Toolkit (GPTK / D3DMetal) capable Wine runtime for the [frankea/Whisky](https://github.com/frankea/Whisky) ecosystem: CodeWeavers' CrossOver 26.3 Wine changes, rebased onto upstream Wine 11.16/11.17, carrying series 4.7 up through **canary 4.7.51**.
+This repository turns independently developed compatibility components into a
+reproducible, relocatable Windows runtime for Whisky on Apple Silicon. It pins
+the inputs, builds Wine, assembles graphics and media payloads, validates the
+combined artifact, and distributes a versioned runtime and consumer catalog.
 
-> [!NOTE]
-> For a comprehensive, detailed breakdown of all features, architecture shifts, and optimizations introduced since this repository was forked from `dappermint`, see the [Evolution & Changes Guide](docs/FORK-CHANGES.md).
+The purpose is to preserve working games and applications while making component
+updates safe to integrate and easy to diagnose. **QA and regression prevention
+take priority over new features, faster builds and performance claims.**
 
-## Why This Runtime Exists
+## Start here
 
-Apple's Game Porting Toolkit / `D3DMetal` payload only executes on CrossOver-derived Wine builds because it patches their internal Unix call dispatch at load time (details in [frankea/Whisky#163](https://github.com/frankea/Whisky/issues/163), client-side loader in [frankea/Whisky#164](https://github.com/frankea/Whisky/pull/164)).
+| Need | Guide |
+| --- | --- |
+| Understand the system and choose where a fix belongs | [Architecture and ownership](docs/architecture.md) |
+| Write, validate, commit and submit a change | [Contributing](CONTRIBUTING.md) |
+| Know what each check proves and when a change is ready | [QA and release readiness](docs/qa.md) |
+| Work as a coding agent | [AGENTS.md](AGENTS.md) and [SKILLS.md](SKILLS.md) |
+| Restore build inputs and iterate locally | [OCI build guide](docs/oci-build-system.md) |
+| Follow component updates through to Whisky | [Cross-repository CI](docs/ci-integration.md) |
 
-The source tree is based on the `wine1116` / `wine1117` branch of [niltonperimneto/winecx](https://github.com/niltonperimneto/winecx): CrossOver 26.3's diff merged onto upstream Wine via synthetic three-way rebasing, with platform patches committed directly in the tree. The workflow pins exact, immutable commits so branch movement cannot silently alter build outputs.
+## How the pieces fit
 
-**What runs on it:** Steam UI end-to-end (Chromium CEF embedded views), D3D12 through D3DMetal at Feature Level 12_2 (binding tier 3, SM 6.6), D3D11 via Relay12 or DXVK/DXMT, msync, and the full Media Foundation / Quartz decoding stack.
+```mermaid
+flowchart LR
+    W[WineCX: Windows compatibility] --> H[Hub: pinned integration and assembly]
+    R[Relay12: D3D11On12] --> H
+    D[DXMT and external graphics payloads] --> H
+    M[Mesa: KosmicKrisp] --> H
+    H --> Q[Artifact and platform validation]
+    Q --> A[Versioned runtime and manifests]
+    A --> K[Whisky: installation, bottles and launch policy]
+```
 
----
+The hub owns the integration boundary. Windows API fixes belong in WineCX,
+D3D11On12 translation in Relay12, Vulkan-to-Metal driver work in Mesa, and
+application UI, bottle settings and backend selection in Whisky. The detailed
+[ownership map](docs/architecture.md) also covers DXMT, hub-owned GPTK shims and
+the experimental ARM64/FEX lane.
 
-## Key Subsystems & Major Advancements
+The normal runtime contains Wine's x86_64 Unix side and i386/x86_64 Windows
+modules, running through Rosetta on Apple Silicon. Graphics routes include
+Apple's imported D3DMetal, DXMT, upstream DXVK through the Khronos loader and KosmicKrisp. These paths have different capabilities and
+validation requirements; support on one does not prove support on another.
 
-### 1. Relay12 D3D11On12 Subsystem
-Direct3D 11 can now execute on top of D3DMetal via [niltonperimneto/relay12](https://github.com/niltonperimneto/relay12). Process-selective routing rules (`RELAY12_EXPERIMENTAL_FRAME`, `RELAY12_EXPERIMENTAL_FRAME_APPS`, `RELAY12_EXPERIMENTAL_FRAME_SKIP`) ensure game binaries route D3D11On12 to D3DMetal while shielding Steam WebHelper and CEF processes from illegal interposition.
+## Sources of truth
 
-### 2. High-Performance GPTK Video & D3D12 Shim
-* **Tight Alignment Reporting**: Resolves resource allocation alignment in [gptk-video/d3d12shim.c](gptk-video/d3d12shim.c), preventing D3DMetal crashes on strict memory boundaries.
-* **Zero-Copy Barriers**: Preserves and passes through barrier batches over 32 elements without copying or latency overhead.
-* **Per-Device YUV Blit PSOs**: Tracks pipeline state objects and color-conversion buffers per `ID3D12Device` in [gptk-video/yuvblit.h](gptk-video/yuvblit.h), eliminating texture leaks across video device recreation.
+| Concern | Source |
+| --- | --- |
+| Wine, toolchain, graphics and payload revisions | [tools/build/pins.env](tools/build/pins.env) |
+| Mesa and Vulkan loader/headers | [runtime/kosmickrisp/pins.env](runtime/kosmickrisp/pins.env) |
+| Build and publication job graph | [build.yml](.github/workflows/build.yml) |
+| Shared static QA | [qa-common.yml](.github/workflows/qa-common.yml) |
+| Saved-artifact validation | [validate.yml](.github/workflows/validate.yml) |
+| Paths consumed by Whisky | [runtime-layout.json](contracts/runtime-layout.json) |
+| Compatible-client canaries | [runtime-catalog-v2.json](runtime-catalog-v2.json) |
+| Legacy-client canaries | [runtime-catalog.json](runtime-catalog.json) |
 
-### 3. Dual Vulkan Tracks: MoltenVK + Experimental KosmicKrisp
-* **Default Stack**: Ships MoltenVK 1.4.2 alongside `dxvk-macOS-async` and DXMT 0.80.
-* **Experimental Track ([docs/kosmickrisp-experimental.md](docs/kosmickrisp-experimental.md))**: Ingests Mesa's KosmicKrisp Vulkan 1.4 driver over Metal via the Khronos Vulkan Loader.
-  - **Rosetta 16 KiB Memory Budget Fix**: Carries [runtime/kosmickrisp/patches/0002-...](runtime/kosmickrisp/patches/0002-util-use-the-host-page-size-for-available-memory-on-.patch) to report true host memory to `VK_EXT_memory_budget`.
-  - **fillModeNonSolid Polygon Emulation**: Maps `VkPolygonMode` to Metal triangle fill modes, enabling stock upstream DXVK 3.1.1 to initialize D3D9 and D3D11 (FL 11_1) devices.
-  - **Geometry Shaders via Poly**: Lowers geometry pipeline stages into NIR compute passes.
+Use these files for current versions. Older plans and test reports describe the
+revisions they tested; they are not release manifests or promises about current
+hardware support. The catalog records published artifacts, not an arbitrary
+local checkout's build result.
 
-### 4. Overhauled Modular Build & OCI Layer Caching
-Replaced the monolithic build workflow with a 4-tier lifecycle pipeline and standalone tools in [tools/](tools/):
-* **Layered OCI Caching ([docs/oci-build-system.md](docs/oci-build-system.md))**: Caches `sysroot` (Nixpkgs x86_64), `tools` (native Wine build tools), `payloads` (DXVK/DXMT/Mono/Gecko), and `driver` (KosmicKrisp Mesa).
-* **Fast Developer Iteration**: Incremental Wine core compilation with `ccache` drops turnaround times from 50+ minutes to **3–5 minutes**.
+## Development and review
 
-### 5. Native ARM64 & FEX Research Lane ([arm64/](arm64/))
-Provides scripts and patches preparing for life after Rosetta 2: native `arm64-apple-darwin` Wine Unix half, FEX-Emu JIT execution, and Apple Silicon virtual address space (low 4GB pagezero) analysis.
+Start on a focused branch, fix the responsible component, add meaningful
+regression coverage, and validate the artifact affected by the change. Keep
+build orchestration in `tools/`; workflows should connect those reusable steps.
+Do not put product runtime logic only in a CI YAML block or edit an ignored
+component checkout and assume the hub will publish that edit.
 
----
+Every change should explain the concrete problem, resulting behavior, ownership
+decision, relevant validation and remaining limits. Every agent-created commit
+must carry the owner's exact sign-off from [AGENTS.md](AGENTS.md). Follow
+[the contribution workflow](CONTRIBUTING.md) and use the
+[PR template](.github/pull_request_template.md) to make the result reviewable.
 
-## Quality Gates & Verification
+## Further documentation
 
-Every runtime build is gated against strict automated validation:
+- [Documentation map](docs/architecture.md#documentation-map): maintained guides
+  versus historical evidence.
+- [KosmicKrisp deployment](docs/kosmickrisp.md),
+  [experimental integration](docs/kosmickrisp-experimental.md),
+  [benchmarks](docs/kosmickrisp-benchmarks.md) and
+  [bounded game investigation](docs/kosmickrisp-investigation.md).
+- [D3D12 interposer testing](docs/DDI-CONCURRENCY-TESTING.md).
+- [Native ARM64/FEX research](arm64/README.md).
+- [Fork evolution](docs/FORK-CHANGES.md) and
+  [recorded OCI CI results](docs/oci-ci-results.md).
 
-* **Relocatability Sweep**: Every Mach-O binary is swept for absolute store references; install names are rewritten to `@loader_path`.
-* **dlopen Closure Validation**: Every bundled dylib is loaded with store paths masked via [tests/dlopenall.c](tests/dlopenall.c).
-* **Window Creation & Media Probes**: Headless probes confirm the runtime can open a hosted Cocoa window and Media Foundation decoders function.
-* **Architecture Integrity**: Verifies non-empty i386 WoW64 slices and stripped PE binaries.
-* **Hardware & GPU Probes**: Synthetic Vulkan compute readbacks ([tests/kosmickrisp_probe.c](tests/kosmickrisp_probe.c)) and recording D3D12 interposer checks ([tests/d3d12shim.c](tests/d3d12shim.c)).
-
----
-
-## Reproducibility & Pins
-
-All inputs are strictly pinned in-tree:
-
-| Input | Pin Location |
-| :--- | :--- |
-| **WineCX Sources** | `WINECX_COMMIT` in [tools/build/pins.env](tools/build/pins.env) |
-| **Nixpkgs x86_64-darwin** | `NIXPKGS_REV` in [tools/build/pins.env](tools/build/pins.env) |
-| **MoltenVK & DXVK** | Version + SHA-256 in [tools/build/pins.env](tools/build/pins.env) |
-| **DXMT Canary** | Commit + Release Tag + SHA-256 in [tools/build/pins.env](tools/build/pins.env) |
-| **Relay12** | Commit + Release Tag + SHA-256 in [tools/build/pins.env](tools/build/pins.env) |
-| **KosmicKrisp & Mesa** | Revisions & patch digests in [runtime/kosmickrisp/pins.env](runtime/kosmickrisp/pins.env) |
-| **Wine-Mono & Gecko** | Verified against WineCX `dlls/appwiz.cpl/addons.c` |
-
----
-
-## Documentation Index
-
-* **Fork Evolution**: [docs/FORK-CHANGES.md](docs/FORK-CHANGES.md)
-* **Build Architecture**:
-  - [Build System Overhaul Plan](docs/build-system-plan.md)
-  - [OCI Layer Caching Guide](docs/oci-build-system.md)
-  - [CI Execution Benchmarks](docs/oci-ci-results.md)
-* **KosmicKrisp & Vulkan**:
-  - [KosmicKrisp Migration Plan](docs/kosmickrisp-plan.md)
-  - [Experimental Driver Architecture](docs/kosmickrisp-experimental.md)
-  - [Performance & Memory Budget Analysis](docs/kosmickrisp-performance.md)
-  - [Validation Results & Hades Testing](docs/kosmickrisp-test-results.md)
-  - [Rosetta Deployment Guide](docs/kosmickrisp.md)
-* **Direct3D & DDI Testing**: [docs/DDI-CONCURRENCY-TESTING.md](docs/DDI-CONCURRENCY-TESTING.md)
-* **Native ARM64 / FEX Track**: [arm64/README.md](arm64/README.md)
+See [runtime layout v2](docs/runtime-layout-v2.md) for the coordinated provider migration,
+bottle rollback and required physical validation before promotion.

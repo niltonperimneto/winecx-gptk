@@ -187,8 +187,8 @@ done
 # without a d3d11 implementation steam paints nothing: wined3d goes
 # through apple's opengl, frozen at 4.1, and ANGLE reports feature
 # level 9_3 against chromium's hard GLES 3.0 requirement
-[ -f Libraries/DXVK/x64/d3d11.dll ] || { echo "::error::no dxvk payload"; exit 1; }
-[ -f Libraries/DXVK/x32/dxgi.dll ] || { echo "::error::no 32-bit dxvk dxgi"; exit 1; }
+[ -f Libraries/DXVK3/x64/d3d11.dll ] || { echo "::error::no dxvk payload"; exit 1; }
+[ -f Libraries/DXVK3/x32/dxgi.dll ] || { echo "::error::no 32-bit dxvk dxgi"; exit 1; }
 [ -f Libraries/Wine/lib/wine/x86_64-unix/winemetal.so ] || {
   echo "::error::no dxmt builtin"; exit 1; }
 [ -d Libraries/Wine/lib/external ] || {

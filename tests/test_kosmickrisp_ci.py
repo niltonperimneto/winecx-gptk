@@ -12,10 +12,18 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime/kosmickrisp"))
 from game import extract_archive, run_game
 from readiness import blockers
-from validate import parse_capabilities, run_probe, verify_manifest
+from validate import dxvk_evidence, parse_capabilities, probe_passed, run_probe, verify_manifest
 
 
 class ValidationTests(unittest.TestCase):
+    def test_negative_probe_requires_clean_failure_not_a_crash(self):
+        message = "Failed to load Vulkan loader: libvulkan.1.dylib"
+        required = ("Failed to load", "libvulkan.1.dylib")
+        self.assertTrue(probe_passed(1, message, required, expected_failure=True))
+        for code in (0, 56, 124, 134, -6, -11):
+            self.assertFalse(probe_passed(code, message, required, expected_failure=True))
+        self.assertFalse(probe_passed(1, "", required, expected_failure=True))
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -64,14 +72,24 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(parsed["fillModeNonSolid"], "0")
         self.assertNotIn("VK_EXT_transform_feedback", parsed["extensions"])
 
+    def test_dxvk_success_requires_the_actual_version_and_driver(self):
+        log = "DXVK: v3.1.1\nDriver : KosmicKrisp\n"
+        self.assertTrue(dxvk_evidence(0, "device passed", log, "device passed", "3.1.1"))
+        self.assertFalse(dxvk_evidence(0, "device passed", log.replace("KosmicKrisp", "MoltenVK"),
+                                       "device passed", "3.1.1"))
+        self.assertFalse(dxvk_evidence(0, "device passed", log, "device passed", "3.2"))
+        self.assertFalse(dxvk_evidence(1, "device passed", log, "device passed", "3.1.1"))
+
     def test_readiness_rejects_missing_evidence(self):
         self.assertTrue(blockers({"schema": 1, "passed": True}))
 
     def test_readiness_rejects_known_missing_features(self):
-        report = {"schema": 1, "passed": True,
+        report = {"schema": 1, "passed": True, "os": "26.1",
                   "checks": {key: {"status": "passed"} for key in
-                             ("macos26", "manifest", "host", "loader-override-negative", "wine-x86_64", "wine-i686")},
+                             ("macos26", "manifest", "host", "loader-override-negative", "loader-override-empty-negative", "loader-missing-negative",
+                              "loader-corrupt-negative", "wine-without-vulkan", "wine-x86_64", "wine-i686")},
                   "migration": {key: {"status": "passed"} for key in ("dxvk", "shader_correctness", "game")}}
+        report["checks"]["platform"] = {"status": "passed", "lane": "macos26"}
         self.assertFalse(blockers(report))
         report["migration"]["dxvk"]["known_missing"] = ["geometryShader"]
         self.assertTrue(blockers(report))
