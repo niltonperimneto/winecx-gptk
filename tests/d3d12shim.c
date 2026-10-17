@@ -96,6 +96,9 @@ static int run_on12(const char *mode, create_device_fn create_device)
     UINT level = 1;
     on12_fn on12;
     HRESULT hr;
+    BYTE original[81];
+    unsigned int stub_size;
+    int initialized;
 
     for (m = 0; m < sizeof(modes) / sizeof(modes[0]) && strcmp(mode, modes[m]); m++) ;
     if (m == sizeof(modes) / sizeof(modes[0]))
@@ -117,7 +120,10 @@ static int run_on12(const char *mode, create_device_fn create_device)
         printf("RESULT: FAIL, the d3d11.dll stub mock did not load\n");
         return 1;
     }
-    CHECK(!memcmp(stub_address(), apple_stub, sizeof(apple_stub)), "the mock's stub is Apple's, byte for byte");
+    initialized = stub_address()[0] == 0x48;
+    stub_size = initialized ? sizeof(original) : sizeof(apple_stub);
+    if (!initialized)
+        CHECK(!memcmp(stub_address(), apple_stub, sizeof(apple_stub)), "the mock's stub is Apple's, byte for byte");
 
     SetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME", requested ? "1" : NULL);
     SetEnvironmentVariableA("RELAY12_EXPERIMENTAL_FRAME_APPS", !strcmp(mode, "on12-listed")
@@ -126,6 +132,7 @@ static int run_on12(const char *mode, create_device_fn create_device)
             !strcmp(mode, "on12-skipped") ? "Some.exe,d3d12shim_test.exe" : NULL);
     if (foreign)
         CHECK(make_foreign(), "the mock's stub is made foreign");
+    memcpy(original, stub_address(), stub_size);
 
     CHECK(create_device(NULL, D3D_FEATURE_LEVEL_11_0, &IID_ID3D12Device, &device) == S_OK && device,
             "D3D12CreateDevice through the shim");
@@ -136,18 +143,18 @@ static int run_on12(const char *mode, create_device_fn create_device)
     {
         CHECK(hr == S_OK && device11 == (void *)(UINT_PTR)0xd3d11012 && context11 == (void *)(UINT_PTR)0xc0de0012
                 && level == 0xb100, "D3D11On12CreateDevice reaches Relay12's core with every argument intact");
-        CHECK(memcmp(stub_address(), apple_stub, sizeof(apple_stub)), "the stub now jumps to the core");
+        CHECK(memcmp(stub_address(), original, stub_size), "the stub now jumps to the core");
     }
     else if (foreign)
     {
-        CHECK(hr == (HRESULT)0x887a0004, "a stub that is not Apple's still answers for itself");
-        CHECK(!memcmp(stub_address(), apple_stub, 6) && stub_address()[6] == 0x90,
+        CHECK(hr == (HRESULT)(initialized ? 0x887a0005 : 0x887a0004), "a stub that is not Apple's still answers for itself");
+        CHECK(!memcmp(stub_address(), original, stub_size),
                 "the interposer left a stub that is not Apple's alone");
     }
     else
     {
         CHECK(hr == (HRESULT)0x887a0004, "a program Relay12 does not apply to still gets the refusal");
-        CHECK(!memcmp(stub_address(), apple_stub, sizeof(apple_stub)),
+        CHECK(!memcmp(stub_address(), original, stub_size),
                 "a program Relay12 does not apply to keeps the stub untouched");
     }
 
@@ -237,6 +244,22 @@ int main(int argc, char **argv)
     }
     CHECK(*(void ***)device != device_vtable(), "the device vtable is swapped for the shim's");
 
+    /* ---- command list and hot-path vtable slots before any video is active ---- */
+    hr = ((ccl_fn)slot(device, 12))(device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, NULL, NULL,
+            &IID_ID3D12GraphicsCommandList, &list);
+    CHECK(hr == S_OK && list, "CreateCommandList through the shim");
+    if (!list)
+    {
+        printf("RESULT: FAIL, no command list\n");
+        return 1;
+    }
+    CHECK(*(void ***)list != list_vtable(), "the command list vtable is swapped for the shim's");
+    CHECK(slot(list, 16) == list_vtable()[16] && slot(list, 26) == list_vtable()[26]
+            && slot(device, 18) == device_vtable()[18]
+            && slot(device, 29) == device_vtable()[29]
+            && slot(device, 38) == device_vtable()[38],
+            "with no video active, hot-path device and command list slots point directly at D3DMetal");
+
     /* ---- tight alignment ---- */
     answer(0);
     tier = 0xffffffff;
@@ -268,17 +291,9 @@ int main(int argc, char **argv)
     CHECK(hr == S_OK && (format.Support1 & D3D12_FORMAT_SUPPORT1_TEXTURE2D)
             && (format.Support1 & D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE),
             "NV12 format support is still claimed");
-
-    /* ---- command list ---- */
-    hr = ((ccl_fn)slot(device, 12))(device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, NULL, NULL,
-            &IID_ID3D12GraphicsCommandList, &list);
-    CHECK(hr == S_OK && list, "CreateCommandList through the shim");
-    if (!list)
-    {
-        printf("RESULT: FAIL, no command list\n");
-        return 1;
-    }
-    CHECK(*(void ***)list != list_vtable(), "the command list vtable is swapped for the shim's");
+    CHECK(slot(list, 26) != list_vtable()[26] && slot(list, 16) == list_vtable()[16]
+            && slot(device, 18) == device_vtable()[18],
+            "claiming NV12 support binds ResourceBarrier while keeping CopyTextureRegion and CreateSRV direct");
 
     /* nothing to translate: the app's own array, untouched */
     for (i = 0; i < 3; i++)
@@ -354,6 +369,8 @@ int main(int argc, char **argv)
             && (chroma = mock_resource(1, &chroma_ref, &chroma_format))
             && luma_format == DXGI_FORMAT_R8_UNORM && chroma_format == DXGI_FORMAT_R8G8_UNORM,
             "an NV12 texture is created as an R8 luma and an R8G8 chroma");
+    CHECK(slot(list, 16) != list_vtable()[16] && slot(device, 18) != device_vtable()[18],
+            "while an NV12 pair is alive, CopyTextureRegion and CreateSRV are hooked");
 
     batch[0] = transition(luma, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     batch[1] = transition(luma, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
@@ -368,6 +385,8 @@ int main(int argc, char **argv)
     destroy_resource(luma);
     mock_resource(1, &chroma_ref, &chroma_format);
     CHECK(chroma_ref == 0, "destroying the luma texture releases the chroma texture");
+    CHECK(slot(list, 16) == list_vtable()[16] && slot(device, 18) == device_vtable()[18],
+            "after the last NV12 texture dies, CopyTextureRegion and CreateSRV point directly at D3DMetal again");
 
     for (i = 0; i < 3; i++)
         batch[i] = transition(resource, D3D12_RESOURCE_STATE_RENDER_TARGET,
