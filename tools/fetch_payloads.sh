@@ -56,31 +56,13 @@ du -sh addons/mono addons/gecko
 # ANGLE feature level 9_3 and a hard "GLES 3.0 > max supported 2.0".
 # dxvk and dxmt are what make steam's ui appear.
 mkdir -p payload
-fetch "https://github.com/Gcenx/DXVK-macOS/releases/download/v$DXVK_VERSION-20230507-repack/dxvk-macOS-async-v$DXVK_VERSION-20230507-repack.tar.gz" \
-      dxvk.tar.gz acd1520ad105d8ef124a09c8e11a259a5dc8bdc565ad18e0e52693f9807b2477
+bash runtime/kosmickrisp/package-dxvk.sh payload/DXVK3
 fetch "https://github.com/$DXMT_REPO/releases/download/$DXMT_RELEASE_TAG/$DXMT_ARTIFACT" \
       dxmt.tar.gz "$DXMT_ARTIFACT_SHA256"
-fetch "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_VERSION/dxvk-$DXVK_VERSION.tar.gz" \
-      dxvk-upstream.tar.gz "$DXVK_UPSTREAM_SHA256"
-tar -xzf dxvk.tar.gz -C payload
-tar -xzf dxvk-upstream.tar.gz -C payload
 tar -xzf dxmt.tar.gz -C payload
 fetch "https://github.com/$RELAY12_REPO/releases/download/$RELAY12_RELEASE_TAG/relay12-$RELAY12_RELEASE_TAG.tar.gz" \
       relay12.tar.gz "$RELAY12_ARTIFACT_SHA256"
 tar -xzf relay12.tar.gz -C payload
 [ -d "payload/relay12-$RELAY12_RELEASE_TAG/x86_64-windows" ] || { echo "relay12 archive layout changed"; exit 1; }
 
-# khronos' own build, not nixpkgs': see the note by MOLTENVK_VERSION.
-# the plain macos tar, not -privateapi -- that variant's extra
-# features are AMD-only and it reaches into unsupported Metal SPI for
-# them, which is not a trade worth making on apple silicon.
-fetch "https://github.com/KhronosGroup/MoltenVK/releases/download/v$MOLTENVK_VERSION/MoltenVK-macos.tar" \
-      moltenvk.tar f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e
-tar -xf moltenvk.tar -C payload MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib
-# ships universal; the rest of Wine/lib and the wine binary itself are
-# x86_64, so thin it to match rather than carry an arm64 slice nothing
-# in this runtime can load
-lipo -thin x86_64 payload/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib \
-     -output payload/libMoltenVK.dylib
-lipo -archs payload/libMoltenVK.dylib
 ls payload

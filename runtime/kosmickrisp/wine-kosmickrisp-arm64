@@ -1,11 +1,7 @@
 #!/bin/bash
-# Run one program on the bundled KosmicKrisp Vulkan driver instead of
-# MoltenVK. The usual wine/wine64 entry points are untouched.
-#
-# CrossOver's win32u (CW HACK 25909) loads CX_LIBVULKAN as the host Vulkan
-# library, but only while CX_ACTIVE_GRAPHICS_BACKEND is "wined3d". That value
-# selects no Direct3D implementation here: DXVK and native Vulkan programs
-# bring their own, so it only unlocks the loader override.
+# Legacy native-ARM64 research launcher; not installed in layout-v2 runtimes.
+# Requires a matching ARM64 loader/driver. Older WineCX needs the wined3d
+# selector to honor CX_LIBVULKAN; this preserves that legacy launch contract.
 set -euo pipefail
 wine_bin=$(cd -- "$(dirname -- "$0")" && pwd -P)
 bundle="$wine_bin/../lib/kosmickrisp"

@@ -25,13 +25,14 @@
 
 #ifdef _WIN32
 #include "kosmickrisp_present.h"
-#include "kosmickrisp_compute.h"
 #endif
+#include "kosmickrisp_compute.h"
+#include "kosmickrisp_geometry.h"
 
 int main(int argc, char **argv)
 {
     PFN_vkGetInstanceProcAddr gipa;
-    int present = 0;
+    int present = 0, device_only = 0;
 #ifdef _WIN32
     present = argc == 2 && !strcmp(argv[1], "--present");
     HMODULE module = LoadLibraryA("vulkan-1.dll");
@@ -40,7 +41,8 @@ int main(int argc, char **argv)
      * a direct FARPROC cast. */
     gipa = (PFN_vkGetInstanceProcAddr)(void (*)(void))GetProcAddress(module, "vkGetInstanceProcAddr");
 #else
-    if (argc != 2) { fprintf(stderr, "usage: %s LOADER_DYLIB\n", argv[0]); return 1; }
+    device_only = argc == 3 && !strcmp(argv[2], "--device-only");
+    if (argc != 2 && !device_only) { fprintf(stderr, "usage: %s LOADER_DYLIB [--device-only]\n", argv[0]); return 1; }
     void *module = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
     if (!module) { fprintf(stderr, "%s\n", dlerror()); return 1; }
     gipa = (PFN_vkGetInstanceProcAddr)dlsym(module, "vkGetInstanceProcAddr");
@@ -130,7 +132,7 @@ int main(int argc, char **argv)
         if (!queues) return 1;
         vkGetPhysicalDeviceQueueFamilyProperties(devices[i], &queue_count, queues);
         uint32_t family = 0;
-        VkQueueFlags required_flags = VK_QUEUE_GRAPHICS_BIT | (present ? VK_QUEUE_COMPUTE_BIT : 0);
+        VkQueueFlags required_flags = VK_QUEUE_GRAPHICS_BIT | (!device_only ? VK_QUEUE_COMPUTE_BIT : 0);
         while (family < queue_count && (queues[family].queueFlags & required_flags) != required_flags) ++family;
         free(queues);
         if (family == queue_count) { fprintf(stderr, "no graphics queue\n"); return 1; }
@@ -144,12 +146,21 @@ int main(int argc, char **argv)
             device_info.enabledExtensionCount = 1;
             device_info.ppEnabledExtensionNames = &swapchain_extension;
         }
+        if (!device_only) {
+            if (!features.features.geometryShader || !features.features.tessellationShader ||
+                !features.features.vertexPipelineStoresAndAtomics || !features.features.fragmentStoresAndAtomics) {
+                fprintf(stderr, "required geometry/tessellation shader features absent\n");
+                return 1;
+            }
+            device_info.pEnabledFeatures = &features.features;
+        }
         VkDevice device;
         CHECK(vkCreateDevice(devices[i], &device_info, NULL, &device));
         PFN_vkDestroyDevice destroy = (PFN_vkDestroyDevice)vkGetDeviceProcAddr(device, "vkDestroyDevice");
         if (!destroy) return 1;
+        if (!device_only && compute_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
+        if (!device_only && geometry_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
 #ifdef _WIN32
-        if (present && compute_readback(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
         if (present && present_frame(gipa, vkGetDeviceProcAddr, instance, devices[i], device, family)) return 1;
 #endif
         destroy(device, NULL);

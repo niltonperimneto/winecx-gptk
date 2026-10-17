@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "description": "Paths under Libraries/ that Whisky relies on. tools/run_probes.sh enforces this on every build and Whisky's RuntimeContractTests enforce it on every published archive; change both sides together.",
   "required": [
     "Wine/bin/wine64",
@@ -8,15 +8,10 @@
     "Wine/lib/wine/x86_64-windows/d3d11on12.dll",
     "Wine/lib/wine/x86_64-windows/d3d11on12host.dll",
     "Wine/lib/wine/x86_64-windows/dxilconv.dll",
-    "DXVK/x64/d3d11.dll",
-    "DXVK/x32/d3d11.dll",
-    "DXVK/x32/dxgi.dll",
     "DXMT/x64",
     "DXMT/x32",
     "WhiskyWineVersion.plist",
-    "RuntimeManifest.json"
-  ],
-  "kosmickrisp": [
+    "RuntimeManifest.json",
     "Wine/bin/wine-kosmickrisp",
     "Wine/bin/wine-kosmickrisp-dxvk",
     "Wine/share/kosmickrisp/dxvk-prefix.py",
@@ -26,6 +21,17 @@
     "DXVK3/x64/d3d11.dll",
     "DXVK3/x64/dxgi.dll",
     "DXVK3/x32/d3d11.dll",
-    "DXVK3/x32/dxgi.dll"
+    "DXVK3/x32/dxgi.dll",
+    "Wine/lib/kosmickrisp/tests/host-probe",
+    "DXVK3/x64/d3d8.dll",
+    "DXVK3/x64/d3d9.dll",
+    "DXVK3/x64/d3d10core.dll",
+    "DXVK3/x32/d3d8.dll",
+    "DXVK3/x32/d3d9.dll",
+    "DXVK3/x32/d3d10core.dll"
+  ],
+  "kosmickrisp": [],
+  "forbidden": [
+    "DXVK"
   ]
 }

@@ -32,13 +32,18 @@ else:
         (wine / "bin/wine64").chmod(0o755)
         (wine / "bin/wineserver").write_text('#!/bin/sh\nexit 0\n')
         (wine / "bin/wineserver").chmod(0o755)
+        (wine / "bin/wine-kosmickrisp").symlink_to("wine64")
+        bundle = wine / "lib/kosmickrisp"
+        bundle.mkdir(parents=True)
+        for name in ("libvulkan.1.dylib", "libvulkan_kosmickrisp.dylib", "kosmickrisp_icd.json"):
+            (bundle / name).touch()
         game = root / "Game with spaces"
         (game / "x64Vk").mkdir(parents=True)
         (game / "Content").mkdir()
         (game / "x64Vk/Hades.exe").touch()
         return ['hades.py', '--wine', str(wine), '--game-dir', str(game),
                 '--prefix', str(root / 'prefix'), '--output', str(root / 'evidence'),
-                '--backend', 'moltenvk']
+                '--backend', 'kosmickrisp']
 
     def test_command_preserves_arguments_and_reports_exit_without_claiming_gameplay(self):
         with tempfile.TemporaryDirectory() as tmp:

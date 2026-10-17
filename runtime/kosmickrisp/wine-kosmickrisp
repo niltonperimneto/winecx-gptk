@@ -1,5 +1,5 @@
 #!/bin/bash
-# Opt in per process. The usual wine/wine64 entry points keep using MoltenVK.
+# Select the bundled provider and isolate driver selection for this process.
 set -euo pipefail
 wine_bin=$(cd -- "$(dirname -- "$0")" && pwd -P)
 bundle="$wine_bin/../lib/kosmickrisp"

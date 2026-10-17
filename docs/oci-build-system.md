@@ -26,8 +26,10 @@ The main workflow uses these independent jobs:
 - `foundation`: restore or build the sysroot/toolchain and native Wine tools.
 - `payloads`: restore or fetch hash-verified Mono, Gecko, MoltenVK, DXVK, DXMT,
   and Relay12. Wine source is checked out to resolve addon versions.
-- `graphics`: call the dedicated KosmicKrisp workflow only when enabled; a
-  disabled invocation succeeds without building a driver.
+- `graphics`: build or restore the independently cached KosmicKrisp layer. The
+  main workflow currently requests it on every build; installation into the
+  runtime remains opt-in. The reusable driver workflow also accepts a disabled
+  invocation.
 - `core`: restore foundation and tools, compile with ccache, and run
   `install-lib` into `staging`.
 - `assemble`: restore core, payloads, and sysroot, assemble `Libraries`, rewrite
@@ -88,11 +90,16 @@ stays in `build.yml` for the existing history-based version counter.
 
 The workflow authenticates to GHCR with `github.token` and grants
 `packages: write` to producer jobs. Packages created previously must grant this
-repository Actions access. Keep `WINECX_DEPLOY_KEY` for the private Wine checkout.
-No registry secret is needed for GHCR in the same repository. This change only
-adds files; it does not create remote packages or change their visibility until
-the workflows run. The workflow currently triggers on pushes and dispatches,
-not on untrusted fork pull requests.
+repository Actions access. Wine source checkout also needs access to the pinned
+repository. No additional registry secret is needed for GHCR access granted to
+this repository's token; package visibility and access remain repository/registry
+settings.
+
+The main workflow triggers on qualifying pushes, pull requests and manual
+dispatches; documentation-only paths are excluded from the full runtime build.
+The shared QA workflow has its own triggers. Fork PRs may not have the credential
+or package-write access needed by the full pipeline. Do not expose privileged
+tokens or run untrusted PR code in a privileged context to work around that.
 
 Dispatch `build.yml` with the existing `opt`, `kosmickrisp`, and `runtime_version`
 inputs. Set `rebuild_all: true` to rebuild cache layers. KosmicKrisp can also be
