@@ -30,13 +30,26 @@ def blockers(report, platform="macos26"):
     return failures
 
 
-if __name__ == "__main__":
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report")
     parser.add_argument("--platform", choices=("macos26", "newer"), default="macos26")
-    args = parser.parse_args()
-    report = json.load(open(args.report))
-    failures = blockers(report, args.platform)
+    args = parser.parse_args(argv)
+    # The physical lane uploads no results when its runner is unprovisioned or
+    # the job dies early; report that as missing evidence, not a traceback.
+    try:
+        with open(args.report) as stream:
+            report = json.load(stream)
+        if not isinstance(report, dict):
+            raise TypeError("report is not a JSON object")
+    except (OSError, TypeError, ValueError) as error:
+        failures = [f"{args.platform}: physical validation results are missing or invalid ({error})"]
+    else:
+        failures = [f"{args.platform}: {failure}" for failure in blockers(report, args.platform)]
     for failure in failures:
         print(f"::error::{failure}")
-    raise SystemExit(bool(failures))
+    return int(bool(failures))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

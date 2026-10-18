@@ -90,7 +90,8 @@ KosmicKrisp device creation passed (no DXVK compatibility claim)
 
 This establishes host enumeration and device creation on physical Metal 4
 hardware. It does not establish DXVK game compatibility or claim hosted GPU
-validation. Configure `MACOS_GPU_RUNNER` with a suitable macOS 26 runner label
-for experimental assembly and GPU gates.
+validation. The single `MACOS_GPU_RUNNER` variable used at the time has since
+been replaced by the per-lane `MACOS_GPU_RUNNER_26` and `MACOS_GPU_RUNNER_NEWER`
+variables described in [KosmicKrisp CI](kosmickrisp-ci.md).
 
 Local Actions syntax linting, ShellCheck, and whitespace checks passed as well.

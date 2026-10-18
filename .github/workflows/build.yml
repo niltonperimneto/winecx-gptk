@@ -319,23 +319,28 @@ jobs:
       matrix:
         include:
           - platform: macos26
-            runner: ${{ vars.MACOS_GPU_RUNNER_26 || 'macos-26' }}
+            gpu_runner: ${{ vars.MACOS_GPU_RUNNER_26 }}
           - platform: newer
-            runner: ${{ vars.MACOS_GPU_RUNNER_NEWER || 'macos-26' }}
-    runs-on: ${{ matrix.runner }}
+            gpu_runner: ${{ vars.MACOS_GPU_RUNNER_NEWER }}
+    # An unprovisioned lane only has to fail the gate below, so it must not
+    # occupy a hosted macOS VM, which cannot provide Metal 4 evidence anyway.
+    runs-on: ${{ matrix.gpu_runner || 'ubuntu-latest' }}
     timeout-minutes: 180
     permissions:
       contents: read
     steps:
+      # Each lane checks only its own label; one configured lane must never
+      # satisfy the other.
+      - name: Require a trusted physical GPU runner
+        env:
+          GPU_RUNNER: ${{ matrix.gpu_runner }}
+          GPU_RUNNER_VARIABLE: ${{ matrix.platform == 'macos26' && 'MACOS_GPU_RUNNER_26' || 'MACOS_GPU_RUNNER_NEWER' }}
+        run: test -n "$GPU_RUNNER" || { echo "::error::Physical Metal 4 GPU runner is not configured for this OS lane; set the $GPU_RUNNER_VARIABLE repository variable"; exit 1; }
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           name: whiskywine-gptk-libraries-kosmickrisp-experimental${{ inputs.opt == 'fast' && '-fast-unoptimised' || '' }}
           path: downloaded
-      - name: Require a trusted physical GPU runner
-        env:
-          GPU_RUNNER: ${{ matrix.platform == 'macos26' && vars.MACOS_GPU_RUNNER_26 || vars.MACOS_GPU_RUNNER_NEWER }}
-        run: test -n "$GPU_RUNNER" || { echo '::error::Physical Metal 4 GPU runner is not configured for this OS lane'; exit 1; }
       - name: verify and unpack in a relocated directory
         run: |
           cd downloaded
@@ -362,7 +367,7 @@ jobs:
             --output "$PWD/kosmickrisp-results" --archive-sha256 "$RUNTIME_ARCHIVE_SHA256"
           python3 runtime/kosmickrisp/promotion.py "$PWD/kosmickrisp-results" --attach
       - name: retain results even when a probe fails
-        if: always()
+        if: always() && matrix.gpu_runner != ''
         uses: actions/upload-artifact@v7
         with:
           name: kosmickrisp-validation-results-${{ matrix.platform }}
@@ -388,10 +393,13 @@ jobs:
           pattern: kosmickrisp-validation-results-*
           path: kosmickrisp-results
       - name: require migration evidence
+        # Report every lane's blockers in one run instead of stopping at the first.
         run: |
-          python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/kosmickrisp-validation-results-macos26/results.json
-          python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/kosmickrisp-validation-results-newer/results.json --platform newer
-          python3 runtime/kosmickrisp/promotion.py kosmickrisp-results
+          status=0
+          python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/kosmickrisp-validation-results-macos26/results.json || status=1
+          python3 runtime/kosmickrisp/readiness.py kosmickrisp-results/kosmickrisp-validation-results-newer/results.json --platform newer || status=1
+          python3 runtime/kosmickrisp/promotion.py kosmickrisp-results || status=1
+          exit "$status"
   consumer-validation:
     name: Whisky / packaged layout v2
     needs: build

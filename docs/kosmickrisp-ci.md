@@ -39,7 +39,9 @@ Old releases, installed bottles and the v1 catalog are preserved.
 Configure `MACOS_GPU_RUNNER_26`, `MACOS_GPU_RUNNER_NEWER`,
 `MACOS_GPU_CAMPAIGN` and `MACOS_GPU_CAMPAIGN_SHA256` for trusted physical
 validation. Missing hosts or licensed fixtures are blockers, not passing smoke
-tests. The checked-in single-game plan is not a provisioned campaign. See
+tests. Each lane checks only its own runner label. An unconfigured lane fails
+its gate on a Linux runner, and the readiness job reports every lane's missing
+evidence. The checked-in single-game plan is not a provisioned campaign. See
 [runtime layout v2](runtime-layout-v2.md) for the full evidence schema and
 [cross-repository CI](ci-integration.md) for pins and dispatches.
 
