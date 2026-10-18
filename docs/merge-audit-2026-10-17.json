@@ -2362,7 +2362,7 @@
         "evidence": "35acf86; restored 19 missing scenarios, 31 scenarios pass against current Mesa candidate."
       }
     },
-    "integrationHead": "49b7be0",
+    "integrationHead": "6ba07f34f1dc7e9eeb09ae1b03f257c2d2bb0f4b",
     "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
     "status": "awaiting-assembled-archive-and-consumer-validation"
   },
@@ -3060,8 +3060,9 @@
     "roadmapFollowup": {
       "head": "23d3487ee6b30ebaa33495c9f5f4c85e4765e337",
       "pullRequest": "https://github.com/niltonperimneto/relay12/pull/29",
-      "status": "awaiting-required-pull-request-checks",
-      "note": "Required workflow now runs on documentation PRs; dispatch checks alone did not satisfy branch policy."
+      "status": "merged",
+      "note": "Fresh pull-request semaphore/ring builds and QA passed after fixing the docs trigger; merged without bypassing branch policy. The fd35bce runtime pin contains all production code; the follow-up changes only documentation and CI.",
+      "mergedMain": "443e9d7550eb7a96d2ec13bf8ec7e3735eac9445"
     }
   },
   "mesa": {
