@@ -1,6 +1,6 @@
 # Cross-repository integration status — 2026-10-17
 
-The merge campaign is not complete. The [initial branch ledger](merge-audit-2026-10-17.json)
+Component source merges are complete. The hub source merge is being finalized separately from release acceptance. The [initial branch ledger](merge-audit-2026-10-17.json)
 records all local/origin branches and their distinct patch-unique commits. Patch
 uniqueness alone does not establish missing behavior: squash merges and later
 implementations require content reconciliation. Original branches and dirty
@@ -14,7 +14,7 @@ worktrees remain preserved; snapshots and raw diffs are local build artifacts.
 | Relay12 | Lazy initialization was already on main at `95c1703`. [PR 28](https://github.com/niltonperimneto/relay12/pull/28) merged the isolated upload-limit research tool as `fd35bce`. Its PR passed both semaphore and ring builds; merged-main CI passed; [PR 29](https://github.com/niltonperimneto/relay12/pull/29) merged roadmap navigation and the required-workflow docs-trigger fix as `443e9d7`, after fresh PR builds passed. That follow-up changes only docs and CI; `fd35bce` contains all production runtime code. |
 | Whisky | [PR 12](https://github.com/niltonperimneto/Whisky/pull/12) integrates layout-v2 switching, retains PEAK routing, fixes an existing installed-Steam interface recognizer failure, and resolves formatting/lint failures. All required PR CI passed, including UI tests; merged as `6bac60ee`; the consumer pin targets that merged revision. Full merged-main CI also passed, including app builds and UI tests. |
 | Mesa | [PR 5](https://github.com/niltonperimneto/mesa/pull/5) ports the transform-feedback series as isolated research. Default GPL/shader-object capability coverage is preserved; capture is not enabled in production. All required PR checks passed; merged as `92b0a6e0`. |
-| Hub | Integration branch carries layout v2, protected catalog credentials, the GPTK 4 stub/idle-video changes already on main, merged Wine pin, verified Relay12 `fd35bce` artifact pin, merged Mesa and Whisky pins, the missing ARM64 i386 recipe change, and the expanded Metal-cache harness. |
+| Hub | Integration branch carries layout v2, protected catalog credentials, the GPTK 4 stub/idle-video changes already on main, merged Wine pin, verified Relay12 `443e9d7` artifact pin, merged Mesa and Whisky pins, the missing ARM64 i386 recipe change, and the expanded Metal-cache harness. |
 
 ## Historical-change reconciliation
 
@@ -66,10 +66,18 @@ as a new merge.
   unmet; focused readbacks do not establish full DXVK compatibility.
 
 Final component pins now target merged Wine `c4fb531c`, Mesa `92b0a6e0`,
-Relay12 artifact `fd35bce` (archive SHA-256 verified), and Whisky `6bac60ee`.
-Before final merge/promotion, validate the exact assembled archive and complete
-consumer suite. Physical macOS 26 and newer Metal 4 game/performance campaigns
+Relay12 artifact `443e9d7` (archive SHA-256 verified), and Whisky `6bac60ee`.
+Build, exact assembled-archive validation, and the complete Whisky consumer suite
+passed at `bd3b2c7` in run `39083622371`. The main reconciliation retains the newer
+Relay12 artifact already on main and requires a fresh validation run. Source
+integration may merge after those checks pass; physical acceptance remains a
+publication requirement. Physical macOS 26 and newer Metal 4 game/performance campaigns
 remain required. No runner/campaign variables were configured during inspection.
 Keep `WHISKY_LAYOUT_V2_AVAILABLE` disabled until a compatible client has shipped
 and all existing promotion gates pass. No release-readiness or PEAK memory-savings
 claim follows from these component results.
+
+The graphics cross-build explicitly selects the Xcode SDK and uses private
+Clang wrappers to bypass Homebrew defaults that otherwise force the CLT SDK.
+This resolves the hosted Xcode 26.6 / CLT 27 stub mismatch without changing
+global compiler settings.

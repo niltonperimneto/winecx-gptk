@@ -2364,7 +2364,9 @@
     },
     "integrationHead": "6ba07f34f1dc7e9eeb09ae1b03f257c2d2bb0f4b",
     "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
-    "status": "awaiting-assembled-archive-and-consumer-validation"
+    "status": "source-merge-pending-final-reconciliation-checks; release-remains-gated",
+    "validatedHead": "bd3b2c721a0c113740afb7465af69972368b8071",
+    "validatedRun": 39083622371
   },
   "relay12": {
     "main": "95c17031173baf02649103a6a9c848ca460a7f44",
