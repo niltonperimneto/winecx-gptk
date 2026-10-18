@@ -22,6 +22,11 @@ fi
 work=$(cd "$work" && pwd -P)
 output=$(cd "$output" && pwd -P)
 export MACOSX_DEPLOYMENT_TARGET=26.0
+# Homebrew Clang otherwise finds the CLT SDK even when xcrun selects a different
+# Xcode linker. Older linkers cannot read newer SDK text-based stubs. Meson's
+# cross compiler also inherits SDKROOT, keeping its configure probes consistent.
+SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
+export SDKROOT
 python3 -c 'import sys; assert sys.version_info >= (3, 10), "Mesa requires Python >= 3.10; activate the build venv first"'
 
 checkout() {
@@ -79,9 +84,11 @@ checkout https://github.com/KhronosGroup/Vulkan-Headers.git "$VULKAN_HEADERS_COM
 
 cmake -S "$recipe" -B "$driver_build" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$arch" \
+    -DCMAKE_OSX_SYSROOT="$SDKROOT" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0
 cmake --build "$driver_build" --parallel "$(sysctl -n hw.ncpu)"
 cmake -S "$work/headers" -B "$work/headers-build" \
+    -DCMAKE_OSX_SYSROOT="$SDKROOT" \
     -DCMAKE_INSTALL_PREFIX="$work/headers-install"
 cmake --install "$work/headers-build"
 # On an Apple Silicon host the x86_64 loader is a cross build: setting only
@@ -92,6 +99,7 @@ if [ "$arch" = x86_64 ]; then
 fi
 cmake --fresh -S "$work/loader" -B "$loader_build" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="$arch" \
+    -DCMAKE_OSX_SYSROOT="$SDKROOT" \
     ${loader_cross[@]+"${loader_cross[@]}"} \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 -DBUILD_TESTS=OFF \
     -DCMAKE_PREFIX_PATH="$work/headers-install" \
