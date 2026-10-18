@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "description": "Paths under Libraries/ that Whisky relies on. tools/run_probes.sh enforces this on every build and Whisky's RuntimeContractTests enforce it on every published archive; change both sides together.",
+  "required": [
+    "Wine/bin/wine64",
+    "Wine/bin/wineserver",
+    "Wine/lib/wine/x86_64-windows/d3d11on12core.dll",
+    "Wine/lib/wine/x86_64-windows/d3d11on12.dll",
+    "Wine/lib/wine/x86_64-windows/d3d11on12host.dll",
+    "Wine/lib/wine/x86_64-windows/dxilconv.dll",
+    "DXVK/x64/d3d11.dll",
+    "DXVK/x32/d3d11.dll",
+    "DXVK/x32/dxgi.dll",
+    "DXMT/x64",
+    "DXMT/x32",
+    "WhiskyWineVersion.plist",
+    "RuntimeManifest.json"
+  ],
+  "kosmickrisp": [
+    "Wine/bin/wine-kosmickrisp",
+    "Wine/bin/wine-kosmickrisp-dxvk",
+    "Wine/share/kosmickrisp/dxvk-prefix.py",
+    "Wine/lib/kosmickrisp/libvulkan.1.dylib",
+    "Wine/lib/kosmickrisp/libvulkan_kosmickrisp.dylib",
+    "Wine/lib/kosmickrisp/kosmickrisp_icd.json",
+    "DXVK3/x64/d3d11.dll",
+    "DXVK3/x64/dxgi.dll",
+    "DXVK3/x32/d3d11.dll",
+    "DXVK3/x32/dxgi.dll"
+  ]
+}
