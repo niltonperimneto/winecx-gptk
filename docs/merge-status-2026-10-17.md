@@ -12,9 +12,9 @@ worktrees remain preserved; snapshots and raw diffs are local build artifacts.
 | --- | --- |
 | WineCX | [PR 6](https://github.com/niltonperimneto/winecx/pull/6), merged as `c4fb531c`: bundled loader, empty override rejection, bounded diagnostics; current Steam startup guards preserved. PR and merged-main CI passed. |
 | Relay12 | Lazy initialization was already on main at `95c1703`. [PR 28](https://github.com/niltonperimneto/relay12/pull/28) merged the isolated upload-limit research tool as `fd35bce`. Its PR passed both semaphore and ring builds; merged-main CI passed; the roadmap-only follow-up still awaits its manually dispatched required checks. |
-| Whisky | [PR 12](https://github.com/niltonperimneto/Whisky/pull/12) integrates layout-v2 switching, retains PEAK routing, fixes an existing installed-Steam interface recognizer failure, and resolves formatting/lint failures. All required PR CI passed, including UI tests; main merge/pin is being finalized. |
-| Mesa | [PR 5](https://github.com/niltonperimneto/mesa/pull/5) ports the transform-feedback series as isolated research. Default GPL/shader-object capability coverage is preserved; capture is not enabled in production. Required CI remains pending. |
-| Hub | Integration branch carries layout v2, protected catalog credentials, the GPTK 4 stub/idle-video changes already on main, merged Wine pin, Relay12 lazy-init artifact pin, the missing ARM64 i386 recipe change, and the expanded Metal-cache harness. |
+| Whisky | [PR 12](https://github.com/niltonperimneto/Whisky/pull/12) integrates layout-v2 switching, retains PEAK routing, fixes an existing installed-Steam interface recognizer failure, and resolves formatting/lint failures. All required PR CI passed, including UI tests; merged as `6bac60ee`; the consumer pin now targets that merged revision. |
+| Mesa | [PR 5](https://github.com/niltonperimneto/mesa/pull/5) ports the transform-feedback series as isolated research. Default GPL/shader-object capability coverage is preserved; capture is not enabled in production. All required PR checks passed; merged as `92b0a6e0`. |
+| Hub | Integration branch carries layout v2, protected catalog credentials, the GPTK 4 stub/idle-video changes already on main, merged Wine pin, verified Relay12 `fd35bce` artifact pin, merged Mesa and Whisky pins, the missing ARM64 i386 recipe change, and the expanded Metal-cache harness. |
 
 ## Historical-change reconciliation
 
@@ -63,8 +63,9 @@ as a new merge.
   compute, geometry, adjacency, and tessellation GPU readbacks also pass. Earlier
   ungated GPL capture stalled and is not a successful result.
 
-Before final merge/promotion, update pins to the final merged Mesa, Relay12
-artifact, and Whisky revisions; validate the exact assembled archive and complete
+Final component pins now target merged Wine `c4fb531c`, Mesa `92b0a6e0`,
+Relay12 artifact `fd35bce` (archive SHA-256 verified), and Whisky `6bac60ee`.
+Before final merge/promotion, validate the exact assembled archive and complete
 consumer suite. Physical macOS 26 and newer Metal 4 game/performance campaigns
 remain required. No runner/campaign variables were configured during inspection.
 Keep `WHISKY_LAYOUT_V2_AVAILABLE` disabled until a compatible client has shipped
