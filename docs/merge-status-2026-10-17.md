@@ -11,7 +11,7 @@ worktrees remain preserved; snapshots and raw diffs are local build artifacts.
 | Repository | Result |
 | --- | --- |
 | WineCX | [PR 6](https://github.com/niltonperimneto/winecx/pull/6), merged as `c4fb531c`: bundled loader, empty override rejection, bounded diagnostics; current Steam startup guards preserved. PR and merged-main CI passed. |
-| Relay12 | Lazy initialization was already on main at `95c1703`. [PR 28](https://github.com/niltonperimneto/relay12/pull/28) merged the isolated upload-limit research tool as `fd35bce`. Its PR passed both semaphore and ring builds; merged-main CI passed; the roadmap-only follow-up still awaits its manually dispatched required checks. |
+| Relay12 | Lazy initialization was already on main at `95c1703`. [PR 28](https://github.com/niltonperimneto/relay12/pull/28) merged the isolated upload-limit research tool as `fd35bce`. Its PR passed both semaphore and ring builds; merged-main CI passed; the roadmap follow-up fixes a required-workflow docs filter and awaits fresh PR checks. Dispatch builds passed but did not satisfy the PR policy. |
 | Whisky | [PR 12](https://github.com/niltonperimneto/Whisky/pull/12) integrates layout-v2 switching, retains PEAK routing, fixes an existing installed-Steam interface recognizer failure, and resolves formatting/lint failures. All required PR CI passed, including UI tests; merged as `6bac60ee`; the consumer pin now targets that merged revision. |
 | Mesa | [PR 5](https://github.com/niltonperimneto/mesa/pull/5) ports the transform-feedback series as isolated research. Default GPL/shader-object capability coverage is preserved; capture is not enabled in production. All required PR checks passed; merged as `92b0a6e0`. |
 | Hub | Integration branch carries layout v2, protected catalog credentials, the GPTK 4 stub/idle-video changes already on main, merged Wine pin, verified Relay12 `fd35bce` artifact pin, merged Mesa and Whisky pins, the missing ARM64 i386 recipe change, and the expanded Metal-cache harness. |
@@ -49,7 +49,7 @@ as a new merge.
 
 ## Validation and remaining gates
 
-- Hub integration: 366 Python tests pass, four skips; rerun after final pins.
+- Hub integration: 366 Python tests pass, four skips, including a rerun with final component pins.
 - Restored cache harness: 31 scenarios pass against the native Mesa candidate.
 - Relay12 research: all 200 Python tests pass. Fully prepared production source
   passes the port gate; the copied zero-limit variant fails that gate as intended.

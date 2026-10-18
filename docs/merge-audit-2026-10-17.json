@@ -225,7 +225,9 @@
       }
     },
     "integrationHead": "a15004de50b363af62bc804cf6a17152eed02982",
-    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict."
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "mergedMain": "c4fb531cdb9bf197a638028f594ed95369e1dc43",
+    "mergedPullRequest": "https://github.com/niltonperimneto/winecx/pull/6"
   },
   "winecx-gptk": {
     "main": "0cd8ab9c8bddc4817bb767fce458d6aa9103316f",
@@ -2360,8 +2362,9 @@
         "evidence": "35acf86; restored 19 missing scenarios, 31 scenarios pass against current Mesa candidate."
       }
     },
-    "integrationHead": "e920d5a615f3909166330b0334af2d3c711d5ca7",
-    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict."
+    "integrationHead": "49b7be0",
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "status": "awaiting-assembled-archive-and-consumer-validation"
   },
   "relay12": {
     "main": "95c17031173baf02649103a6a9c848ca460a7f44",
@@ -3051,7 +3054,15 @@
       }
     },
     "integrationHead": "b9f1158b17b6afba2dce8df98a292793979ca9e7",
-    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict."
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "mergedMain": "fd35bce752b5a96e950227cc1bc9edfc563ea1a1",
+    "mergedPullRequest": "https://github.com/niltonperimneto/relay12/pull/28",
+    "roadmapFollowup": {
+      "head": "23d3487ee6b30ebaa33495c9f5f4c85e4765e337",
+      "pullRequest": "https://github.com/niltonperimneto/relay12/pull/29",
+      "status": "awaiting-required-pull-request-checks",
+      "note": "Required workflow now runs on documentation PRs; dispatch checks alone did not satisfy branch policy."
+    }
   },
   "mesa": {
     "main": "ecfbdf2ab6e0ff1787f6073e2ef77c1f37a82f28",
@@ -3500,7 +3511,7 @@
         "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       }
     },
-    "integrationHead": "ebb106b9dfb8b426e92b9f539a1094e2346cbb71",
+    "integrationHead": "8b26e0f1dc24ba67f306109309d251d8c1171f1a",
     "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
     "worktrees": [
       {
@@ -3539,7 +3550,9 @@
         "disposition": "reconciled-with-current-driver",
         "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
       }
-    ]
+    ],
+    "mergedMain": "92b0a6e0f5ab4c0ef1e490992879eeef7e3f420f",
+    "mergedPullRequest": "https://github.com/niltonperimneto/mesa/pull/5"
   },
   "Whisky": {
     "main": "045f12636fd892f441c7c612df064dd2df9bce04",
@@ -3639,6 +3652,8 @@
       }
     },
     "integrationHead": "19a02714995faacac1b5a8b5edc55599506edd72",
-    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict."
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "mergedMain": "6bac60ee6ab1729af4ffc2975d196cca50e7e0f3",
+    "mergedPullRequest": "https://github.com/niltonperimneto/Whisky/pull/12"
   }
 }
