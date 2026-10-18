@@ -17,8 +17,3 @@ for p in "$PWD"/patches/*.patch; do
   echo "applying $(basename "$p")"
   git -C winecx apply --verbose "$p"
 done
-
-if [ "${KOSMICKRISP_ENABLED:-false}" = true ]; then
-    git -C winecx apply --check ../runtime/kosmickrisp/wine-loader.patch
-    git -C winecx apply ../runtime/kosmickrisp/wine-loader.patch
-fi

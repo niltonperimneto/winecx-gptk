@@ -23,7 +23,7 @@ if [ -f "$GITHUB_PATH" ]; then
     while IFS= read -r directory; do export PATH="$directory:$PATH"; done < "$GITHUB_PATH"
 fi
 export OPT_LEVEL=${OPT_LEVEL:-standard}
-export KOSMICKRISP_ENABLED=${KOSMICKRISP_ENABLED:-false}
+export KOSMICKRISP_ENABLED=true
 export RUNTIME_SERIES=${RUNTIME_SERIES:-4.8}
 export CCACHE_DIR=${CCACHE_DIR:-$HOME/.ccache}
 export CCACHE_MAXSIZE=4G CCACHE_COMPILERCHECK=content

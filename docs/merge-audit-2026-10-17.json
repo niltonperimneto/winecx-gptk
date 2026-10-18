@@ -1,0 +1,3662 @@
+{
+  "winecx": {
+    "main": "6ddd639fcba9e895f888ebab2bbfd5183068c572",
+    "branches": {
+      "ci/compile-check": {
+        "tip": "db1a5720fae6907d98b3f1b1d8441000b431070f",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "ci/shared-qa": {
+        "tip": "9d495ff73fc9731763cfa22ec4a8611320586796",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "feat/game-mode": {
+        "tip": "6e7b947bea5d1b3af128d335b465e8f1cbeed886",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "feat/kosmickrisp-only-runtime": {
+        "tip": "4d8838776d93a4998c544c299ef7d91a2fad6cb8",
+        "patch_equivalent": 0,
+        "unique": [
+          "24e94e4daa87ca987f9540c95a6072bb4e49c7fa",
+          "4d8838776d93a4998c544c299ef7d91a2fad6cb8"
+        ]
+      },
+      "feat/kosmickrisp-runtime-loader": {
+        "tip": "feda99e3831bc4cdf37a8d57a01d319b7acd5920",
+        "patch_equivalent": 0,
+        "unique": [
+          "8d55450325fbb957163a4ddfe22a6d8dbbd3c71c",
+          "df6e7fe2819257706a321720e71c70ae2b195f5b",
+          "feda99e3831bc4cdf37a8d57a01d319b7acd5920"
+        ]
+      },
+      "main": {
+        "tip": "f70ef290f7e5dfc4462aed03f593229be737c59c",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "wine/11.19": {
+        "tip": "80b10943e0c1d78c7f7fd59f4a7fa1cefd7c4b8a",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin": {
+        "tip": "6ddd639fcba9e895f888ebab2bbfd5183068c572",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/ci/compile-check": {
+        "tip": "db1a5720fae6907d98b3f1b1d8441000b431070f",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/ci/shared-qa": {
+        "tip": "9d495ff73fc9731763cfa22ec4a8611320586796",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "origin/feat/game-mode": {
+        "tip": "6e7b947bea5d1b3af128d335b465e8f1cbeed886",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/feat/kosmickrisp-only-runtime": {
+        "tip": "4d8838776d93a4998c544c299ef7d91a2fad6cb8",
+        "patch_equivalent": 0,
+        "unique": [
+          "24e94e4daa87ca987f9540c95a6072bb4e49c7fa",
+          "4d8838776d93a4998c544c299ef7d91a2fad6cb8"
+        ]
+      },
+      "origin/feat/kosmickrisp-runtime-loader": {
+        "tip": "feda99e3831bc4cdf37a8d57a01d319b7acd5920",
+        "patch_equivalent": 0,
+        "unique": [
+          "8d55450325fbb957163a4ddfe22a6d8dbbd3c71c",
+          "df6e7fe2819257706a321720e71c70ae2b195f5b",
+          "feda99e3831bc4cdf37a8d57a01d319b7acd5920"
+        ]
+      },
+      "origin/fix/steam-headless-wine1116": {
+        "tip": "905d881468fe96db8e3080a6ed61375821ffbbd6",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "origin/integrate/all-outstanding-20261017": {
+        "tip": "a15004de50b363af62bc804cf6a17152eed02982",
+        "patch_equivalent": 0,
+        "unique": [
+          "86a78fb979ee09a2e5f65a4e84f47428527b0808",
+          "a377c575d6ddbd00873b96faae2eb1fa27d001b2",
+          "a15004de50b363af62bc804cf6a17152eed02982"
+        ]
+      },
+      "origin/main": {
+        "tip": "6ddd639fcba9e895f888ebab2bbfd5183068c572",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/upstream-11.18": {
+        "tip": "a83741ea4ecbc5fa858fa6d4ebc60d8ec24b4dd0",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/wine/11.19": {
+        "tip": "80b10943e0c1d78c7f7fd59f4a7fa1cefd7c4b8a",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/wine1116": {
+        "tip": "e1b410a5fdd96a32722a5f2617b5068bd385b7db",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/wine1117": {
+        "tip": "ea9cb3a1116c1381696b318444bd4420df7f7813",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/wine1118": {
+        "tip": "881b4b56aa970823c630ed9bf2e57dd47f40df97",
+        "patch_equivalent": 0,
+        "unique": []
+      }
+    },
+    "commits": {
+      "24e94e4daa87ca987f9540c95a6072bb4e49c7fa": {
+        "subject": "win32u: use the bundled Khronos loader without MoltenVK fallback",
+        "paths": [
+          "configure",
+          "configure.ac",
+          "dlls/win32u/vulkan.c"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "origin/feat/kosmickrisp-only-runtime"
+        ],
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
+      },
+      "4d8838776d93a4998c544c299ef7d91a2fad6cb8": {
+        "subject": "win32u: reject empty explicit Vulkan loader overrides",
+        "paths": [
+          "dlls/win32u/vulkan.c"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "origin/feat/kosmickrisp-only-runtime"
+        ],
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
+      },
+      "8d55450325fbb957163a4ddfe22a6d8dbbd3c71c": {
+        "subject": "win32u: use the bundled Khronos loader without MoltenVK fallback",
+        "paths": [
+          "configure",
+          "configure.ac",
+          "dlls/win32u/vulkan.c"
+        ],
+        "refs": [
+          "feat/kosmickrisp-runtime-loader",
+          "origin/feat/kosmickrisp-runtime-loader"
+        ],
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
+      },
+      "df6e7fe2819257706a321720e71c70ae2b195f5b": {
+        "subject": "win32u: reject empty explicit Vulkan loader overrides",
+        "paths": [
+          "dlls/win32u/vulkan.c"
+        ],
+        "refs": [
+          "feat/kosmickrisp-runtime-loader",
+          "origin/feat/kosmickrisp-runtime-loader"
+        ],
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
+      },
+      "feda99e3831bc4cdf37a8d57a01d319b7acd5920": {
+        "subject": "win32u: Log long Vulkan loader errors without overflowing the debug buffer",
+        "paths": [
+          "dlls/win32u/vulkan.c"
+        ],
+        "refs": [
+          "feat/kosmickrisp-runtime-loader",
+          "origin/feat/kosmickrisp-runtime-loader"
+        ],
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
+      },
+      "86a78fb979ee09a2e5f65a4e84f47428527b0808": {
+        "subject": "win32u: use the bundled Khronos loader without MoltenVK fallback",
+        "paths": [
+          "configure",
+          "configure.ac",
+          "dlls/win32u/vulkan.c"
+        ],
+        "refs": [
+          "origin/integrate/all-outstanding-20261017"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "a377c575d6ddbd00873b96faae2eb1fa27d001b2": {
+        "subject": "win32u: reject empty explicit Vulkan loader overrides",
+        "paths": [
+          "dlls/win32u/vulkan.c"
+        ],
+        "refs": [
+          "origin/integrate/all-outstanding-20261017"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "a15004de50b363af62bc804cf6a17152eed02982": {
+        "subject": "win32u: Log long Vulkan loader errors without overflowing the debug buffer",
+        "paths": [
+          "dlls/win32u/vulkan.c"
+        ],
+        "refs": [
+          "origin/integrate/all-outstanding-20261017"
+        ],
+        "disposition": "included-in-integration-history"
+      }
+    },
+    "integrationHead": "a15004de50b363af62bc804cf6a17152eed02982",
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "mergedMain": "c4fb531cdb9bf197a638028f594ed95369e1dc43",
+    "mergedPullRequest": "https://github.com/niltonperimneto/winecx/pull/6"
+  },
+  "winecx-gptk": {
+    "main": "0cd8ab9c8bddc4817bb767fce458d6aa9103316f",
+    "branches": {
+      "backup/kosmickrisp-before-ci-rebase-20261014": {
+        "tip": "4348f5095b6fe3510c6c73dbeb9c07f4f040b20a",
+        "patch_equivalent": 130,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "93d1c74d22eebac36c9e98bd8621b85f64ea6633",
+          "dad361ad7fe7744d36c4e8378d55c507dc58789c",
+          "bc0154cd7126049a0142dbe100220ebac9c3ebfd",
+          "4348f5095b6fe3510c6c73dbeb9c07f4f040b20a"
+        ]
+      },
+      "backup/local-main-dad1f3d": {
+        "tip": "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d",
+        "patch_equivalent": 0,
+        "unique": [
+          "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d"
+        ]
+      },
+      "bump/relay12-349af72": {
+        "tip": "966447e5b2e262ce186b91bad4d38b88f5dcb14a",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "bump/winecx-relay12-f70ef29-a269405": {
+        "tip": "a4d41d5b23caa5835c4102865b575894ea803a38",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "ci/publish-catalog-as-admin": {
+        "tip": "2de2def07de2af5bdf4bbd1be46c11942e54ea1d",
+        "patch_equivalent": 0,
+        "unique": [
+          "73121e932af133af111638b296d0a93a4edf6612",
+          "2de2def07de2af5bdf4bbd1be46c11942e54ea1d"
+        ]
+      },
+      "ci/qa-whitespace-input": {
+        "tip": "1680bfcaab7eed7ef708d82b14d3f50bd518691e",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "docs/hub-contributor-guide": {
+        "tip": "813583779edd0f5363c332795a4408e3651df3f5",
+        "patch_equivalent": 0,
+        "unique": [
+          "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d",
+          "8099c5e7d2c2f353c0cdf02d11507b10c1ff9496",
+          "a84e8349c2796442edf6463957ed29e507dcff04",
+          "813583779edd0f5363c332795a4408e3651df3f5"
+        ]
+      },
+      "feat/kosmickrisp-experimental": {
+        "tip": "9c9c582f2e6cc2ed54a9f4dc05151c476752b36c",
+        "patch_equivalent": 0,
+        "unique": [
+          "9c9c582f2e6cc2ed54a9f4dc05151c476752b36c"
+        ]
+      },
+      "feat/kosmickrisp-only-runtime": {
+        "tip": "7304d9b4275a0ca6ee98de602ef62f4d28762195",
+        "patch_equivalent": 0,
+        "unique": [
+          "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d",
+          "8099c5e7d2c2f353c0cdf02d11507b10c1ff9496",
+          "a84e8349c2796442edf6463957ed29e507dcff04",
+          "813583779edd0f5363c332795a4408e3651df3f5",
+          "c5673640a924b737e726b8633502bcf7e1044d2b",
+          "16826effb36654218d093da121fe9a090dd72a7d",
+          "b2c5d6a2b1a9ec2bd6789edaf43839653cdbb2b6",
+          "676678349d0daa9e400e89e597ffb86aefcd6597",
+          "7b83acb33e025ee190308328a6b294998c749eae",
+          "38e4e2c163777934618f9670c5ad4bff6df713fb",
+          "bcc8e5c6c8149505fd1f537050f062241349a293",
+          "2e103c686c15080a809d0217834d7607ae44292f",
+          "ee2a57aaf0042bc81f27f40017604b2ad19e31e3",
+          "05d3d74300275dd55b09b5872681037e19002242",
+          "edd307845077df4047f00a52d2bd9177c056e39b",
+          "3b9a06b89daff527ea90a485d50fcdb2cc738dd3",
+          "7304d9b4275a0ca6ee98de602ef62f4d28762195"
+        ]
+      },
+      "feat/ship-kosmickrisp": {
+        "tip": "9c651e5b17bcd302ba5eb860beaecf134e3020a7",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "fix/relay12-gptk4-on12-stub": {
+        "tip": "07209a877f0b3df1ec59ec87fd3a8ee1dcc0a395",
+        "patch_equivalent": 1,
+        "unique": [
+          "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d",
+          "8099c5e7d2c2f353c0cdf02d11507b10c1ff9496",
+          "a84e8349c2796442edf6463957ed29e507dcff04",
+          "813583779edd0f5363c332795a4408e3651df3f5",
+          "c5673640a924b737e726b8633502bcf7e1044d2b",
+          "16826effb36654218d093da121fe9a090dd72a7d",
+          "b2c5d6a2b1a9ec2bd6789edaf43839653cdbb2b6",
+          "676678349d0daa9e400e89e597ffb86aefcd6597",
+          "7b83acb33e025ee190308328a6b294998c749eae",
+          "38e4e2c163777934618f9670c5ad4bff6df713fb",
+          "bcc8e5c6c8149505fd1f537050f062241349a293",
+          "2e103c686c15080a809d0217834d7607ae44292f",
+          "ee2a57aaf0042bc81f27f40017604b2ad19e31e3",
+          "05d3d74300275dd55b09b5872681037e19002242",
+          "edd307845077df4047f00a52d2bd9177c056e39b",
+          "3b9a06b89daff527ea90a485d50fcdb2cc738dd3",
+          "7304d9b4275a0ca6ee98de602ef62f4d28762195"
+        ]
+      },
+      "kk/06-budget": {
+        "tip": "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2"
+        ]
+      },
+      "kk/07-arm64": {
+        "tip": "82c361e63d2b6c61bbb54abad6c90aacdf20a78e",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "371ab641c685a52e33edcb5e03147df1e7e6a670",
+          "0b23eb0fdb66615e6c5aaebdafbfd6ee0693eb59",
+          "4ce59a489a2038cf8f1ab1690127ac1d77b57015",
+          "a9c822076f996620a92aa4c8f662d140c4a9bfce",
+          "1297731db8a0b03679a7c6c64dec4a3c7cbeb0e7",
+          "31de189611f0368ad578914458cf062abb7f1c7c",
+          "a215e6f927cdb7ede082f6683abd132138b71c97",
+          "abb8f8f3c61218c769778e8cfec65f44ff756fdb",
+          "71b7f7187cb37b6f761593b7fe398e0fe9ad9915",
+          "d09782ba250bb6e94a05d993b4e3ff5a1f18087f",
+          "82c361e63d2b6c61bbb54abad6c90aacdf20a78e"
+        ]
+      },
+      "kk/08-rosetta": {
+        "tip": "05c07f8860b2ce02c7adbe7e5a02fd978b33ef4f",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "05c07f8860b2ce02c7adbe7e5a02fd978b33ef4f"
+        ]
+      },
+      "kk/09-rosetta-shader-cache": {
+        "tip": "ef0e143c983e93f8fb91264748aec028a67c56f5",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "05c07f8860b2ce02c7adbe7e5a02fd978b33ef4f",
+          "ef0e143c983e93f8fb91264748aec028a67c56f5"
+        ]
+      },
+      "kk/bounded-gameplay-investigation": {
+        "tip": "d26473dad968a3c8009015497dc5a19dfd2f8ffd",
+        "patch_equivalent": 131,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "93d1c74d22eebac36c9e98bd8621b85f64ea6633",
+          "dad361ad7fe7744d36c4e8378d55c507dc58789c",
+          "f0e05e69c56f725e3f1717b4d3b94fe3c15867ee",
+          "ad9fb1a711cae9394395243ff53581ae2a550b7f",
+          "ff76c767ec2b6f33508e18832aff54d0c813d6bf",
+          "f8c557c0b9e1541db9e5e9604d83a4c96623d0fe",
+          "9140e198382aad1cefb080c11365fcd782c21602",
+          "9b03debf14d5dfb9313e01688f9a5892bb2bfb34",
+          "2f4194886cae5effb18c7f7c0b29e11b3287aacb",
+          "3f2875936ef38ccf374a00bc841d91d1fcf96628",
+          "d26473dad968a3c8009015497dc5a19dfd2f8ffd"
+        ]
+      },
+      "kk/package-dxvk-payload": {
+        "tip": "902f3b0b39b7f83ae66dcfc7eddd47f1896c447e",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "93d1c74d22eebac36c9e98bd8621b85f64ea6633",
+          "dad361ad7fe7744d36c4e8378d55c507dc58789c",
+          "902f3b0b39b7f83ae66dcfc7eddd47f1896c447e"
+        ]
+      },
+      "main": {
+        "tip": "0cd8ab9c8bddc4817bb767fce458d6aa9103316f",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin": {
+        "tip": "0cd8ab9c8bddc4817bb767fce458d6aa9103316f",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/bump/relay12-95c1703": {
+        "tip": "3c9b74d1083d2234c05355968601da0863d488f0",
+        "patch_equivalent": 0,
+        "unique": [
+          "3c9b74d1083d2234c05355968601da0863d488f0"
+        ]
+      },
+      "origin/docs/hub-contributor-guide": {
+        "tip": "813583779edd0f5363c332795a4408e3651df3f5",
+        "patch_equivalent": 0,
+        "unique": [
+          "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d",
+          "8099c5e7d2c2f353c0cdf02d11507b10c1ff9496",
+          "a84e8349c2796442edf6463957ed29e507dcff04",
+          "813583779edd0f5363c332795a4408e3651df3f5"
+        ]
+      },
+      "origin/feat/kosmickrisp-only-runtime": {
+        "tip": "7304d9b4275a0ca6ee98de602ef62f4d28762195",
+        "patch_equivalent": 0,
+        "unique": [
+          "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d",
+          "8099c5e7d2c2f353c0cdf02d11507b10c1ff9496",
+          "a84e8349c2796442edf6463957ed29e507dcff04",
+          "813583779edd0f5363c332795a4408e3651df3f5",
+          "c5673640a924b737e726b8633502bcf7e1044d2b",
+          "16826effb36654218d093da121fe9a090dd72a7d",
+          "b2c5d6a2b1a9ec2bd6789edaf43839653cdbb2b6",
+          "676678349d0daa9e400e89e597ffb86aefcd6597",
+          "7b83acb33e025ee190308328a6b294998c749eae",
+          "38e4e2c163777934618f9670c5ad4bff6df713fb",
+          "bcc8e5c6c8149505fd1f537050f062241349a293",
+          "2e103c686c15080a809d0217834d7607ae44292f",
+          "ee2a57aaf0042bc81f27f40017604b2ad19e31e3",
+          "05d3d74300275dd55b09b5872681037e19002242",
+          "edd307845077df4047f00a52d2bd9177c056e39b",
+          "3b9a06b89daff527ea90a485d50fcdb2cc738dd3",
+          "7304d9b4275a0ca6ee98de602ef62f4d28762195"
+        ]
+      },
+      "origin/fix/relay12-gptk4-on12-stub": {
+        "tip": "07209a877f0b3df1ec59ec87fd3a8ee1dcc0a395",
+        "patch_equivalent": 1,
+        "unique": [
+          "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d",
+          "8099c5e7d2c2f353c0cdf02d11507b10c1ff9496",
+          "a84e8349c2796442edf6463957ed29e507dcff04",
+          "813583779edd0f5363c332795a4408e3651df3f5",
+          "c5673640a924b737e726b8633502bcf7e1044d2b",
+          "16826effb36654218d093da121fe9a090dd72a7d",
+          "b2c5d6a2b1a9ec2bd6789edaf43839653cdbb2b6",
+          "676678349d0daa9e400e89e597ffb86aefcd6597",
+          "7b83acb33e025ee190308328a6b294998c749eae",
+          "38e4e2c163777934618f9670c5ad4bff6df713fb",
+          "bcc8e5c6c8149505fd1f537050f062241349a293",
+          "2e103c686c15080a809d0217834d7607ae44292f",
+          "ee2a57aaf0042bc81f27f40017604b2ad19e31e3",
+          "05d3d74300275dd55b09b5872681037e19002242",
+          "edd307845077df4047f00a52d2bd9177c056e39b",
+          "3b9a06b89daff527ea90a485d50fcdb2cc738dd3",
+          "7304d9b4275a0ca6ee98de602ef62f4d28762195"
+        ]
+      },
+      "origin/integrate/kosmickrisp-onto-main": {
+        "tip": "72d98b7fe7211772b48ec2302e1195693aa090c7",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/kk/01-bundle": {
+        "tip": "009e832c195254a1fcdd2158456db919e8b818bd",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd"
+        ]
+      },
+      "origin/kk/02-fill-mode": {
+        "tip": "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d"
+        ]
+      },
+      "origin/kk/03-probes": {
+        "tip": "fbea2d4b85506e878c66789b8915b8242f348328",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328"
+        ]
+      },
+      "origin/kk/04-dxvk": {
+        "tip": "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9"
+        ]
+      },
+      "origin/kk/05-results": {
+        "tip": "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed"
+        ]
+      },
+      "origin/kk/06-budget": {
+        "tip": "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2"
+        ]
+      },
+      "origin/kk/bounded-gameplay-investigation": {
+        "tip": "d26473dad968a3c8009015497dc5a19dfd2f8ffd",
+        "patch_equivalent": 131,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "93d1c74d22eebac36c9e98bd8621b85f64ea6633",
+          "dad361ad7fe7744d36c4e8378d55c507dc58789c",
+          "f0e05e69c56f725e3f1717b4d3b94fe3c15867ee",
+          "ad9fb1a711cae9394395243ff53581ae2a550b7f",
+          "ff76c767ec2b6f33508e18832aff54d0c813d6bf",
+          "f8c557c0b9e1541db9e5e9604d83a4c96623d0fe",
+          "9140e198382aad1cefb080c11365fcd782c21602",
+          "9b03debf14d5dfb9313e01688f9a5892bb2bfb34",
+          "2f4194886cae5effb18c7f7c0b29e11b3287aacb",
+          "3f2875936ef38ccf374a00bc841d91d1fcf96628",
+          "d26473dad968a3c8009015497dc5a19dfd2f8ffd"
+        ]
+      },
+      "origin/kk/gameplay-automation-harness": {
+        "tip": "f31935588ea3552259f33105a010f7341ac1d9ba",
+        "patch_equivalent": 128,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "93d1c74d22eebac36c9e98bd8621b85f64ea6633",
+          "dad361ad7fe7744d36c4e8378d55c507dc58789c",
+          "f0e05e69c56f725e3f1717b4d3b94fe3c15867ee"
+        ]
+      },
+      "origin/kk/investigation-coordinator": {
+        "tip": "9810a4b87e4d7dc069a32c7b38e5199e67efa884",
+        "patch_equivalent": 130,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "93d1c74d22eebac36c9e98bd8621b85f64ea6633",
+          "dad361ad7fe7744d36c4e8378d55c507dc58789c",
+          "f0e05e69c56f725e3f1717b4d3b94fe3c15867ee"
+        ]
+      },
+      "origin/kk/investigation-telemetry-tooling": {
+        "tip": "72e78936175585cae92feedcb2856c580e9121ee",
+        "patch_equivalent": 129,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "93d1c74d22eebac36c9e98bd8621b85f64ea6633",
+          "dad361ad7fe7744d36c4e8378d55c507dc58789c",
+          "f0e05e69c56f725e3f1717b4d3b94fe3c15867ee"
+        ]
+      },
+      "origin/kk/metal-cache-regressions": {
+        "tip": "41dfd5951699217e286069371f8a6ed318ba1dea",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "93d1c74d22eebac36c9e98bd8621b85f64ea6633",
+          "dad361ad7fe7744d36c4e8378d55c507dc58789c",
+          "41dfd5951699217e286069371f8a6ed318ba1dea"
+        ]
+      },
+      "origin/kk/package-dxvk-payload": {
+        "tip": "902f3b0b39b7f83ae66dcfc7eddd47f1896c447e",
+        "patch_equivalent": 127,
+        "unique": [
+          "e7ab8177da55ae938c59221784359b46e1be9a75",
+          "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd",
+          "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad",
+          "0bf3eabc2f0d95154282eb86b11205cbbaae6c65",
+          "eaa0436849c092f6bed2ed30dd70e359b7e41f18",
+          "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4",
+          "66184a0331333f2e18554d63158dae8c73152892",
+          "6db6ad89c666b308bb69536d530b676b037772f9",
+          "70cc10fcce860c706c6abb5c5251ec87c7a27e0a",
+          "009e832c195254a1fcdd2158456db919e8b818bd",
+          "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0",
+          "aa3b09df7236c6300c85158941b51ba2dd2c053d",
+          "ba5650eb1289b4aa300dbcd8ae87b7858882fc51",
+          "fbea2d4b85506e878c66789b8915b8242f348328",
+          "24daec05f16ff20028a012cf678bd2c6dc35d2b9",
+          "87c1f4996c94846c96399b9350feb09470a69fea",
+          "e43c35901cc52c59a2b090efcafd20eab4c4753b",
+          "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed",
+          "c9369162d4f540bead763bb99d80d2ff169fa380",
+          "7e680568644e66546f8e8cefe8c230f4f9c1d0e2",
+          "93d1c74d22eebac36c9e98bd8621b85f64ea6633",
+          "dad361ad7fe7744d36c4e8378d55c507dc58789c",
+          "902f3b0b39b7f83ae66dcfc7eddd47f1896c447e"
+        ]
+      },
+      "origin/main": {
+        "tip": "0cd8ab9c8bddc4817bb767fce458d6aa9103316f",
+        "patch_equivalent": 0,
+        "unique": []
+      }
+    },
+    "commits": {
+      "e7ab8177da55ae938c59221784359b46e1be9a75": {
+        "subject": "feat: move the lane to wine 11.17",
+        "paths": [
+          ".github/workflows/build.yml",
+          "README.md"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd": {
+        "subject": "fix(ci): qualify /usr/bin/arch to prevent GNU coreutils collision",
+        "paths": [
+          ".github/workflows/build.yml"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad": {
+        "subject": "ci: bump FAudio pin to 26.09 for wine 11.17",
+        "paths": [
+          ".github/workflows/build.yml"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "0bf3eabc2f0d95154282eb86b11205cbbaae6c65": {
+        "subject": "fix(runtime): ship corrected flsgetvalue2 with regression gate",
+        "paths": [
+          ".github/workflows/build.yml",
+          "README.md",
+          "tests/flsgetvalue2.c"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "eaa0436849c092f6bed2ed30dd70e359b7e41f18": {
+        "subject": "feat(arm64): keep the arm64 runtime recipe in the repo",
+        "paths": [
+          "arm64/README.md",
+          "arm64/build-arm64-unix.sh",
+          "arm64/build-dxmt-arm64.sh",
+          "arm64/build-llvm15.sh",
+          "arm64/install-dxmt-arm64.sh",
+          "arm64/package-arm64.sh",
+          "arm64/verify-runtime.sh"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4": {
+        "subject": "fix(arm64): carry from 5.1.1 by default, older runtimes are gone",
+        "paths": [
+          "arm64/package-arm64.sh"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "66184a0331333f2e18554d63158dae8c73152892": {
+        "subject": "feat(kosmickrisp): build an x86_64 KosmicKrisp loader and ICD from pins",
+        "paths": [
+          "runtime/kosmickrisp/build.sh",
+          "runtime/kosmickrisp/pins.env"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "6db6ad89c666b308bb69536d530b676b037772f9": {
+        "subject": "feat(kosmickrisp): add a per-process wine-kosmickrisp launcher",
+        "paths": [
+          "runtime/kosmickrisp/wine-kosmickrisp",
+          "tests/test_kosmickrisp_launcher.py"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "70cc10fcce860c706c6abb5c5251ec87c7a27e0a": {
+        "subject": "ci: build and bundle kosmickrisp behind a dispatch-only input",
+        "paths": [
+          ".github/workflows/build.yml"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
+      },
+      "009e832c195254a1fcdd2158456db919e8b818bd": {
+        "subject": "docs: describe the experimental kosmickrisp lane",
+        "paths": [
+          "README.md",
+          "docs/kosmickrisp.md"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/01-bundle",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0": {
+        "subject": "feat(kosmickrisp): apply local driver patches on top of the pinned mesa",
+        "paths": [
+          "runtime/kosmickrisp/build.sh"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
+      },
+      "aa3b09df7236c6300c85158941b51ba2dd2c053d": {
+        "subject": "feat(kosmickrisp): expose fillModeNonSolid through metal's triangle fill mode",
+        "paths": [
+          "runtime/kosmickrisp/patches/0001-kk-expose-fillModeNonSolid-through-Metal-s-triangle-.patch"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/02-fill-mode",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
+      },
+      "ba5650eb1289b4aa300dbcd8ae87b7858882fc51": {
+        "subject": "test(kosmickrisp): add a vulkan probe for the bundled driver",
+        "paths": [
+          "tests/kosmickrisp_compute.comp",
+          "tests/kosmickrisp_compute.h",
+          "tests/kosmickrisp_compute_spv.h",
+          "tests/kosmickrisp_present.h",
+          "tests/kosmickrisp_probe.c"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "fbea2d4b85506e878c66789b8915b8242f348328": {
+        "subject": "ci: refuse a kosmickrisp tree whose driver cannot create a device",
+        "paths": [
+          ".github/workflows/build.yml"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/03-probes",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "24daec05f16ff20028a012cf678bd2c6dc35d2b9": {
+        "subject": "ci: require upstream dxvk 3.1.1 to create d3d9 and d3d11 devices on kosmickrisp",
+        "paths": [
+          ".github/workflows/build.yml",
+          "runtime/kosmickrisp/licenses/dxvk-3.1.1.txt",
+          "runtime/kosmickrisp/pins.env"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/04-dxvk",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "87c1f4996c94846c96399b9350feb09470a69fea": {
+        "subject": "docs: record the kosmickrisp lane's measured results",
+        "paths": [
+          "docs/kosmickrisp-results.md"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "e43c35901cc52c59a2b090efcafd20eab4c4753b": {
+        "subject": "docs: add portal and sonic adventure dx d3d9 results",
+        "paths": [
+          "docs/kosmickrisp-results.md"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed": {
+        "subject": "docs: sonic adventure dx renders once its launcher writes a config",
+        "paths": [
+          "docs/kosmickrisp-results.md"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/05-results",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "c9369162d4f540bead763bb99d80d2ff169fa380": {
+        "subject": "feat(kosmickrisp): carry a mesa fix for the macos memory budget",
+        "paths": [
+          "runtime/kosmickrisp/patches/0002-util-use-the-host-page-size-for-available-memory-on-.patch"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
+      },
+      "7e680568644e66546f8e8cefe8c230f4f9c1d0e2": {
+        "subject": "docs: note what limits kosmickrisp + dxvk performance",
+        "paths": [
+          "docs/kosmickrisp-performance.md"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/06-budget",
+          "kk/07-arm64",
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/06-budget",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "93d1c74d22eebac36c9e98bd8621b85f64ea6633": {
+        "subject": "fix(dxvk): ship the 32-bit dxgi so 32-bit games get a device",
+        "paths": [
+          ".github/workflows/build.yml"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "dad361ad7fe7744d36c4e8378d55c507dc58789c": {
+        "subject": "feat: move the lane to wine 11.19",
+        "paths": [
+          ".github/workflows/build.yml",
+          "README.md"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014",
+          "kk/bounded-gameplay-investigation",
+          "kk/package-dxvk-payload",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling",
+          "origin/kk/metal-cache-regressions",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "bc0154cd7126049a0142dbe100220ebac9c3ebfd": {
+        "subject": "feat(kosmickrisp): add present and compile stutter attribution tool",
+        "paths": [
+          "runtime/kosmickrisp/stutter-games.json",
+          "runtime/kosmickrisp/stutter.py",
+          "tests/test_kosmickrisp_stutter.py"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "4348f5095b6fe3510c6c73dbeb9c07f4f040b20a": {
+        "subject": "feat(kosmickrisp): package DXVK and add reproducible validation tools",
+        "paths": [
+          ".github/workflows/build.yml",
+          "docs/arm64-kosmickrisp-investigation.md",
+          "docs/kosmickrisp-benchmarks.md",
+          "docs/kosmickrisp-improvement-plan.md",
+          "docs/kosmickrisp-validation-2026-10-13.md",
+          "docs/kosmickrisp.md",
+          "runtime/kosmickrisp/benchmark.py",
+          "runtime/kosmickrisp/build.sh",
+          "runtime/kosmickrisp/dxvk-experiments/0001-kosmickrisp-native-constant-arrays.patch",
+          "runtime/kosmickrisp/dxvk-experiments/README.md",
+          "runtime/kosmickrisp/dxvk-experiments/compare.py",
+          "runtime/kosmickrisp/dxvk-prefix.py",
+          "runtime/kosmickrisp/package-dxvk.sh",
+          "runtime/kosmickrisp/pins.env",
+          "runtime/kosmickrisp/source-snapshot.py",
+          "runtime/kosmickrisp/stutter.py",
+          "runtime/kosmickrisp/wine-kosmickrisp",
+          "runtime/kosmickrisp/wine-kosmickrisp-dxvk",
+          "tests/d3d11_constants.c",
+          "tests/kosmickrisp_probe.c",
+          "tests/test_kosmickrisp_benchmark.py",
+          "tests/test_kosmickrisp_dxvk_launcher.py",
+          "tests/test_kosmickrisp_dxvk_package.py",
+          "tests/test_kosmickrisp_dxvk_prefix.py",
+          "tests/test_kosmickrisp_source_snapshot.py",
+          "tests/test_kosmickrisp_stutter.py"
+        ],
+        "refs": [
+          "backup/kosmickrisp-before-ci-rebase-20261014"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d": {
+        "subject": "docs: define agent QA, hygiene and sign-off requirements",
+        "paths": [
+          "AGENTS.md",
+          "SKILLS.md"
+        ],
+        "refs": [
+          "backup/local-main-dad1f3d",
+          "docs/hub-contributor-guide",
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/docs/hub-contributor-guide",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "73121e932af133af111638b296d0a93a4edf6612": {
+        "subject": "ci(publish): push the canary catalog with the owner's token",
+        "paths": [
+          ".github/workflows/build.yml",
+          "docs/ci-integration.md"
+        ],
+        "refs": [
+          "ci/publish-catalog-as-admin"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "2de2def07de2af5bdf4bbd1be46c11942e54ea1d": {
+        "subject": "docs(ci): list the Pull requests permission HUB_DISPATCH_TOKEN needs",
+        "paths": [
+          "docs/ci-integration.md"
+        ],
+        "refs": [
+          "ci/publish-catalog-as-admin"
+        ],
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
+      },
+      "8099c5e7d2c2f353c0cdf02d11507b10c1ff9496": {
+        "subject": "docs: explain hub architecture, contribution workflow and QA",
+        "paths": [
+          ".github/pull_request_template.md",
+          "AGENTS.md",
+          "CONTRIBUTING.md",
+          "README.md",
+          "SKILLS.md",
+          "docs/architecture.md",
+          "docs/ci-integration.md",
+          "docs/oci-build-system.md",
+          "docs/qa.md"
+        ],
+        "refs": [
+          "docs/hub-contributor-guide",
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/docs/hub-contributor-guide",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "a84e8349c2796442edf6463957ed29e507dcff04": {
+        "subject": "docs: update FORK-CHANGES for Wine 11.19 and canary 4.8.9",
+        "paths": [
+          "docs/FORK-CHANGES.md"
+        ],
+        "refs": [
+          "docs/hub-contributor-guide",
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/docs/hub-contributor-guide",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "813583779edd0f5363c332795a4408e3651df3f5": {
+        "subject": "ci: bundle KosmicKrisp with GPTK DXVK",
+        "paths": [
+          ".github/workflows/build.yml",
+          "docs/kosmickrisp-ci.md"
+        ],
+        "refs": [
+          "docs/hub-contributor-guide",
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/docs/hub-contributor-guide",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "9c9c582f2e6cc2ed54a9f4dc05151c476752b36c": {
+        "subject": "feat(kosmickrisp): geometry fillmode port and shader compilation documentation",
+        "paths": [
+          ".DS_Store",
+          ".github/workflows/build.yml",
+          "docs/kosmickrisp-fillmode-port.md",
+          "docs/kosmickrisp-shader-compilation.md",
+          "docs/kosmickrisp-test-results.md",
+          "runtime/kosmickrisp/hades.py",
+          "runtime/kosmickrisp/patches/44786-geometry-fillmode-shader-cache-gpl.patch",
+          "runtime/kosmickrisp/patches/44786-geometry-fillmode.patch",
+          "runtime/kosmickrisp/pins.env",
+          "runtime/kosmickrisp/shader_cache.py",
+          "runtime/kosmickrisp/validate.py",
+          "runtime/kosmickrisp/wine-kosmickrisp-dxvk",
+          "tests/kosmickrisp_geometry.h",
+          "tests/kosmickrisp_geometry/draw.geom",
+          "tests/kosmickrisp_geometry/draw.vert",
+          "tests/kosmickrisp_geometry/geom_spv.h",
+          "tests/kosmickrisp_geometry/vert_spv.h",
+          "tests/kosmickrisp_probe.c",
+          "tests/test_kosmickrisp_hades.py",
+          "tests/test_kosmickrisp_launcher.py"
+        ],
+        "refs": [
+          "feat/kosmickrisp-experimental"
+        ],
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
+      },
+      "c5673640a924b737e726b8633502bcf7e1044d2b": {
+        "subject": "Package layout v2 without MoltenVK and gate promotion on physical migration evidence",
+        "paths": [
+          ".github/workflows/build.yml",
+          ".github/workflows/validate.yml",
+          "README.md",
+          "arm64/build-arm64-unix.sh",
+          "contracts/runtime-layout-v1.json",
+          "contracts/runtime-layout.json",
+          "docs/architecture.md",
+          "docs/kosmickrisp-ci.md",
+          "docs/qa.md",
+          "docs/runtime-layout-v2.md",
+          "runtime-catalog-v2.json",
+          "runtime/kosmickrisp/hades.py",
+          "runtime/kosmickrisp/pins.env",
+          "runtime/kosmickrisp/promotion.py",
+          "runtime/kosmickrisp/readiness.py",
+          "runtime/kosmickrisp/validate.py",
+          "runtime/kosmickrisp/wine-loader.patch",
+          "tests/d3d10feat.c",
+          "tests/kosmickrisp_probe.c",
+          "tests/test_kosmickrisp_ci.py",
+          "tests/test_kosmickrisp_hades.py",
+          "tests/test_kosmickrisp_promotion.py",
+          "tests/test_oci_build.py",
+          "tests/test_publish_runtime.py",
+          "tests/test_runtime_layout.py",
+          "tools/assemble_runtime.sh",
+          "tools/build/cache_key.py",
+          "tools/build/common.sh",
+          "tools/build/pins.env",
+          "tools/check_runtime_layout.py",
+          "tools/configure_wine.sh",
+          "tools/fetch_payloads.sh",
+          "tools/install_kosmickrisp.sh",
+          "tools/prepare_source.sh",
+          "tools/publish_runtime.sh",
+          "tools/run_probes.sh"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "16826effb36654218d093da121fe9a090dd72a7d": {
+        "subject": "Require shared static QA and the complete consumer suite before promotion",
+        "paths": [
+          ".github/workflows/build.yml"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "b2c5d6a2b1a9ec2bd6789edaf43839653cdbb2b6": {
+        "subject": "Pin consumer with runtime maintenance protection during bottle switches",
+        "paths": [
+          "tools/build/pins.env"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "676678349d0daa9e400e89e597ffb86aefcd6597": {
+        "subject": "Verify the DXVK driver and native D3D10 core in physical validation",
+        "paths": [
+          "runtime/kosmickrisp/validate.py",
+          "tests/test_kosmickrisp_ci.py"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "7b83acb33e025ee190308328a6b294998c749eae": {
+        "subject": "Document the final layout v2 build and physical promotion gates",
+        "paths": [
+          "docs/architecture.md",
+          "docs/ci-integration.md",
+          "docs/kosmickrisp-ci.md",
+          "docs/qa.md"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "38e4e2c163777934618f9670c5ad4bff6df713fb": {
+        "subject": "Keep the Vulkan migration on the previously validated Wine source base",
+        "paths": [
+          "docs/runtime-layout-v2.md",
+          "tools/build/pins.env"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "bcc8e5c6c8149505fd1f537050f062241349a293": {
+        "subject": "Cover independent FPS and p99 regressions and median repetition policy",
+        "paths": [
+          "tests/test_kosmickrisp_promotion.py"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "2e103c686c15080a809d0217834d7607ae44292f": {
+        "subject": "Keep layout v2 benchmark Vulkan selection independent of the game backend",
+        "paths": [
+          "runtime/kosmickrisp/stutter.py",
+          "runtime/kosmickrisp/wine-kosmickrisp",
+          "runtime/kosmickrisp/wine-kosmickrisp-arm64",
+          "tests/test_kosmickrisp_stutter.py"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "ee2a57aaf0042bc81f27f40017604b2ad19e31e3": {
+        "subject": "Read runtime Wine version from the assembled binary",
+        "paths": [
+          "tests/test_wine_version.py",
+          "tools/assemble_runtime.sh",
+          "tools/build/wine_version.sh"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "05d3d74300275dd55b09b5872681037e19002242": {
+        "subject": "Require clean Vulkan loader failure and pin bounded Wine diagnostics",
+        "paths": [
+          "runtime/kosmickrisp/validate.py",
+          "tests/test_kosmickrisp_ci.py",
+          "tools/build/pins.env"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "edd307845077df4047f00a52d2bd9177c056e39b": {
+        "subject": "Pin consumer validation for managed installed runtimes",
+        "paths": [
+          "docs/runtime-layout-v2.md",
+          "tools/build/pins.env"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "3b9a06b89daff527ea90a485d50fcdb2cc738dd3": {
+        "subject": "Make exact-archive consumer QA reusable and avoid executor starvation",
+        "paths": [
+          ".github/workflows/build.yml",
+          ".github/workflows/consumer-runtime.yml",
+          "docs/runtime-layout-v2.md",
+          "tools/build/pins.env"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "7304d9b4275a0ca6ee98de602ef62f4d28762195": {
+        "subject": "Expose exact-archive consumer rechecks through the build entry point",
+        "paths": [
+          ".github/workflows/build.yml",
+          "docs/runtime-layout-v2.md"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime",
+          "fix/relay12-gptk4-on12-stub",
+          "origin/feat/kosmickrisp-only-runtime",
+          "origin/fix/relay12-gptk4-on12-stub"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "371ab641c685a52e33edcb5e03147df1e7e6a670": {
+        "subject": "feat(arm64): build FEX from a pinned release for the native lane",
+        "paths": [
+          "arm64/README.md",
+          "arm64/build-fex-arm64.sh",
+          "arm64/fex/patches/0001-unixlib-implement-the-unix-helpers-for-macos.patch",
+          "arm64/fex/patches/0002-unixlib-do-not-link-librt-on-darwin.patch",
+          "arm64/fex/pins.env",
+          "arm64/install-fex.sh",
+          "arm64/package-arm64.sh",
+          "arm64/verify-runtime.sh",
+          "tests/fex_unixlib_smoke.c",
+          "tests/test_fex_arm64.py"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "0b23eb0fdb66615e6c5aaebdafbfd6ee0693eb59": {
+        "subject": "fix(arm64): name the unused submodule key in the FEX build",
+        "paths": [
+          "arm64/build-fex-arm64.sh"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "4ce59a489a2038cf8f1ab1690127ac1d77b57015": {
+        "subject": "feat(kosmickrisp): build a native arm64 bundle with KK_ARCH=arm64",
+        "paths": [
+          "runtime/kosmickrisp/build.sh",
+          "tests/kosmickrisp_probe.c"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "a9c822076f996620a92aa4c8f662d140c4a9bfce": {
+        "subject": "feat(arm64): package an opt-in KosmicKrisp driver with the native lane",
+        "paths": [
+          ".github/actionlint.yaml",
+          ".github/workflows/kosmickrisp-arm64.yml",
+          "arm64/README.md",
+          "arm64/install-kosmickrisp.sh",
+          "arm64/package-arm64.sh",
+          "runtime/kosmickrisp/wine-kosmickrisp-arm64",
+          "tests/test_kosmickrisp_arm64.py"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "1297731db8a0b03679a7c6c64dec4a3c7cbeb0e7": {
+        "subject": "docs(arm64): record the first FEX build on macOS and its bootstrap scripts",
+        "paths": [
+          "arm64/README.md",
+          "arm64/build-fex-translators.sh",
+          "arm64/build-fex-unixlib.sh"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "31de189611f0368ad578914458cf062abb7f1c7c": {
+        "subject": "chore(arm64): drop the bootstrap FEX scripts",
+        "paths": [
+          "arm64/README.md",
+          "arm64/build-fex-translators.sh",
+          "arm64/build-fex-unixlib.sh"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "a215e6f927cdb7ede082f6683abd132138b71c97": {
+        "subject": "docs(arm64): record that the low 4GB stays unmappable without the entitlement",
+        "paths": [
+          "arm64/README.md"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "abb8f8f3c61218c769778e8cfec65f44ff756fdb": {
+        "subject": "feat(arm64): sign our own wine.app under a provisioning profile",
+        "paths": [
+          "arm64/README.md",
+          "arm64/make-wine-app.sh",
+          "arm64/package-arm64.sh",
+          "tests/pagezero_probe.c",
+          "tests/test_fex_arm64.py",
+          "tests/test_wine_app.py"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "71b7f7187cb37b6f761593b7fe398e0fe9ad9915": {
+        "subject": "test(arm64): add an x86 smoke run for FEX on arm64 Wine",
+        "paths": [
+          "arm64/README.md",
+          "arm64/smoke-fex.sh",
+          "tests/x86_smoke.c"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "d09782ba250bb6e94a05d993b4e3ff5a1f18087f": {
+        "subject": "fix(arm64): build Wine's i386 half so WoW64 can run 32-bit programs",
+        "paths": [
+          "arm64/README.md",
+          "arm64/build-arm64-unix.sh"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "ported-research-recipe",
+        "evidence": "c6e2c72; i386 ARM64 build target and original measured documentation, isolated from Rosetta runtime."
+      },
+      "82c361e63d2b6c61bbb54abad6c90aacdf20a78e": {
+        "subject": "chore(arm64): add Xcode project files",
+        "paths": [
+          "WineArm64.xcodeproj/project.pbxproj",
+          "WineArm64.xcodeproj/project.xcworkspace/xcuserdata/niltonperimneto.xcuserdatad/UserInterfaceState.xcuserstate",
+          "WineArm64.xcodeproj/xcshareddata/xcschemes/PagezeroProbe.xcscheme",
+          "WineArm64.xcodeproj/xcshareddata/xcschemes/SignRuntime.xcscheme",
+          "WineArm64.xcodeproj/xcshareddata/xcschemes/WineApp.xcscheme",
+          "Xcode/PagezeroProbe/Info.plist",
+          "Xcode/PagezeroProbe/PagezeroProbe.entitlements",
+          "Xcode/README.md",
+          "Xcode/Scripts/generate_project.rb",
+          "Xcode/Scripts/sign_runtime.sh",
+          "Xcode/WineApp/Info.plist",
+          "Xcode/WineApp/WineApp.entitlements",
+          "Xcode/WineApp/main.c",
+          "Xcode/WineApp/post_build.sh"
+        ],
+        "refs": [
+          "kk/07-arm64"
+        ],
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
+      },
+      "05c07f8860b2ce02c7adbe7e5a02fd978b33ef4f": {
+        "subject": "kosmickrisp: provide a verified Rosetta runtime fallback",
+        "paths": [
+          ".github/workflows/build.yml",
+          "docs/kosmickrisp.md",
+          "runtime/kosmickrisp/install-rosetta.sh",
+          "runtime/kosmickrisp/wine-kosmickrisp",
+          "tests/test_kosmickrisp_launcher.py"
+        ],
+        "refs": [
+          "kk/08-rosetta",
+          "kk/09-rosetta-shader-cache"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "ef0e143c983e93f8fb91264748aec028a67c56f5": {
+        "subject": "feat(kosmickrisp): add shader cache test harnesses and patch series",
+        "paths": [
+          "runtime/kosmickrisp/__pycache__/hades.cpython-313.pyc",
+          "runtime/kosmickrisp/apply_patch.py",
+          "runtime/kosmickrisp/build.sh",
+          "runtime/kosmickrisp/combat.py",
+          "runtime/kosmickrisp/hades-combat.lua",
+          "runtime/kosmickrisp/hades.py",
+          "runtime/kosmickrisp/patch_stack.py",
+          "runtime/kosmickrisp/patches/0001-geometry-correctness.patch",
+          "runtime/kosmickrisp/patches/0001-kk-expose-fillModeNonSolid-through-Metal-s-triangle-.patch",
+          "runtime/kosmickrisp/patches/0003-persistent-cache.patch",
+          "runtime/kosmickrisp/patches/0004-nir-pipeline-libraries.patch",
+          "runtime/kosmickrisp/patches/0005-nir-cache-hardening.patch",
+          "runtime/kosmickrisp/patches/0006-bounded-capture.patch",
+          "runtime/kosmickrisp/patches/series",
+          "runtime/kosmickrisp/pins.env",
+          "runtime/kosmickrisp/shader_cache.py",
+          "runtime/kosmickrisp/weak_dispatch.py",
+          "runtime/kosmickrisp/wine-kosmickrisp",
+          "tests/hades_window.c",
+          "tests/kosmickrisp_geometry.h",
+          "tests/kosmickrisp_geometry/draw.frag",
+          "tests/kosmickrisp_geometry/draw.geom",
+          "tests/kosmickrisp_geometry/draw.tesc",
+          "tests/kosmickrisp_geometry/draw.tese",
+          "tests/kosmickrisp_geometry/draw.vert",
+          "tests/kosmickrisp_geometry/frag_spv.h",
+          "tests/kosmickrisp_geometry/geom_spv.h",
+          "tests/kosmickrisp_geometry/tesc_spv.h",
+          "tests/kosmickrisp_geometry/tese_spv.h",
+          "tests/kosmickrisp_geometry/vert_spv.h",
+          "tests/kosmickrisp_interpolation/case0.frag",
+          "tests/kosmickrisp_interpolation/case0.vert",
+          "tests/kosmickrisp_interpolation/case1.frag",
+          "tests/kosmickrisp_interpolation/case1.vert",
+          "tests/kosmickrisp_interpolation/case2.frag",
+          "tests/kosmickrisp_interpolation/case2.vert",
+          "tests/kosmickrisp_interpolation/case3.frag",
+          "tests/kosmickrisp_interpolation/case3.vert",
+          "tests/kosmickrisp_interpolation/case4.frag",
+          "tests/kosmickrisp_interpolation/case4.vert",
+          "tests/kosmickrisp_interpolation/case5.frag",
+          "tests/kosmickrisp_interpolation/case5.vert",
+          "tests/kosmickrisp_interpolation/shaders.h",
+          "tests/kosmickrisp_probe.c",
+          "tests/test_kosmickrisp_hades.py",
+          "tests/test_kosmickrisp_patch.py",
+          "tests/test_kosmickrisp_weak_dispatch.py"
+        ],
+        "refs": [
+          "kk/09-rosetta-shader-cache"
+        ],
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
+      },
+      "f0e05e69c56f725e3f1717b4d3b94fe3c15867ee": {
+        "subject": "feat(kosmickrisp): add present and compile stutter attribution tool",
+        "paths": [
+          "runtime/kosmickrisp/stutter-games.json",
+          "runtime/kosmickrisp/stutter.py",
+          "tests/test_kosmickrisp_stutter.py"
+        ],
+        "refs": [
+          "kk/bounded-gameplay-investigation",
+          "origin/kk/bounded-gameplay-investigation",
+          "origin/kk/gameplay-automation-harness",
+          "origin/kk/investigation-coordinator",
+          "origin/kk/investigation-telemetry-tooling"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "ad9fb1a711cae9394395243ff53581ae2a550b7f": {
+        "subject": "feat(kosmickrisp): package DXVK and add reproducible validation tools",
+        "paths": [
+          ".github/workflows/build.yml",
+          "docs/arm64-kosmickrisp-investigation.md",
+          "docs/kosmickrisp-benchmarks.md",
+          "docs/kosmickrisp-improvement-plan.md",
+          "docs/kosmickrisp-validation-2026-10-13.md",
+          "docs/kosmickrisp.md",
+          "runtime/kosmickrisp/benchmark.py",
+          "runtime/kosmickrisp/build.sh",
+          "runtime/kosmickrisp/dxvk-experiments/0001-kosmickrisp-native-constant-arrays.patch",
+          "runtime/kosmickrisp/dxvk-experiments/README.md",
+          "runtime/kosmickrisp/dxvk-experiments/compare.py",
+          "runtime/kosmickrisp/dxvk-prefix.py",
+          "runtime/kosmickrisp/package-dxvk.sh",
+          "runtime/kosmickrisp/pins.env",
+          "runtime/kosmickrisp/source-snapshot.py",
+          "runtime/kosmickrisp/stutter.py",
+          "runtime/kosmickrisp/wine-kosmickrisp",
+          "runtime/kosmickrisp/wine-kosmickrisp-dxvk",
+          "tests/d3d11_constants.c",
+          "tests/kosmickrisp_probe.c",
+          "tests/test_kosmickrisp_benchmark.py",
+          "tests/test_kosmickrisp_dxvk_launcher.py",
+          "tests/test_kosmickrisp_dxvk_package.py",
+          "tests/test_kosmickrisp_dxvk_prefix.py",
+          "tests/test_kosmickrisp_source_snapshot.py",
+          "tests/test_kosmickrisp_stutter.py"
+        ],
+        "refs": [
+          "kk/bounded-gameplay-investigation",
+          "origin/kk/bounded-gameplay-investigation"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "ff76c767ec2b6f33508e18832aff54d0c813d6bf": {
+        "subject": "fix(ci): use fixed Wine surface API and current Mesa fork",
+        "paths": [
+          ".github/workflows/build.yml",
+          "docs/kosmickrisp.md",
+          "runtime/kosmickrisp/build.sh",
+          "runtime/kosmickrisp/pins.env"
+        ],
+        "refs": [
+          "kk/bounded-gameplay-investigation",
+          "origin/kk/bounded-gameplay-investigation"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "f8c557c0b9e1541db9e5e9604d83a4c96623d0fe": {
+        "subject": "chore(runtime): bump DXMT to 186a2327 and KosmicKrisp recipe to af7dd0a",
+        "paths": [
+          ".github/workflows/build.yml",
+          "runtime/kosmickrisp/pins.env"
+        ],
+        "refs": [
+          "kk/bounded-gameplay-investigation",
+          "origin/kk/bounded-gameplay-investigation"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "9140e198382aad1cefb080c11365fcd782c21602": {
+        "subject": "fix(ci): avoid D3DMetal registry symbol collision and verify fork DXMT",
+        "paths": [
+          ".github/workflows/build.yml",
+          "patches/0001-winemac-avoid-RegCloseKey-name-collision.patch"
+        ],
+        "refs": [
+          "kk/bounded-gameplay-investigation",
+          "origin/kk/bounded-gameplay-investigation"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "9b03debf14d5dfb9313e01688f9a5892bb2bfb34": {
+        "subject": "fix(ci): audit Mesa optional entrypoints from generated declarations",
+        "paths": [
+          ".github/workflows/build.yml",
+          "runtime/kosmickrisp/build.sh",
+          "runtime/kosmickrisp/optional_entrypoints.py",
+          "tests/test_kosmickrisp_optional_entrypoints.py"
+        ],
+        "refs": [
+          "kk/bounded-gameplay-investigation",
+          "origin/kk/bounded-gameplay-investigation"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "2f4194886cae5effb18c7f7c0b29e11b3287aacb": {
+        "subject": "fix(wine): retain startup guards and collect native crash diagnostics",
+        "paths": [
+          ".github/workflows/build.yml",
+          "patches/0002-ntdll-guard-early-startup-process-state.patch"
+        ],
+        "refs": [
+          "kk/bounded-gameplay-investigation",
+          "origin/kk/bounded-gameplay-investigation"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "3f2875936ef38ccf374a00bc841d91d1fcf96628": {
+        "subject": "ci: capture native Wine startup backtraces and failed runtime",
+        "paths": [
+          ".github/workflows/build.yml"
+        ],
+        "refs": [
+          "kk/bounded-gameplay-investigation",
+          "origin/kk/bounded-gameplay-investigation"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "d26473dad968a3c8009015497dc5a19dfd2f8ffd": {
+        "subject": "Validate hosted KosmicKrisp artifacts on a physical GPU",
+        "paths": [
+          ".github/workflows/build.yml",
+          "docs/kosmickrisp.md",
+          "runtime/kosmickrisp/probe-runtime.sh"
+        ],
+        "refs": [
+          "kk/bounded-gameplay-investigation",
+          "origin/kk/bounded-gameplay-investigation"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "902f3b0b39b7f83ae66dcfc7eddd47f1896c447e": {
+        "subject": "feat(kosmickrisp): package pinned upstream DXVK for experimental builds",
+        "paths": [
+          ".github/workflows/build.yml",
+          "docs/kosmickrisp.md",
+          "runtime/kosmickrisp/package-dxvk.sh",
+          "runtime/kosmickrisp/pins.env",
+          "tests/test_kosmickrisp_dxvk_package.py"
+        ],
+        "refs": [
+          "kk/package-dxvk-payload",
+          "origin/kk/package-dxvk-payload"
+        ],
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
+      },
+      "3c9b74d1083d2234c05355968601da0863d488f0": {
+        "subject": "chore(pins): bump relay12 to 95c1703",
+        "paths": [
+          "tools/build/pins.env"
+        ],
+        "refs": [
+          "origin/bump/relay12-95c1703"
+        ],
+        "disposition": "integrated-artifact-pin",
+        "evidence": "7179174; source-matched lazy-initialization release digest."
+      },
+      "41dfd5951699217e286069371f8a6ed318ba1dea": {
+        "subject": "tests: add standalone KosmicKrisp Metal cache regressions",
+        "paths": [
+          "docs/kosmickrisp-metal-cache-tests.md",
+          "tests/kosmickrisp_cache_hooks.h",
+          "tests/kosmickrisp_metal_cache.c",
+          "tests/run_kosmickrisp_metal_cache.py"
+        ],
+        "refs": [
+          "origin/kk/metal-cache-regressions"
+        ],
+        "disposition": "ported-regression-coverage",
+        "evidence": "35acf86; restored 19 missing scenarios, 31 scenarios pass against current Mesa candidate."
+      }
+    },
+    "integrationHead": "6ba07f34f1dc7e9eeb09ae1b03f257c2d2bb0f4b",
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "status": "source-merge-pending-final-reconciliation-checks; release-remains-gated",
+    "validatedHead": "bd3b2c721a0c113740afb7465af69972368b8071",
+    "validatedRun": 39083622371
+  },
+  "relay12": {
+    "main": "95c17031173baf02649103a6a9c848ca460a7f44",
+    "branches": {
+      "bleeding-edge": {
+        "tip": "7ba2dfb4ea932acdf3cb3bc902e1c15098523c68",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "chore/remove-orphan-runtime-build": {
+        "tip": "8857e5e3ad52540ca9eb69996fe09facd404b1be",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "chore/repo-hygiene": {
+        "tip": "36d9ba2868d9dd188290c7a9eea1810a22914ba5",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "ci/cache-and-scope": {
+        "tip": "cbb6ddca2eb828e7545c2a8af46d260e35c81453",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "ci/publish-runtime": {
+        "tip": "9609663ffc2b9aac554da7866f6a3a728051dbba",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "ci/shared-qa": {
+        "tip": "851a966adeb4ff93865c0048c2a666ea92e28c0e",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "codex/mingw-dtl-sdk-overlay": {
+        "tip": "0aa97f70a9e5bb7ac5021e04118d243c1bf545b2",
+        "patch_equivalent": 203,
+        "unique": [
+          "0aa97f70a9e5bb7ac5021e04118d243c1bf545b2"
+        ]
+      },
+      "codex/phase4-d3d11-host-adapter": {
+        "tip": "fa951c280d7b276712110c3f6b7562749c81fadc",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "codex/port-roadmap-consolidation": {
+        "tip": "4fe27e6a8cbe8edffa9a93212b6ec38c4d480f8b",
+        "patch_equivalent": 202,
+        "unique": [
+          "4fe27e6a8cbe8edffa9a93212b6ec38c4d480f8b"
+        ]
+      },
+      "consolidate/d3d11-runtime-host": {
+        "tip": "ba4fc795c85635e74c04697511d063b0532228c6",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "d3d11-runtime-host": {
+        "tip": "0786bc8ec59bde552d70d5de8be7812ddad20b41",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "ddi-device-lifecycle": {
+        "tip": "1e1d061b9cb52aa0d8eecf5f72e52ba1c7313a9b",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "docs/agents-skills-quality": {
+        "tip": "f71b344a2559d8c7c033281055de3a8031971b06",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "docs/align-with-consolidated-toolchain": {
+        "tip": "4a1f52257bcfe1eeba7e0502d859aa9c5dd1d11e",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "docs/consolidate-and-agnosticize": {
+        "tip": "2da81634c591793b55338a31b0283aa2719d4bde",
+        "patch_equivalent": 1,
+        "unique": [
+          "2da81634c591793b55338a31b0283aa2719d4bde"
+        ]
+      },
+      "feat/ddi-telemetry-tracing": {
+        "tip": "c5c689ba2251dd46b925679e64cd45de5bf4532d",
+        "patch_equivalent": 1,
+        "unique": [
+          "2da81634c591793b55338a31b0283aa2719d4bde",
+          "e57ebbe5ed5a904a02e215a0acdff1caef0d8c7b",
+          "c5c689ba2251dd46b925679e64cd45de5bf4532d"
+        ]
+      },
+      "feat/debug-actions": {
+        "tip": "b2e256951be5ea688c495c7ad9755ad2c0a5d61d",
+        "patch_equivalent": 170,
+        "unique": [
+          "03d5f63020dc6a3c8f658bead9244ea5dd843fed",
+          "bf8e1ea3dc97c6b3f2c5a9f93aadb237000e2bfd",
+          "69da9794af62734674c322312076ba95c7db0cde",
+          "d5718580630b8b17004d75ea0e084c14fa3bf823",
+          "069d63acdd267f3235b7be94c864897ab96a283e",
+          "811f0b5ef1db23e84deff6b9f5f0117c45668261",
+          "31a6ae61c92fa0aa972b28ff58ea2c31426e2450",
+          "9a66d86b794bf6fbff6268dbac13d02959733741",
+          "b2e256951be5ea688c495c7ad9755ad2c0a5d61d"
+        ]
+      },
+      "feat/deferred-contexts": {
+        "tip": "b85fe570f32b75eceab67c3c9a72393a5be1a247",
+        "patch_equivalent": 5,
+        "unique": []
+      },
+      "feat/first-d3dmetal-frame": {
+        "tip": "a4b0faa5ee1a4b31ed6f5a12307370c5a671374b",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "feat/lazy-dtl-init": {
+        "tip": "95c17031173baf02649103a6a9c848ca460a7f44",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "feat/peak-smoke-oracle": {
+        "tip": "caaee43f9783d4b46e5ddf16b8e333213ef96ac7",
+        "patch_equivalent": 0,
+        "unique": [
+          "ae8dced7a07f209aa2995a5800bb9254a0448ba9",
+          "53f2a64150fead01333a321505d6b6c08dc1e7eb",
+          "99e8a68fbec92114717ec85a7d2b39a7d800909f",
+          "794e57c76286890031cc2483af1beb420a00ea48",
+          "0dcc343ebd2055dd683a3bad1a4bab27f2d266a4",
+          "67abed98ec757c12605f80342a8f7bb740e5cef9",
+          "c14c323fad5f9907076e8a39a55217f85ee51951",
+          "42284bf6bb105da9b0dca8be245f2fbaebee3ce9",
+          "caaee43f9783d4b46e5ddf16b8e333213ef96ac7"
+        ]
+      },
+      "feat/pso-ddi": {
+        "tip": "f254a944ca9b2273b71b818f2fadf76a10f48102",
+        "patch_equivalent": 9,
+        "unique": []
+      },
+      "feat/uma-memory": {
+        "tip": "279b280e0a76830eff4faffe9c7fbb395c762762",
+        "patch_equivalent": 34,
+        "unique": [
+          "e2b99d224f9524ebed78f8850ae674940c5a5012",
+          "279b280e0a76830eff4faffe9c7fbb395c762762"
+        ]
+      },
+      "feat/uma-memory-v2": {
+        "tip": "25e9ad3e606d33586f6c199cab4d26275ff01140",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "feature/e2e-integration-harness": {
+        "tip": "119c2bd4522ad5f2df471515cdf6fdd8ed4da1d5",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "main": {
+        "tip": "95c17031173baf02649103a6a9c848ca460a7f44",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "measure/no-upload-limit": {
+        "tip": "9cf061bc3154c24b028d1dc17c1b3563c172642a",
+        "patch_equivalent": 16,
+        "unique": [
+          "5a9eb523a5fc8db3a894deef6354f50e53a1c6da",
+          "9cf061bc3154c24b028d1dc17c1b3563c172642a"
+        ]
+      },
+      "perf/d3dmetal-probes": {
+        "tip": "84facb48783d86c75798f4daa04b7e88b336c1b6",
+        "patch_equivalent": 2,
+        "unique": []
+      },
+      "perf/lock-free-batch-submission": {
+        "tip": "6d4eb7b28040bb8a03c634f32a86ed255c3934a5",
+        "patch_equivalent": 4,
+        "unique": []
+      },
+      "perf/lock-free-ring": {
+        "tip": "2c248bbd9347f0ab706bf6c45e69e4e217a2c09d",
+        "patch_equivalent": 15,
+        "unique": []
+      },
+      "perf/non-blocking-psos": {
+        "tip": "019dd434dd8a2f35940d310e25469d1ffe244180",
+        "patch_equivalent": 10,
+        "unique": []
+      },
+      "perf/resource-telemetry": {
+        "tip": "05004f493690819db9d7931b0d0ea89e96f8af45",
+        "patch_equivalent": 11,
+        "unique": []
+      },
+      "perf/telemetry": {
+        "tip": "032433c9fcb74cb1c336f90ab36462a6f6f7e33e",
+        "patch_equivalent": 6,
+        "unique": []
+      },
+      "perf/upload-flush-limit": {
+        "tip": "1b3e0cf44e4b5995c1648d4913f2045e50a23243",
+        "patch_equivalent": 2,
+        "unique": []
+      },
+      "origin": {
+        "tip": "95c17031173baf02649103a6a9c848ca460a7f44",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/chore/remove-stale-files": {
+        "tip": "346eac7d7126e691d1a8fae53cd2733366ea769e",
+        "patch_equivalent": 17,
+        "unique": []
+      },
+      "origin/ci/shared-qa": {
+        "tip": "851a966adeb4ff93865c0048c2a666ea92e28c0e",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "origin/docs/consolidate-and-agnosticize": {
+        "tip": "2da81634c591793b55338a31b0283aa2719d4bde",
+        "patch_equivalent": 1,
+        "unique": [
+          "2da81634c591793b55338a31b0283aa2719d4bde"
+        ]
+      },
+      "origin/feat/ddi-telemetry-tracing": {
+        "tip": "c5c689ba2251dd46b925679e64cd45de5bf4532d",
+        "patch_equivalent": 1,
+        "unique": [
+          "2da81634c591793b55338a31b0283aa2719d4bde",
+          "e57ebbe5ed5a904a02e215a0acdff1caef0d8c7b",
+          "c5c689ba2251dd46b925679e64cd45de5bf4532d"
+        ]
+      },
+      "origin/feat/first-d3dmetal-frame": {
+        "tip": "d23216a153a72529c3f80836e42ac6805d0085e0",
+        "patch_equivalent": 311,
+        "unique": []
+      },
+      "origin/feat/lazy-dtl-init": {
+        "tip": "95c17031173baf02649103a6a9c848ca460a7f44",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/feat/uma-memory": {
+        "tip": "279b280e0a76830eff4faffe9c7fbb395c762762",
+        "patch_equivalent": 34,
+        "unique": [
+          "e2b99d224f9524ebed78f8850ae674940c5a5012",
+          "279b280e0a76830eff4faffe9c7fbb395c762762"
+        ]
+      },
+      "origin/main": {
+        "tip": "95c17031173baf02649103a6a9c848ca460a7f44",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/measure/no-upload-limit": {
+        "tip": "9cf061bc3154c24b028d1dc17c1b3563c172642a",
+        "patch_equivalent": 16,
+        "unique": [
+          "5a9eb523a5fc8db3a894deef6354f50e53a1c6da",
+          "9cf061bc3154c24b028d1dc17c1b3563c172642a"
+        ]
+      },
+      "origin/perf/lock-free-ring": {
+        "tip": "2c248bbd9347f0ab706bf6c45e69e4e217a2c09d",
+        "patch_equivalent": 15,
+        "unique": []
+      },
+      "origin/perf/resource-telemetry": {
+        "tip": "05004f493690819db9d7931b0d0ea89e96f8af45",
+        "patch_equivalent": 11,
+        "unique": []
+      }
+    },
+    "commits": {
+      "0aa97f70a9e5bb7ac5021e04118d243c1bf545b2": {
+        "subject": "port(dtl): replace MSVC class extensions",
+        "paths": [
+          "patches/dtl/0009-replace-msvc-class-extensions.patch",
+          "patches/dtl/0010-replace-msvc-view-constructor-extension.patch"
+        ],
+        "refs": [
+          "codex/mingw-dtl-sdk-overlay"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "4fe27e6a8cbe8edffa9a93212b6ec38c4d480f8b": {
+        "subject": "docs: consolidate port phases and milestones",
+        "paths": [
+          "README.md",
+          "docs/D3D11ON12.md",
+          "docs/DDI-REMAINING-ROADMAP.md",
+          "docs/PORT-QUALITY-ROADMAP.md",
+          "docs/ROADMAP.md",
+          "docs/TESTS.md"
+        ],
+        "refs": [
+          "codex/port-roadmap-consolidation"
+        ],
+        "disposition": "reconciled-roadmap-navigation",
+        "evidence": "Relay12 PR 29; link-preserving index replaces stale readiness claims and destructive document moves."
+      },
+      "2da81634c591793b55338a31b0283aa2719d4bde": {
+        "subject": "test: add latency and overhead benchmark for D3D11On12",
+        "paths": [
+          "tests/e2e_d3d11_overhead.cpp"
+        ],
+        "refs": [
+          "docs/consolidate-and-agnosticize",
+          "feat/ddi-telemetry-tracing",
+          "origin/docs/consolidate-and-agnosticize",
+          "origin/feat/ddi-telemetry-tracing"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "e57ebbe5ed5a904a02e215a0acdff1caef0d8c7b": {
+        "subject": "feat(telemetry): inject zero-overhead performance proxy right into DDI host callbacks",
+        "paths": [
+          "relay12-d3d11/d3d11on12core.cpp",
+          "tests/test_telemetry.py"
+        ],
+        "refs": [
+          "feat/ddi-telemetry-tracing",
+          "origin/feat/ddi-telemetry-tracing"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "c5c689ba2251dd46b925679e64cd45de5bf4532d": {
+        "subject": "docs: formally characterize DDI telemetry overheads in roadmap",
+        "paths": [
+          "docs/PERFORMANCE-RESEARCH-ROADMAP.md"
+        ],
+        "refs": [
+          "feat/ddi-telemetry-tracing",
+          "origin/feat/ddi-telemetry-tracing"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "03d5f63020dc6a3c8f658bead9244ea5dd843fed": {
+        "subject": "add debug workflow",
+        "paths": [
+          ".github/workflows/debug.yml"
+        ],
+        "refs": [
+          "feat/debug-actions"
+        ],
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
+      },
+      "bf8e1ea3dc97c6b3f2c5a9f93aadb237000e2bfd": {
+        "subject": "push logs back",
+        "paths": [
+          ".github/workflows/debug.yml"
+        ],
+        "refs": [
+          "feat/debug-actions"
+        ],
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
+      },
+      "69da9794af62734674c322312076ba95c7db0cde": {
+        "subject": "use paste.rs",
+        "paths": [
+          ".github/workflows/debug.yml"
+        ],
+        "refs": [
+          "feat/debug-actions"
+        ],
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
+      },
+      "d5718580630b8b17004d75ea0e084c14fa3bf823": {
+        "subject": "Try pushing logs to branch",
+        "paths": [
+          ".github/workflows/debug.yml"
+        ],
+        "refs": [
+          "feat/debug-actions"
+        ],
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
+      },
+      "069d63acdd267f3235b7be94c864897ab96a283e": {
+        "subject": "add permissions write",
+        "paths": [
+          ".github/workflows/debug.yml"
+        ],
+        "refs": [
+          "feat/debug-actions"
+        ],
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
+      },
+      "811f0b5ef1db23e84deff6b9f5f0117c45668261": {
+        "subject": "Add logs",
+        "paths": [
+          "build_log1.txt",
+          "build_log2.txt",
+          "objdump.txt"
+        ],
+        "refs": [
+          "feat/debug-actions"
+        ],
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
+      },
+      "31a6ae61c92fa0aa972b28ff58ea2c31426e2450": {
+        "subject": "Try full step 7",
+        "paths": [
+          ".github/workflows/debug.yml"
+        ],
+        "refs": [
+          "feat/debug-actions"
+        ],
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
+      },
+      "9a66d86b794bf6fbff6268dbac13d02959733741": {
+        "subject": "Try step 11",
+        "paths": [
+          ".github/workflows/debug.yml"
+        ],
+        "refs": [
+          "feat/debug-actions"
+        ],
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
+      },
+      "b2e256951be5ea688c495c7ad9755ad2c0a5d61d": {
+        "subject": "Step 11 logs",
+        "paths": [
+          "step11_c.txt",
+          "step11_cxx.txt",
+          "step11_neg_c.txt",
+          "step11_neg_cxx.txt",
+          "wine1.txt",
+          "wine2.txt",
+          "wine3.txt",
+          "wine4.txt"
+        ],
+        "refs": [
+          "feat/debug-actions"
+        ],
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
+      },
+      "ae8dced7a07f209aa2995a5800bb9254a0448ba9": {
+        "subject": "ci: build pinned DXBC converter for real driver validation",
+        "paths": [
+          ".github/workflows/build-dxilconv.yml"
+        ],
+        "refs": [
+          "feat/peak-smoke-oracle"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "53f2a64150fead01333a321505d6b6c08dc1e7eb": {
+        "subject": "feat: implement experimental On12 frame lifecycle and readback",
+        "paths": [
+          ".github/workflows/integration-test.yml",
+          ".github/workflows/pull-request.yml",
+          "docs/D3D11ON12.md",
+          "docs/FIRST-FRAME-VALIDATION.md",
+          "docs/PORT-QUALITY-ROADMAP.md",
+          "docs/TESTS.md",
+          "patches/0016-d3d11-route-render-target-views.patch",
+          "patches/0017-d3d11-route-basic-frame-state.patch",
+          "patches/0018-d3d11-route-readback.patch",
+          "patches/0019-d3d11-register-host-in-generated-configure.patch",
+          "patches/0020-d3d11-publish-first-frame-device.patch",
+          "patches/0021-d3d11-fix-uncompiled-backend-branches.patch",
+          "patches/0022-d3d11-retain-bound-backend-objects.patch",
+          "patches/0023-d3d11-reject-unsupported-backend-operations.patch",
+          "patches/d3d11on12/0022-honor-null-default-pipeline-states.patch",
+          "patches/d3d11on12/0023-allow-offscreen-host-without-dxgi-table.patch",
+          "patches/d3d11on12/0024-make-shared-resource-compatibility-optional.patch",
+          "patches/dtl/0020-reject-sharing-without-compatibility-device.patch",
+          "relay12-d3d11/d3d11on12core.cpp",
+          "relay12-d3d11/d3d11on12core.def",
+          "relay12-d3d11/d3d11on12core.h",
+          "relay12-d3d11/d3d11shim.cpp",
+          "relay12-d3d11/wine_d3d11on12_shader.h",
+          "scripts/build-wine-d3d11-host.sh",
+          "scripts/check_adapter_args.py",
+          "scripts/check_pe_audit.py",
+          "scripts/check_wine_d3d11_backend.py",
+          "scripts/run-d3dmetal-frame.py",
+          "tests/d3d11on12frame.c",
+          "tests/d3d11on12frontend.c",
+          "tests/d3d11on12mockdriver.c",
+          "tests/d3d11on12openadapter.c",
+          "tests/e2e_d3d11_triangle.cpp",
+          "tests/test_ci_gates.py"
+        ],
+        "refs": [
+          "feat/peak-smoke-oracle"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "99e8a68fbec92114717ec85a7d2b39a7d800909f": {
+        "subject": "fix: match resource-kind ABI and unblock frontend CI build",
+        "paths": [
+          ".github/workflows/pull-request.yml",
+          "relay12-d3d11/d3d11on12core.cpp",
+          "relay12-d3d11/ddi/wine_d3d11ddi.h",
+          "scripts/build-wine-d3d11-host.sh",
+          "scripts/check_driver_resource_abi.py"
+        ],
+        "refs": [
+          "feat/peak-smoke-oracle"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "794e57c76286890031cc2483af1beb420a00ea48": {
+        "subject": "fix: share translation-layer class layout with the driver",
+        "paths": [
+          "patches/dtl/0021-propagate-dxcore-layout-definition.patch",
+          "relay12-d3d11/d3d11on12core.cpp",
+          "scripts/check_driver_resource_abi.py",
+          "scripts/run-d3dmetal-frame.py",
+          "tests/e2e_d3d11_triangle.cpp"
+        ],
+        "refs": [
+          "feat/peak-smoke-oracle"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "0dcc343ebd2055dd683a3bad1a4bab27f2d266a4": {
+        "subject": "fix: include application context in DTL layout patch",
+        "paths": [
+          "patches/dtl/0021-propagate-dxcore-layout-definition.patch"
+        ],
+        "refs": [
+          "feat/peak-smoke-oracle"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "67abed98ec757c12605f80342a8f7bb740e5cef9": {
+        "subject": "feat: complete experimental first-frame slice and D3DMetal validation",
+        "paths": [
+          ".gitignore",
+          "AGENTS.md",
+          "docs/CLEANROOM-DDI.md",
+          "docs/D3D11ON12.md",
+          "docs/DDI-CONCURRENCY-TESTING.md",
+          "docs/DDI-REMAINING-ROADMAP.md",
+          "docs/FIRST-FRAME-VALIDATION.md",
+          "docs/RELAY12-IMPLEMENTATION-PLAN.md",
+          "relay12-d3d11/d3d11on12core.cpp"
+        ],
+        "refs": [
+          "feat/peak-smoke-oracle"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "c14c323fad5f9907076e8a39a55217f85ee51951": {
+        "subject": "test: add portable regression tests for DDI amortized processing callback",
+        "paths": [
+          "tests/d3d11on12mockdriver.c",
+          "tests/d3d11on12openadapter.c",
+          "tests/test_ci_gates.py"
+        ],
+        "refs": [
+          "feat/peak-smoke-oracle"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "42284bf6bb105da9b0dca8be245f2fbaebee3ce9": {
+        "subject": "test: add a real core-callbacks gate, soak and partial-publication coverage",
+        "paths": [
+          ".github/workflows/pull-request.yml",
+          "scripts/check_core_callbacks.py",
+          "tests/d3d11on12frame.c",
+          "tests/d3d11on12mockdriver.c",
+          "tests/d3d11on12openadapter.c",
+          "tests/test_ci_gates.py"
+        ],
+        "refs": [
+          "feat/peak-smoke-oracle"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "caaee43f9783d4b46e5ddf16b8e333213ef96ac7": {
+        "subject": "test: add the PEAK smoke-run gate and an On12 interface probe",
+        "paths": [
+          "scripts/check_peak_smoke_log.py",
+          "tests/peak_on12_probe.cpp",
+          "tests/test_peak_smoke_log.py"
+        ],
+        "refs": [
+          "feat/peak-smoke-oracle"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "e2b99d224f9524ebed78f8850ae674940c5a5012": {
+        "subject": "test(on12): cover wrapped failures and BGRA teardown readback",
+        "paths": [
+          ".github/workflows/pull-request.yml",
+          "docs/D3D11ON12.md",
+          "docs/TESTS.md",
+          "relay12-d3d11/d3d11on12core.cpp",
+          "tests/d3d11on12srv.c",
+          "tests/e2e_d3d11_wrapped.cpp"
+        ],
+        "refs": [
+          "feat/uma-memory",
+          "origin/feat/uma-memory"
+        ],
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
+      },
+      "279b280e0a76830eff4faffe9c7fbb395c762762": {
+        "subject": "docs: consolidate roadmaps into single authoritative ROADMAP.md and archive validation reports",
+        "paths": [
+          ".github/workflows/integration-test.yml",
+          "AGENTS.md",
+          "README.md",
+          "docs/CLEANROOM-DDI.md",
+          "docs/D3D11ON12.md",
+          "docs/DDI-REMAINING-ROADMAP.md",
+          "docs/FIRST-FRAME-VALIDATION.md",
+          "docs/MSYNC-INVESTIGATION.md",
+          "docs/PERFORMANCE-RESEARCH-ROADMAP.md",
+          "docs/RELAY12-IMPLEMENTATION-PLAN.md",
+          "docs/ROADMAP.md",
+          "docs/TESTS.md",
+          "docs/WRAPPED-RESOURCE-VALIDATION.md",
+          "docs/validation/2026-09-23-first-frame/README.md",
+          "docs/validation/2026-09-24-wrapped-resources/README.md",
+          "docs/validation/2026-10-01-msync-investigation/README.md",
+          "docs/validation/README.md",
+          "relay12-d3d11/ddi/wine_d3d11ddi.h"
+        ],
+        "refs": [
+          "feat/uma-memory",
+          "origin/feat/uma-memory"
+        ],
+        "disposition": "reconciled-roadmap-navigation",
+        "evidence": "Relay12 PR 29; link-preserving index replaces stale readiness claims and destructive document moves."
+      },
+      "5a9eb523a5fc8db3a894deef6354f50e53a1c6da": {
+        "subject": "measure: build with the upload-heap submit limit at zero (upstream behaviour)",
+        "paths": [
+          "patches/d3d11on12/0025-set-upload-heap-submit-limit.patch",
+          "scripts/check_d3d11on12_port.py"
+        ],
+        "refs": [
+          "measure/no-upload-limit",
+          "origin/measure/no-upload-limit"
+        ],
+        "disposition": "ported-as-isolated-research",
+        "evidence": "Relay12 PR 28; source-copy tool, production gate rejection regression, 200 tests and both handoff builds."
+      },
+      "9cf061bc3154c24b028d1dc17c1b3563c172642a": {
+        "subject": "measure: skip the zero-limit gate test on this branch",
+        "paths": [
+          "tests/test_ci_gates.py"
+        ],
+        "refs": [
+          "measure/no-upload-limit",
+          "origin/measure/no-upload-limit"
+        ],
+        "disposition": "ported-as-isolated-research",
+        "evidence": "Relay12 PR 28; source-copy tool, production gate rejection regression, 200 tests and both handoff builds."
+      }
+    },
+    "integrationHead": "b9f1158b17b6afba2dce8df98a292793979ca9e7",
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "mergedMain": "fd35bce752b5a96e950227cc1bc9edfc563ea1a1",
+    "mergedPullRequest": "https://github.com/niltonperimneto/relay12/pull/28",
+    "roadmapFollowup": {
+      "head": "23d3487ee6b30ebaa33495c9f5f4c85e4765e337",
+      "pullRequest": "https://github.com/niltonperimneto/relay12/pull/29",
+      "status": "merged",
+      "note": "Fresh pull-request semaphore/ring builds and QA passed after fixing the docs trigger; merged without bypassing branch policy. The fd35bce runtime pin contains all production code; the follow-up changes only documentation and CI.",
+      "mergedMain": "443e9d7550eb7a96d2ec13bf8ec7e3735eac9445"
+    }
+  },
+  "mesa": {
+    "main": "ecfbdf2ab6e0ff1787f6073e2ef77c1f37a82f28",
+    "branches": {
+      "ci/kosmickrisp-macos-26": {
+        "tip": "17b25ca9395febdeb755b76f5d703c2fa325e7e1",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "ci/notify-hub": {
+        "tip": "a3ed530da75ad6315a558adcc85755d3db13022a",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "ci/shared-qa": {
+        "tip": "ba144f7212f901d62d02fecf758919f7e68fb627",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "cleanup/series-20261009": {
+        "tip": "3aef25578de3bb370b546fcbf2adf7a6f62c22e2",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "kk/msl-helper-linking": {
+        "tip": "3b85fe88f8416afa24c498af408240e6fbc2c27e",
+        "patch_equivalent": 0,
+        "unique": [
+          "f1b18aa38ce8b3e1b03a065853af357dfc77ba42",
+          "bf8461b0991482c6ce2011073bc88619446adef8",
+          "3b85fe88f8416afa24c498af408240e6fbc2c27e"
+        ]
+      },
+      "main": {
+        "tip": "b1ed5c27b9d3af4daca1c01704412b7c53417d2d",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "mr-44786-upstream-latest": {
+        "tip": "2d1ea84b3ea481d312a3a022f2463e9acb905b18",
+        "patch_equivalent": 6,
+        "unique": [
+          "e91b1ca6c42b2e4e808be149bf7f6c967f1afe0c",
+          "76f3957a5b932c7bf50bc444228bac01fb3423b9"
+        ]
+      },
+      "mr-44928": {
+        "tip": "354a98ca2d718504525fdc402d0095dc204579a7",
+        "patch_equivalent": 6,
+        "unique": [
+          "e91b1ca6c42b2e4e808be149bf7f6c967f1afe0c",
+          "76f3957a5b932c7bf50bc444228bac01fb3423b9",
+          "531468cfd3c5f48d3f08eb190ba742cd10f7933a",
+          "0033d006cec3e64b9420a76437123d5899070ee6",
+          "48a513d4fc7581f1e503cd1598ef7a15a6f94c75",
+          "a1bb29f696184ed1af107276450372aad5c20e9a",
+          "a77f39c9d9fda634ebc6bcb5760ec56d8d27d0cf",
+          "52df25f848cf95149d338be19134e14b99f9915c",
+          "354a98ca2d718504525fdc402d0095dc204579a7"
+        ]
+      },
+      "mr-44928-upstream-latest": {
+        "tip": "354a98ca2d718504525fdc402d0095dc204579a7",
+        "patch_equivalent": 6,
+        "unique": [
+          "e91b1ca6c42b2e4e808be149bf7f6c967f1afe0c",
+          "76f3957a5b932c7bf50bc444228bac01fb3423b9",
+          "531468cfd3c5f48d3f08eb190ba742cd10f7933a",
+          "0033d006cec3e64b9420a76437123d5899070ee6",
+          "48a513d4fc7581f1e503cd1598ef7a15a6f94c75",
+          "a1bb29f696184ed1af107276450372aad5c20e9a",
+          "a77f39c9d9fda634ebc6bcb5760ec56d8d27d0cf",
+          "52df25f848cf95149d338be19134e14b99f9915c",
+          "354a98ca2d718504525fdc402d0095dc204579a7"
+        ]
+      },
+      "origin": {
+        "tip": "ecfbdf2ab6e0ff1787f6073e2ef77c1f37a82f28",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/ci/kosmickrisp-macos-26": {
+        "tip": "17b25ca9395febdeb755b76f5d703c2fa325e7e1",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "origin/ci/notify-hub": {
+        "tip": "a3ed530da75ad6315a558adcc85755d3db13022a",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "origin/ci/shared-qa": {
+        "tip": "ba144f7212f901d62d02fecf758919f7e68fb627",
+        "patch_equivalent": 1,
+        "unique": []
+      },
+      "origin/kk-fill-mode-non-solid": {
+        "tip": "1f168c8384ced826734e0569f18539d98643f091",
+        "patch_equivalent": 3,
+        "unique": [
+          "638797f811327611ffc21feac87dc68d3e5f8f28",
+          "9e06674e54ec1337ffa77fbefece24e2252d257d",
+          "72fa3bd69fac01c90cdb876d128f2068840a2c3c",
+          "acafb74ad19abbc218bdea2cf39af9837c787643",
+          "aed3b2da79d4297b47458209826b519eae190ad5",
+          "1f168c8384ced826734e0569f18539d98643f091"
+        ]
+      },
+      "origin/kk/msl-helper-linking": {
+        "tip": "3b85fe88f8416afa24c498af408240e6fbc2c27e",
+        "patch_equivalent": 0,
+        "unique": [
+          "f1b18aa38ce8b3e1b03a065853af357dfc77ba42",
+          "bf8461b0991482c6ce2011073bc88619446adef8",
+          "3b85fe88f8416afa24c498af408240e6fbc2c27e"
+        ]
+      },
+      "origin/main": {
+        "tip": "ecfbdf2ab6e0ff1787f6073e2ef77c1f37a82f28",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "origin/util-macos-host-page-size": {
+        "tip": "95942eac289deef980fe93fb102b3cd0a000b43d",
+        "patch_equivalent": 3,
+        "unique": [
+          "638797f811327611ffc21feac87dc68d3e5f8f28",
+          "9e06674e54ec1337ffa77fbefece24e2252d257d",
+          "72fa3bd69fac01c90cdb876d128f2068840a2c3c",
+          "acafb74ad19abbc218bdea2cf39af9837c787643",
+          "aed3b2da79d4297b47458209826b519eae190ad5",
+          "95942eac289deef980fe93fb102b3cd0a000b43d"
+        ]
+      }
+    },
+    "commits": {
+      "f1b18aa38ce8b3e1b03a065853af357dfc77ba42": {
+        "subject": "kk: dynamic MSL helper linking and native primitive ID PSO guards",
+        "paths": [
+          "src/kosmickrisp/bridge/mtl_compiler.h",
+          "src/kosmickrisp/bridge/mtl_compiler.m",
+          "src/kosmickrisp/bridge/stubs/mtl_compiler.c",
+          "src/kosmickrisp/compiler/meson.build",
+          "src/kosmickrisp/compiler/msl_helpers.c",
+          "src/kosmickrisp/compiler/msl_private.h",
+          "src/kosmickrisp/compiler/nir_to_msl.c",
+          "src/kosmickrisp/compiler/nir_to_msl.h",
+          "src/kosmickrisp/vulkan/kk_debug.c",
+          "src/kosmickrisp/vulkan/kk_debug.h",
+          "src/kosmickrisp/vulkan/kk_device.c",
+          "src/kosmickrisp/vulkan/kk_device.h",
+          "src/kosmickrisp/vulkan/kk_msl_helpers.c",
+          "src/kosmickrisp/vulkan/kk_msl_helpers.h",
+          "src/kosmickrisp/vulkan/kk_physical_device.c",
+          "src/kosmickrisp/vulkan/kk_pso_cache.c",
+          "src/kosmickrisp/vulkan/kk_pso_cache.h",
+          "src/kosmickrisp/vulkan/kk_shader.c",
+          "src/kosmickrisp/vulkan/kk_shader.h",
+          "src/kosmickrisp/vulkan/meson.build",
+          "src/kosmickrisp/vulkan/tests/metal_cache.c",
+          "src/kosmickrisp/vulkan/tests/msl_helpers.c",
+          "src/kosmickrisp/vulkan/tests/pso_cache.c"
+        ],
+        "refs": [
+          "kk/msl-helper-linking",
+          "origin/kk/msl-helper-linking"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "bf8461b0991482c6ce2011073bc88619446adef8": {
+        "subject": "kk: skip the MSL helper test when no Metal device exists",
+        "paths": [
+          "src/kosmickrisp/vulkan/tests/msl_helpers.c"
+        ],
+        "refs": [
+          "kk/msl-helper-linking",
+          "origin/kk/msl-helper-linking"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "3b85fe88f8416afa24c498af408240e6fbc2c27e": {
+        "subject": "kk: apply clang-format to the MSL helper linking changes",
+        "paths": [
+          "src/kosmickrisp/bridge/mtl_compiler.h",
+          "src/kosmickrisp/bridge/mtl_compiler.m",
+          "src/kosmickrisp/bridge/stubs/mtl_compiler.c",
+          "src/kosmickrisp/compiler/msl_helpers.c",
+          "src/kosmickrisp/compiler/nir_to_msl.c",
+          "src/kosmickrisp/vulkan/kk_device.h",
+          "src/kosmickrisp/vulkan/kk_pso_cache.c",
+          "src/kosmickrisp/vulkan/kk_shader.c",
+          "src/kosmickrisp/vulkan/tests/msl_helpers.c",
+          "src/kosmickrisp/vulkan/tests/pso_cache.c"
+        ],
+        "refs": [
+          "kk/msl-helper-linking",
+          "origin/kk/msl-helper-linking"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "e91b1ca6c42b2e4e808be149bf7f6c967f1afe0c": {
+        "subject": "kk: Implement geometry shaders with poly",
+        "paths": [
+          "src/kosmickrisp/libkk/kk_draws.cl",
+          "src/kosmickrisp/libkk/kk_geometry.cl",
+          "src/kosmickrisp/vulkan/kk_cmd_buffer.h",
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c",
+          "src/kosmickrisp/vulkan/kk_nir_lower_descriptors.c",
+          "src/kosmickrisp/vulkan/kk_shader.c",
+          "src/kosmickrisp/vulkan/kk_shader.h"
+        ],
+        "refs": [
+          "mr-44786-upstream-latest",
+          "mr-44928",
+          "mr-44928-upstream-latest"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "76f3957a5b932c7bf50bc444228bac01fb3423b9": {
+        "subject": "kk: Draw adjacency topologies without a geometry shader",
+        "paths": [
+          "src/kosmickrisp/bridge/vk_to_mtl_map.c",
+          "src/kosmickrisp/libkk/kk_draws.cl",
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c"
+        ],
+        "refs": [
+          "mr-44786-upstream-latest",
+          "mr-44928",
+          "mr-44928-upstream-latest"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "531468cfd3c5f48d3f08eb190ba742cd10f7933a": {
+        "subject": "kk: Keep GS metadata with the pipeline's VS",
+        "paths": [
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c",
+          "src/kosmickrisp/vulkan/kk_shader.c",
+          "src/kosmickrisp/vulkan/kk_shader.h"
+        ],
+        "refs": [
+          "mr-44928",
+          "mr-44928-upstream-latest"
+        ],
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
+      },
+      "0033d006cec3e64b9420a76437123d5899070ee6": {
+        "subject": "kk: Support transform feedback in GS emulation",
+        "paths": [
+          "src/kosmickrisp/libkk/kk_geometry.cl",
+          "src/kosmickrisp/libkk/kk_query.cl",
+          "src/kosmickrisp/libkk/kk_query.h",
+          "src/kosmickrisp/vulkan/kk_cmd_buffer.h",
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c",
+          "src/kosmickrisp/vulkan/kk_nir_lower_descriptors.c",
+          "src/kosmickrisp/vulkan/kk_shader.c",
+          "src/kosmickrisp/vulkan/kk_shader.h"
+        ],
+        "refs": [
+          "mr-44928",
+          "mr-44928-upstream-latest"
+        ],
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
+      },
+      "48a513d4fc7581f1e503cd1598ef7a15a6f94c75": {
+        "subject": "kk: Add a passthrough GS for transform feedback",
+        "paths": [
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c",
+          "src/kosmickrisp/vulkan/kk_shader.c"
+        ],
+        "refs": [
+          "mr-44928",
+          "mr-44928-upstream-latest"
+        ],
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
+      },
+      "a1bb29f696184ed1af107276450372aad5c20e9a": {
+        "subject": "kk: Rasterize the selected GS stream",
+        "paths": [
+          "src/kosmickrisp/vulkan/kk_cmd_buffer.h",
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c",
+          "src/kosmickrisp/vulkan/kk_nir_lower_descriptors.c"
+        ],
+        "refs": [
+          "mr-44928",
+          "mr-44928-upstream-latest"
+        ],
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
+      },
+      "a77f39c9d9fda634ebc6bcb5760ec56d8d27d0cf": {
+        "subject": "kk: Support transform feedback stream queries",
+        "paths": [
+          "src/kosmickrisp/vulkan/kk_query_pool.c"
+        ],
+        "refs": [
+          "mr-44928",
+          "mr-44928-upstream-latest"
+        ],
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
+      },
+      "52df25f848cf95149d338be19134e14b99f9915c": {
+        "subject": "kk: Implement vkCmdDrawIndirectByteCount2EXT",
+        "paths": [
+          "src/kosmickrisp/libkk/kk_draws.cl",
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c"
+        ],
+        "refs": [
+          "mr-44928",
+          "mr-44928-upstream-latest"
+        ],
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
+      },
+      "354a98ca2d718504525fdc402d0095dc204579a7": {
+        "subject": "kk: Advertise VK_EXT_transform_feedback",
+        "paths": [
+          "docs/features.txt",
+          "docs/relnotes/new_features.txt",
+          "src/kosmickrisp/vulkan/kk_physical_device.c"
+        ],
+        "refs": [
+          "mr-44928",
+          "mr-44928-upstream-latest"
+        ],
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
+      },
+      "638797f811327611ffc21feac87dc68d3e5f8f28": {
+        "subject": "kk: Add sparse buffer binding",
+        "paths": [
+          "src/kosmickrisp/bridge/mtl_command_queue.h",
+          "src/kosmickrisp/bridge/mtl_command_queue.m",
+          "src/kosmickrisp/bridge/mtl_device.h",
+          "src/kosmickrisp/bridge/mtl_device.m",
+          "src/kosmickrisp/bridge/mtl_heap.m",
+          "src/kosmickrisp/bridge/mtl_types.h",
+          "src/kosmickrisp/bridge/stubs/mtl_command_queue.c",
+          "src/kosmickrisp/bridge/stubs/mtl_device.c",
+          "src/kosmickrisp/vulkan/kk_buffer.c",
+          "src/kosmickrisp/vulkan/kk_buffer.h",
+          "src/kosmickrisp/vulkan/kk_physical_device.c",
+          "src/kosmickrisp/vulkan/kk_private.h",
+          "src/kosmickrisp/vulkan/kk_queue.c"
+        ],
+        "refs": [
+          "origin/kk-fill-mode-non-solid",
+          "origin/util-macos-host-page-size"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "9e06674e54ec1337ffa77fbefece24e2252d257d": {
+        "subject": "kk: Add exact-thread indirect compute dispatch",
+        "paths": [
+          "src/kosmickrisp/bridge/mtl_encoder.h",
+          "src/kosmickrisp/bridge/mtl_encoder.m",
+          "src/kosmickrisp/bridge/stubs/mtl_encoder.c",
+          "src/kosmickrisp/vulkan/kk_cmd_buffer.h",
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c"
+        ],
+        "refs": [
+          "origin/kk-fill-mode-non-solid",
+          "origin/util-macos-host-page-size"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "72fa3bd69fac01c90cdb876d128f2068840a2c3c": {
+        "subject": "kk: Implement geometry shaders with poly",
+        "paths": [
+          "src/kosmickrisp/libkk/kk_draws.cl",
+          "src/kosmickrisp/libkk/kk_geometry.cl",
+          "src/kosmickrisp/vulkan/kk_cmd_buffer.h",
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c",
+          "src/kosmickrisp/vulkan/kk_nir_lower_descriptors.c",
+          "src/kosmickrisp/vulkan/kk_shader.c",
+          "src/kosmickrisp/vulkan/kk_shader.h"
+        ],
+        "refs": [
+          "origin/kk-fill-mode-non-solid",
+          "origin/util-macos-host-page-size"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "acafb74ad19abbc218bdea2cf39af9837c787643": {
+        "subject": "kk: Draw adjacency topologies without a geometry shader",
+        "paths": [
+          "src/kosmickrisp/bridge/vk_to_mtl_map.c",
+          "src/kosmickrisp/libkk/kk_draws.cl",
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c"
+        ],
+        "refs": [
+          "origin/kk-fill-mode-non-solid",
+          "origin/util-macos-host-page-size"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "aed3b2da79d4297b47458209826b519eae190ad5": {
+        "subject": "kk: Use the patch index as the geometry shader primitive ID",
+        "paths": [
+          "src/kosmickrisp/vulkan/kk_shader.c"
+        ],
+        "refs": [
+          "origin/kk-fill-mode-non-solid",
+          "origin/util-macos-host-page-size"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "1f168c8384ced826734e0569f18539d98643f091": {
+        "subject": "kk: expose fillModeNonSolid through Metal's triangle fill mode",
+        "paths": [
+          "src/kosmickrisp/bridge/mtl_encoder.h",
+          "src/kosmickrisp/bridge/mtl_encoder.m",
+          "src/kosmickrisp/bridge/mtl_types.h",
+          "src/kosmickrisp/bridge/stubs/mtl_encoder.c",
+          "src/kosmickrisp/vulkan/kk_cmd_draw.c",
+          "src/kosmickrisp/vulkan/kk_physical_device.c"
+        ],
+        "refs": [
+          "origin/kk-fill-mode-non-solid"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      },
+      "95942eac289deef980fe93fb102b3cd0a000b43d": {
+        "subject": "util: use the host page size for available memory on macOS",
+        "paths": [
+          "src/util/os_misc.c"
+        ],
+        "refs": [
+          "origin/util-macos-host-page-size"
+        ],
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
+      }
+    },
+    "integrationHead": "8b26e0f1dc24ba67f306109309d251d8c1171f1a",
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "worktrees": [
+      {
+        "worktree": "gpl-cache-fix/agent-a",
+        "preservedSnapshot": "9a717e0783d71cf3d786a771486e0fcf3edeb617",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      },
+      {
+        "worktree": "gpl-cache-fix/agent-b",
+        "preservedSnapshot": "9da60e09d3a6206d2787bc686cddaf385924c1e7",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      },
+      {
+        "worktree": "gpl-cache-fix/agent-c",
+        "preservedSnapshot": "e4757347c98fb21230bb86868681923e724d2026",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      },
+      {
+        "worktree": "review-source",
+        "preservedSnapshot": "c61c939b16ea601bb40f73473fad03257c52f11c",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. The missing NSError initialization in mtl_residency_set.m is carried by Mesa PR 5."
+      },
+      {
+        "worktree": "variant-stalls/packaging/fresh-apply",
+        "preservedSnapshot": "a0dc86c40e3c3e2dfdc85a0fd3ae8f19e3c1e226",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      },
+      {
+        "worktree": "variant-stalls/packaging/fresh-apply35",
+        "preservedSnapshot": "1c5ca3522e27cc541b1f96929cc800789549294d",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      }
+    ],
+    "mergedMain": "92b0a6e0f5ab4c0ef1e490992879eeef7e3f420f",
+    "mergedPullRequest": "https://github.com/niltonperimneto/mesa/pull/5"
+  },
+  "Whisky": {
+    "main": "045f12636fd892f441c7c612df064dd2df9bce04",
+    "branches": {
+      "origin/main": {
+        "tip": "045f12636fd892f441c7c612df064dd2df9bce04",
+        "patch_equivalent": 0,
+        "unique": []
+      },
+      "feat/kosmickrisp-only-runtime": {
+        "tip": "ffe780f489c34afa2f7a3247f363dd7d5ff13669",
+        "patch_equivalent": 0,
+        "unique": [
+          "68138c64a5bed843758ed2d637d46007994f7756",
+          "c3b4744c0b9f47a1e15870c7001f401a062734cc",
+          "48869a1976b4288ced1e80cf7b96535b1c0ca25d",
+          "a357f00363b91cf55565d855fe3f1c6bf3e73885",
+          "ffe780f489c34afa2f7a3247f363dd7d5ff13669"
+        ]
+      }
+    },
+    "commits": {
+      "68138c64a5bed843758ed2d637d46007994f7756": {
+        "subject": "Support layout v2 runtimes with device checks and recoverable bottle switches",
+        "paths": [
+          ".github/workflows/RuntimeIntegration.yml",
+          "AGENTS.md",
+          "Whisky/Views/Bottle/RuntimePickerView.swift",
+          "Whisky/Views/Settings/RuntimeCoordinator.swift",
+          "WhiskyKit/Sources/WhiskyKit/Utils/DistributionConfig.swift",
+          "WhiskyKit/Sources/WhiskyKit/WhiskyWine/RuntimeCatalog.swift",
+          "WhiskyKit/Sources/WhiskyKit/WhiskyWine/RuntimeLayout.swift",
+          "WhiskyKit/Sources/WhiskyKit/WhiskyWine/RuntimeSwitchSnapshot.swift",
+          "WhiskyKit/Sources/WhiskyKit/WhiskyWine/WhiskyWineInstaller+Runtimes.swift",
+          "WhiskyKit/Sources/WhiskyKit/WhiskyWine/WhiskyWineInstaller.swift",
+          "WhiskyKit/Sources/WhiskyKit/WhiskyWine/WhiskyWineVersion.swift",
+          "WhiskyKit/Sources/WhiskyKit/Wine/GraphicsBackendResolver.swift",
+          "WhiskyKit/Sources/WhiskyKit/Wine/KosmicKrisp.swift",
+          "WhiskyKit/Sources/WhiskyKit/Wine/Wine+SteamHelperDXVK.swift",
+          "WhiskyKit/Sources/WhiskyKit/Wine/Wine.swift",
+          "WhiskyKit/Sources/WhiskyKit/Wine/WineEnvironment+ProgramOverrides.swift",
+          "WhiskyKit/Tests/WhiskyKitTests/KosmicKrispBackendTests.swift",
+          "WhiskyKit/Tests/WhiskyKitTests/RuntimeCatalogTests.swift",
+          "WhiskyKit/Tests/WhiskyKitTests/RuntimeContractTests.swift",
+          "WhiskyKit/Tests/WhiskyKitTests/RuntimeMetadataV2Tests.swift",
+          "WhiskyKit/Tests/WhiskyKitTests/RuntimeSwitchSnapshotTests.swift"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "c3b4744c0b9f47a1e15870c7001f401a062734cc": {
+        "subject": "Reserve runtime trees throughout a bottle runtime switch",
+        "paths": [
+          "WhiskyKit/Sources/WhiskyKit/Wine/Wine.swift"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "48869a1976b4288ced1e80cf7b96535b1c0ca25d": {
+        "subject": "Make the Steam single-flight fixture independent of startup timers",
+        "paths": [
+          "WhiskyKit/Tests/WhiskyKitTests/SteamClientOrchestratorLaunchTests.swift"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "a357f00363b91cf55565d855fe3f1c6bf3e73885": {
+        "subject": "Validate installed Wine core separately from mutable graphics payloads",
+        "paths": [
+          "WhiskyKit/Sources/WhiskyKit/WhiskyWine/RuntimeLayout.swift",
+          "WhiskyKit/Sources/WhiskyKit/WhiskyWine/RuntimeManifest.swift",
+          "WhiskyKit/Sources/WhiskyKit/WhiskyWine/WhiskyWineInstaller.swift",
+          "WhiskyKit/Sources/WhiskyKit/Wine/Wine.swift",
+          "WhiskyKit/Tests/WhiskyKitTests/InstalledRuntimeValidationTests.swift"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime"
+        ],
+        "disposition": "included-in-integration-history"
+      },
+      "ffe780f489c34afa2f7a3247f363dd7d5ff13669": {
+        "subject": "Keep full archive verification off the cooperative test executor",
+        "paths": [
+          "WhiskyKit/Tests/WhiskyKitTests/RuntimeContractTests.swift",
+          "WhiskyKit/Tests/WhiskyKitTests/SteamClientOrchestratorLaunchTests.swift"
+        ],
+        "refs": [
+          "feat/kosmickrisp-only-runtime"
+        ],
+        "disposition": "included-in-integration-history"
+      }
+    },
+    "integrationHead": "19a02714995faacac1b5a8b5edc55599506edd72",
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "mergedMain": "6bac60ee6ab1729af4ffc2975d196cca50e7e0f3",
+    "mergedPullRequest": "https://github.com/niltonperimneto/Whisky/pull/12"
+  }
+}
