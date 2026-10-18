@@ -138,7 +138,8 @@
           "feat/kosmickrisp-only-runtime",
           "origin/feat/kosmickrisp-only-runtime"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
       },
       "4d8838776d93a4998c544c299ef7d91a2fad6cb8": {
         "subject": "win32u: reject empty explicit Vulkan loader overrides",
@@ -149,7 +150,8 @@
           "feat/kosmickrisp-only-runtime",
           "origin/feat/kosmickrisp-only-runtime"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
       },
       "8d55450325fbb957163a4ddfe22a6d8dbbd3c71c": {
         "subject": "win32u: use the bundled Khronos loader without MoltenVK fallback",
@@ -162,7 +164,8 @@
           "feat/kosmickrisp-runtime-loader",
           "origin/feat/kosmickrisp-runtime-loader"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
       },
       "df6e7fe2819257706a321720e71c70ae2b195f5b": {
         "subject": "win32u: reject empty explicit Vulkan loader overrides",
@@ -173,7 +176,8 @@
           "feat/kosmickrisp-runtime-loader",
           "origin/feat/kosmickrisp-runtime-loader"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
       },
       "feda99e3831bc4cdf37a8d57a01d319b7acd5920": {
         "subject": "win32u: Log long Vulkan loader errors without overflowing the debug buffer",
@@ -184,7 +188,8 @@
           "feat/kosmickrisp-runtime-loader",
           "origin/feat/kosmickrisp-runtime-loader"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "represented-by-merged-loader-series",
+        "evidence": "WineCX PR 6 / c4fb531c; three loader changes, earlier copies superseded; PR and merged-main CI pass."
       },
       "86a78fb979ee09a2e5f65a4e84f47428527b0808": {
         "subject": "win32u: use the bundled Khronos loader without MoltenVK fallback",
@@ -956,7 +961,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "a2f29bd5d352ed1a8dd6bdd42e2c793fadca46fd": {
         "subject": "fix(ci): qualify /usr/bin/arch to prevent GNU coreutils collision",
@@ -984,7 +990,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "c2d7be5c317532cc3b7c39ddb41fb304b2fd02ad": {
         "subject": "ci: bump FAudio pin to 26.09 for wine 11.17",
@@ -1012,7 +1019,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "0bf3eabc2f0d95154282eb86b11205cbbaae6c65": {
         "subject": "fix(runtime): ship corrected flsgetvalue2 with regression gate",
@@ -1042,7 +1050,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "eaa0436849c092f6bed2ed30dd70e359b7e41f18": {
         "subject": "feat(arm64): keep the arm64 runtime recipe in the repo",
@@ -1076,7 +1085,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "5f07d59e7246e4e239c0e9f4e10fcae6035a4af4": {
         "subject": "fix(arm64): carry from 5.1.1 by default, older runtimes are gone",
@@ -1104,7 +1114,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "66184a0331333f2e18554d63158dae8c73152892": {
         "subject": "feat(kosmickrisp): build an x86_64 KosmicKrisp loader and ICD from pins",
@@ -1133,7 +1144,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "6db6ad89c666b308bb69536d530b676b037772f9": {
         "subject": "feat(kosmickrisp): add a per-process wine-kosmickrisp launcher",
@@ -1162,7 +1174,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "70cc10fcce860c706c6abb5c5251ec87c7a27e0a": {
         "subject": "ci: build and bundle kosmickrisp behind a dispatch-only input",
@@ -1190,7 +1203,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
       },
       "009e832c195254a1fcdd2158456db919e8b818bd": {
         "subject": "docs: describe the experimental kosmickrisp lane",
@@ -1219,7 +1233,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "dcf33b21e4c03ab63608a4a62b13ea20caab4ba0": {
         "subject": "feat(kosmickrisp): apply local driver patches on top of the pinned mesa",
@@ -1246,7 +1261,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
       },
       "aa3b09df7236c6300c85158941b51ba2dd2c053d": {
         "subject": "feat(kosmickrisp): expose fillModeNonSolid through metal's triangle fill mode",
@@ -1273,7 +1289,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
       },
       "ba5650eb1289b4aa300dbcd8ae87b7858882fc51": {
         "subject": "test(kosmickrisp): add a vulkan probe for the bundled driver",
@@ -1303,7 +1320,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "fbea2d4b85506e878c66789b8915b8242f348328": {
         "subject": "ci: refuse a kosmickrisp tree whose driver cannot create a device",
@@ -1329,7 +1347,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "24daec05f16ff20028a012cf678bd2c6dc35d2b9": {
         "subject": "ci: require upstream dxvk 3.1.1 to create d3d9 and d3d11 devices on kosmickrisp",
@@ -1356,7 +1375,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "87c1f4996c94846c96399b9350feb09470a69fea": {
         "subject": "docs: record the kosmickrisp lane's measured results",
@@ -1380,7 +1400,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "e43c35901cc52c59a2b090efcafd20eab4c4753b": {
         "subject": "docs: add portal and sonic adventure dx d3d9 results",
@@ -1404,7 +1425,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "b9e9f201ac8a4a93db17ace698fa4f3e4bafb0ed": {
         "subject": "docs: sonic adventure dx renders once its launcher writes a config",
@@ -1428,7 +1450,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "c9369162d4f540bead763bb99d80d2ff169fa380": {
         "subject": "feat(kosmickrisp): carry a mesa fix for the macos memory budget",
@@ -1451,7 +1474,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
       },
       "7e680568644e66546f8e8cefe8c230f4f9c1d0e2": {
         "subject": "docs: note what limits kosmickrisp + dxvk performance",
@@ -1474,7 +1498,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "93d1c74d22eebac36c9e98bd8621b85f64ea6633": {
         "subject": "fix(dxvk): ship the 32-bit dxgi so 32-bit games get a device",
@@ -1492,7 +1517,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "dad361ad7fe7744d36c4e8378d55c507dc58789c": {
         "subject": "feat: move the lane to wine 11.19",
@@ -1511,7 +1537,8 @@
           "origin/kk/metal-cache-regressions",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "bc0154cd7126049a0142dbe100220ebac9c3ebfd": {
         "subject": "feat(kosmickrisp): add present and compile stutter attribution tool",
@@ -1523,7 +1550,8 @@
         "refs": [
           "backup/kosmickrisp-before-ci-rebase-20261014"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "4348f5095b6fe3510c6c73dbeb9c07f4f040b20a": {
         "subject": "feat(kosmickrisp): package DXVK and add reproducible validation tools",
@@ -1558,7 +1586,8 @@
         "refs": [
           "backup/kosmickrisp-before-ci-rebase-20261014"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "dad1f3d4e3f440191d3e49bf7ad1d52d10f7ec2d": {
         "subject": "docs: define agent QA, hygiene and sign-off requirements",
@@ -1586,7 +1615,8 @@
         "refs": [
           "ci/publish-catalog-as-admin"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "2de2def07de2af5bdf4bbd1be46c11942e54ea1d": {
         "subject": "docs(ci): list the Pull requests permission HUB_DISPATCH_TOKEN needs",
@@ -1596,7 +1626,8 @@
         "refs": [
           "ci/publish-catalog-as-admin"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
       },
       "8099c5e7d2c2f353c0cdf02d11507b10c1ff9496": {
         "subject": "docs: explain hub architecture, contribution workflow and QA",
@@ -1679,7 +1710,8 @@
         "refs": [
           "feat/kosmickrisp-experimental"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
       },
       "c5673640a924b737e726b8633502bcf7e1044d2b": {
         "subject": "Package layout v2 without MoltenVK and gate promotion on physical migration evidence",
@@ -1919,7 +1951,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "0b23eb0fdb66615e6c5aaebdafbfd6ee0693eb59": {
         "subject": "fix(arm64): name the unused submodule key in the FEX build",
@@ -1929,7 +1962,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "4ce59a489a2038cf8f1ab1690127ac1d77b57015": {
         "subject": "feat(kosmickrisp): build a native arm64 bundle with KK_ARCH=arm64",
@@ -1940,7 +1974,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "a9c822076f996620a92aa4c8f662d140c4a9bfce": {
         "subject": "feat(arm64): package an opt-in KosmicKrisp driver with the native lane",
@@ -1956,7 +1991,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "1297731db8a0b03679a7c6c64dec4a3c7cbeb0e7": {
         "subject": "docs(arm64): record the first FEX build on macOS and its bootstrap scripts",
@@ -1968,7 +2004,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "31de189611f0368ad578914458cf062abb7f1c7c": {
         "subject": "chore(arm64): drop the bootstrap FEX scripts",
@@ -1980,7 +2017,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "a215e6f927cdb7ede082f6683abd132138b71c97": {
         "subject": "docs(arm64): record that the low 4GB stays unmappable without the entitlement",
@@ -1990,7 +2028,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "abb8f8f3c61218c769778e8cfec65f44ff756fdb": {
         "subject": "feat(arm64): sign our own wine.app under a provisioning profile",
@@ -2005,7 +2044,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "71b7f7187cb37b6f761593b7fe398e0fe9ad9915": {
         "subject": "test(arm64): add an x86 smoke run for FEX on arm64 Wine",
@@ -2017,7 +2057,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "d09782ba250bb6e94a05d993b4e3ff5a1f18087f": {
         "subject": "fix(arm64): build Wine's i386 half so WoW64 can run 32-bit programs",
@@ -2028,7 +2069,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-research-recipe",
+        "evidence": "c6e2c72; i386 ARM64 build target and original measured documentation, isolated from Rosetta runtime."
       },
       "82c361e63d2b6c61bbb54abad6c90aacdf20a78e": {
         "subject": "chore(arm64): add Xcode project files",
@@ -2051,7 +2093,8 @@
         "refs": [
           "kk/07-arm64"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-research-lane",
+        "evidence": "Main a420584/ac50e3e retain native/FEX recipes, signing/Xcode sources and fixtures; c6e2c72 supplies the missing i386 recipe delta. User state and deleted unpinned bootstrap scripts are not reintroduced."
       },
       "05c07f8860b2ce02c7adbe7e5a02fd978b33ef4f": {
         "subject": "kosmickrisp: provide a verified Rosetta runtime fallback",
@@ -2066,7 +2109,8 @@
           "kk/08-rosetta",
           "kk/09-rosetta-shader-cache"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "ef0e143c983e93f8fb91264748aec028a67c56f5": {
         "subject": "feat(kosmickrisp): add shader cache test harnesses and patch series",
@@ -2122,7 +2166,8 @@
         "refs": [
           "kk/09-rosetta-shader-cache"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "component-owned-replacement",
+        "evidence": "Pinned complete Mesa fork replaces old downstream patch stacks: geometry/adjacency, fill mode 0929299, host pages c616e35, cache concurrency and primitive-ID guards. Historical patch appliers are not added to the active packaging lane."
       },
       "f0e05e69c56f725e3f1717b4d3b94fe3c15867ee": {
         "subject": "feat(kosmickrisp): add present and compile stutter attribution tool",
@@ -2138,7 +2183,8 @@
           "origin/kk/investigation-coordinator",
           "origin/kk/investigation-telemetry-tooling"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "ad9fb1a711cae9394395243ff53581ae2a550b7f": {
         "subject": "feat(kosmickrisp): package DXVK and add reproducible validation tools",
@@ -2174,7 +2220,8 @@
           "kk/bounded-gameplay-investigation",
           "origin/kk/bounded-gameplay-investigation"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "ff76c767ec2b6f33508e18832aff54d0c813d6bf": {
         "subject": "fix(ci): use fixed Wine surface API and current Mesa fork",
@@ -2188,7 +2235,8 @@
           "kk/bounded-gameplay-investigation",
           "origin/kk/bounded-gameplay-investigation"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "f8c557c0b9e1541db9e5e9604d83a4c96623d0fe": {
         "subject": "chore(runtime): bump DXMT to 186a2327 and KosmicKrisp recipe to af7dd0a",
@@ -2200,7 +2248,8 @@
           "kk/bounded-gameplay-investigation",
           "origin/kk/bounded-gameplay-investigation"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "9140e198382aad1cefb080c11365fcd782c21602": {
         "subject": "fix(ci): avoid D3DMetal registry symbol collision and verify fork DXMT",
@@ -2212,7 +2261,8 @@
           "kk/bounded-gameplay-investigation",
           "origin/kk/bounded-gameplay-investigation"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "9b03debf14d5dfb9313e01688f9a5892bb2bfb34": {
         "subject": "fix(ci): audit Mesa optional entrypoints from generated declarations",
@@ -2226,7 +2276,8 @@
           "kk/bounded-gameplay-investigation",
           "origin/kk/bounded-gameplay-investigation"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "2f4194886cae5effb18c7f7c0b29e11b3287aacb": {
         "subject": "fix(wine): retain startup guards and collect native crash diagnostics",
@@ -2238,7 +2289,8 @@
           "kk/bounded-gameplay-investigation",
           "origin/kk/bounded-gameplay-investigation"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "3f2875936ef38ccf374a00bc841d91d1fcf96628": {
         "subject": "ci: capture native Wine startup backtraces and failed runtime",
@@ -2249,7 +2301,8 @@
           "kk/bounded-gameplay-investigation",
           "origin/kk/bounded-gameplay-investigation"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "d26473dad968a3c8009015497dc5a19dfd2f8ffd": {
         "subject": "Validate hosted KosmicKrisp artifacts on a physical GPU",
@@ -2262,7 +2315,8 @@
           "kk/bounded-gameplay-investigation",
           "origin/kk/bounded-gameplay-investigation"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "902f3b0b39b7f83ae66dcfc7eddd47f1896c447e": {
         "subject": "feat(kosmickrisp): package pinned upstream DXVK for experimental builds",
@@ -2277,7 +2331,8 @@
           "kk/package-dxvk-payload",
           "origin/kk/package-dxvk-payload"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-integration",
+        "evidence": "Reviewed current OCI build split (94205b3), source pins, loader/probe helpers and layout-v2 integration (1c4fca1) replace old monolithic workflow edits and older Wine/FAudio/DXMT pins; current startup guards and catalog credentials retained. Dated reports remain historical evidence, not current acceptance."
       },
       "3c9b74d1083d2234c05355968601da0863d488f0": {
         "subject": "chore(pins): bump relay12 to 95c1703",
@@ -2287,7 +2342,8 @@
         "refs": [
           "origin/bump/relay12-95c1703"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "integrated-artifact-pin",
+        "evidence": "7179174; source-matched lazy-initialization release digest."
       },
       "41dfd5951699217e286069371f8a6ed318ba1dea": {
         "subject": "tests: add standalone KosmicKrisp Metal cache regressions",
@@ -2300,7 +2356,8 @@
         "refs": [
           "origin/kk/metal-cache-regressions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-regression-coverage",
+        "evidence": "35acf86; restored 19 missing scenarios, 31 scenarios pass against current Mesa candidate."
       }
     },
     "integrationHead": "e920d5a615f3909166330b0334af2d3c711d5ca7",
@@ -2598,7 +2655,8 @@
         "refs": [
           "codex/mingw-dtl-sdk-overlay"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "4fe27e6a8cbe8edffa9a93212b6ec38c4d480f8b": {
         "subject": "docs: consolidate port phases and milestones",
@@ -2613,7 +2671,8 @@
         "refs": [
           "codex/port-roadmap-consolidation"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "reconciled-roadmap-navigation",
+        "evidence": "Relay12 PR 29; link-preserving index replaces stale readiness claims and destructive document moves."
       },
       "2da81634c591793b55338a31b0283aa2719d4bde": {
         "subject": "test: add latency and overhead benchmark for D3D11On12",
@@ -2626,7 +2685,8 @@
           "origin/docs/consolidate-and-agnosticize",
           "origin/feat/ddi-telemetry-tracing"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "e57ebbe5ed5a904a02e215a0acdff1caef0d8c7b": {
         "subject": "feat(telemetry): inject zero-overhead performance proxy right into DDI host callbacks",
@@ -2638,7 +2698,8 @@
           "feat/ddi-telemetry-tracing",
           "origin/feat/ddi-telemetry-tracing"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "c5c689ba2251dd46b925679e64cd45de5bf4532d": {
         "subject": "docs: formally characterize DDI telemetry overheads in roadmap",
@@ -2649,7 +2710,8 @@
           "feat/ddi-telemetry-tracing",
           "origin/feat/ddi-telemetry-tracing"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "03d5f63020dc6a3c8f658bead9244ea5dd843fed": {
         "subject": "add debug workflow",
@@ -2659,7 +2721,8 @@
         "refs": [
           "feat/debug-actions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
       },
       "bf8e1ea3dc97c6b3f2c5a9f93aadb237000e2bfd": {
         "subject": "push logs back",
@@ -2669,7 +2732,8 @@
         "refs": [
           "feat/debug-actions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
       },
       "69da9794af62734674c322312076ba95c7db0cde": {
         "subject": "use paste.rs",
@@ -2679,7 +2743,8 @@
         "refs": [
           "feat/debug-actions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
       },
       "d5718580630b8b17004d75ea0e084c14fa3bf823": {
         "subject": "Try pushing logs to branch",
@@ -2689,7 +2754,8 @@
         "refs": [
           "feat/debug-actions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
       },
       "069d63acdd267f3235b7be94c864897ab96a283e": {
         "subject": "add permissions write",
@@ -2699,7 +2765,8 @@
         "refs": [
           "feat/debug-actions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
       },
       "811f0b5ef1db23e84deff6b9f5f0117c45668261": {
         "subject": "Add logs",
@@ -2711,7 +2778,8 @@
         "refs": [
           "feat/debug-actions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
       },
       "31a6ae61c92fa0aa972b28ff58ea2c31426e2450": {
         "subject": "Try full step 7",
@@ -2721,7 +2789,8 @@
         "refs": [
           "feat/debug-actions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
       },
       "9a66d86b794bf6fbff6268dbac13d02959733741": {
         "subject": "Try step 11",
@@ -2731,7 +2800,8 @@
         "refs": [
           "feat/debug-actions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
       },
       "b2e256951be5ea688c495c7ad9755ad2c0a5d61d": {
         "subject": "Step 11 logs",
@@ -2748,7 +2818,8 @@
         "refs": [
           "feat/debug-actions"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "historical-diagnostic-artifact",
+        "evidence": "Obsolete logs/debug-upload workflows retained in original refs; current validation uploads artifacts without restoring external paste or branch-writing experiments."
       },
       "ae8dced7a07f209aa2995a5800bb9254a0448ba9": {
         "subject": "ci: build pinned DXBC converter for real driver validation",
@@ -2758,7 +2829,8 @@
         "refs": [
           "feat/peak-smoke-oracle"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "53f2a64150fead01333a321505d6b6c08dc1e7eb": {
         "subject": "feat: implement experimental On12 frame lifecycle and readback",
@@ -2801,7 +2873,8 @@
         "refs": [
           "feat/peak-smoke-oracle"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "99e8a68fbec92114717ec85a7d2b39a7d800909f": {
         "subject": "fix: match resource-kind ABI and unblock frontend CI build",
@@ -2815,7 +2888,8 @@
         "refs": [
           "feat/peak-smoke-oracle"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "794e57c76286890031cc2483af1beb420a00ea48": {
         "subject": "fix: share translation-layer class layout with the driver",
@@ -2829,7 +2903,8 @@
         "refs": [
           "feat/peak-smoke-oracle"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "0dcc343ebd2055dd683a3bad1a4bab27f2d266a4": {
         "subject": "fix: include application context in DTL layout patch",
@@ -2839,7 +2914,8 @@
         "refs": [
           "feat/peak-smoke-oracle"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "67abed98ec757c12605f80342a8f7bb740e5cef9": {
         "subject": "feat: complete experimental first-frame slice and D3DMetal validation",
@@ -2857,7 +2933,8 @@
         "refs": [
           "feat/peak-smoke-oracle"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "c14c323fad5f9907076e8a39a55217f85ee51951": {
         "subject": "test: add portable regression tests for DDI amortized processing callback",
@@ -2869,7 +2946,8 @@
         "refs": [
           "feat/peak-smoke-oracle"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "42284bf6bb105da9b0dca8be245f2fbaebee3ce9": {
         "subject": "test: add a real core-callbacks gate, soak and partial-publication coverage",
@@ -2884,7 +2962,8 @@
         "refs": [
           "feat/peak-smoke-oracle"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "caaee43f9783d4b46e5ddf16b8e333213ef96ac7": {
         "subject": "test: add the PEAK smoke-run gate and an On12 interface probe",
@@ -2896,7 +2975,8 @@
         "refs": [
           "feat/peak-smoke-oracle"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "e2b99d224f9524ebed78f8850ae674940c5a5012": {
         "subject": "test(on12): cover wrapped failures and BGRA teardown readback",
@@ -2912,7 +2992,8 @@
           "feat/uma-memory",
           "origin/feat/uma-memory"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-component-implementation",
+        "evidence": "Existing main portability series (23c07bb), DDI telemetry d0b32c3 and signature tests, wrapped-resource coverage 86aaa2e, modern overhead eb01a3f, and expanded PEAK smoke gates replace earlier versions. No old core/ABI tables restored."
       },
       "279b280e0a76830eff4faffe9c7fbb395c762762": {
         "subject": "docs: consolidate roadmaps into single authoritative ROADMAP.md and archive validation reports",
@@ -2940,7 +3021,8 @@
           "feat/uma-memory",
           "origin/feat/uma-memory"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "reconciled-roadmap-navigation",
+        "evidence": "Relay12 PR 29; link-preserving index replaces stale readiness claims and destructive document moves."
       },
       "5a9eb523a5fc8db3a894deef6354f50e53a1c6da": {
         "subject": "measure: build with the upload-heap submit limit at zero (upstream behaviour)",
@@ -2952,7 +3034,8 @@
           "measure/no-upload-limit",
           "origin/measure/no-upload-limit"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-as-isolated-research",
+        "evidence": "Relay12 PR 28; source-copy tool, production gate rejection regression, 200 tests and both handoff builds."
       },
       "9cf061bc3154c24b028d1dc17c1b3563c172642a": {
         "subject": "measure: skip the zero-limit gate test on this branch",
@@ -2963,7 +3046,8 @@
           "measure/no-upload-limit",
           "origin/measure/no-upload-limit"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-as-isolated-research",
+        "evidence": "Relay12 PR 28; source-copy tool, production gate rejection regression, 200 tests and both handoff builds."
       }
     },
     "integrationHead": "b9f1158b17b6afba2dce8df98a292793979ca9e7",
@@ -3135,7 +3219,8 @@
           "kk/msl-helper-linking",
           "origin/kk/msl-helper-linking"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "bf8461b0991482c6ce2011073bc88619446adef8": {
         "subject": "kk: skip the MSL helper test when no Metal device exists",
@@ -3146,7 +3231,8 @@
           "kk/msl-helper-linking",
           "origin/kk/msl-helper-linking"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "3b85fe88f8416afa24c498af408240e6fbc2c27e": {
         "subject": "kk: apply clang-format to the MSL helper linking changes",
@@ -3166,7 +3252,8 @@
           "kk/msl-helper-linking",
           "origin/kk/msl-helper-linking"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "e91b1ca6c42b2e4e808be149bf7f6c967f1afe0c": {
         "subject": "kk: Implement geometry shaders with poly",
@@ -3184,7 +3271,8 @@
           "mr-44928",
           "mr-44928-upstream-latest"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "76f3957a5b932c7bf50bc444228bac01fb3423b9": {
         "subject": "kk: Draw adjacency topologies without a geometry shader",
@@ -3198,7 +3286,8 @@
           "mr-44928",
           "mr-44928-upstream-latest"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "531468cfd3c5f48d3f08eb190ba742cd10f7933a": {
         "subject": "kk: Keep GS metadata with the pipeline's VS",
@@ -3211,7 +3300,8 @@
           "mr-44928",
           "mr-44928-upstream-latest"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
       },
       "0033d006cec3e64b9420a76437123d5899070ee6": {
         "subject": "kk: Support transform feedback in GS emulation",
@@ -3229,7 +3319,8 @@
           "mr-44928",
           "mr-44928-upstream-latest"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
       },
       "48a513d4fc7581f1e503cd1598ef7a15a6f94c75": {
         "subject": "kk: Add a passthrough GS for transform feedback",
@@ -3241,7 +3332,8 @@
           "mr-44928",
           "mr-44928-upstream-latest"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
       },
       "a1bb29f696184ed1af107276450372aad5c20e9a": {
         "subject": "kk: Rasterize the selected GS stream",
@@ -3254,7 +3346,8 @@
           "mr-44928",
           "mr-44928-upstream-latest"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
       },
       "a77f39c9d9fda634ebc6bcb5760ec56d8d27d0cf": {
         "subject": "kk: Support transform feedback stream queries",
@@ -3265,7 +3358,8 @@
           "mr-44928",
           "mr-44928-upstream-latest"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
       },
       "52df25f848cf95149d338be19134e14b99f9915c": {
         "subject": "kk: Implement vkCmdDrawIndirectByteCount2EXT",
@@ -3277,7 +3371,8 @@
           "mr-44928",
           "mr-44928-upstream-latest"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
       },
       "354a98ca2d718504525fdc402d0095dc204579a7": {
         "subject": "kk: Advertise VK_EXT_transform_feedback",
@@ -3290,7 +3385,8 @@
           "mr-44928",
           "mr-44928-upstream-latest"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "ported-as-opt-in-research",
+        "evidence": "Mesa PR 5; capture series adapted to current ownership/cache ABI; default GPL/shader-object capability tests plus research capability tests. Monolithic capture passes; GPL/SO research remains unsupported and is not advertised together."
       },
       "638797f811327611ffc21feac87dc68d3e5f8f28": {
         "subject": "kk: Add sparse buffer binding",
@@ -3313,7 +3409,8 @@
           "origin/kk-fill-mode-non-solid",
           "origin/util-macos-host-page-size"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "9e06674e54ec1337ffa77fbefece24e2252d257d": {
         "subject": "kk: Add exact-thread indirect compute dispatch",
@@ -3328,7 +3425,8 @@
           "origin/kk-fill-mode-non-solid",
           "origin/util-macos-host-page-size"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "72fa3bd69fac01c90cdb876d128f2068840a2c3c": {
         "subject": "kk: Implement geometry shaders with poly",
@@ -3345,7 +3443,8 @@
           "origin/kk-fill-mode-non-solid",
           "origin/util-macos-host-page-size"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "acafb74ad19abbc218bdea2cf39af9837c787643": {
         "subject": "kk: Draw adjacency topologies without a geometry shader",
@@ -3358,7 +3457,8 @@
           "origin/kk-fill-mode-non-solid",
           "origin/util-macos-host-page-size"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "aed3b2da79d4297b47458209826b519eae190ad5": {
         "subject": "kk: Use the patch index as the geometry shader primitive ID",
@@ -3369,7 +3469,8 @@
           "origin/kk-fill-mode-non-solid",
           "origin/util-macos-host-page-size"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "1f168c8384ced826734e0569f18539d98643f091": {
         "subject": "kk: expose fillModeNonSolid through Metal's triangle fill mode",
@@ -3384,7 +3485,8 @@
         "refs": [
           "origin/kk-fill-mode-non-solid"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       },
       "95942eac289deef980fe93fb102b3cd0a000b43d": {
         "subject": "util: use the host page size for available memory on macOS",
@@ -3394,11 +3496,50 @@
         "refs": [
           "origin/util-macos-host-page-size"
         ],
-        "disposition": "requires-content-reconciliation"
+        "disposition": "superseded-by-current-mesa-main",
+        "evidence": "Geometry 2a9f5af, adjacency 903d3d9, primitive ID c3a13df, fill mode 0929299, host pages c616e35, and MSL helpers/guards 2873c0a already provide the newer implementations; stale branch trees would remove current cache/shader features."
       }
     },
     "integrationHead": "ebb106b9dfb8b426e92b9f539a1094e2346cbb71",
-    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict."
+    "snapshotNote": "Initial branch inventory; patch uniqueness is not a missing-functionality verdict.",
+    "worktrees": [
+      {
+        "worktree": "gpl-cache-fix/agent-a",
+        "preservedSnapshot": "9a717e0783d71cf3d786a771486e0fcf3edeb617",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      },
+      {
+        "worktree": "gpl-cache-fix/agent-b",
+        "preservedSnapshot": "9da60e09d3a6206d2787bc686cddaf385924c1e7",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      },
+      {
+        "worktree": "gpl-cache-fix/agent-c",
+        "preservedSnapshot": "e4757347c98fb21230bb86868681923e724d2026",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      },
+      {
+        "worktree": "review-source",
+        "preservedSnapshot": "c61c939b16ea601bb40f73473fad03257c52f11c",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. The missing NSError initialization in mtl_residency_set.m is carried by Mesa PR 5."
+      },
+      {
+        "worktree": "variant-stalls/packaging/fresh-apply",
+        "preservedSnapshot": "a0dc86c40e3c3e2dfdc85a0fd3ae8f19e3c1e226",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      },
+      {
+        "worktree": "variant-stalls/packaging/fresh-apply35",
+        "preservedSnapshot": "1c5ca3522e27cc541b1f96929cc800789549294d",
+        "disposition": "reconciled-with-current-driver",
+        "evidence": "Metal cache/PSO/history experiments are superseded by current C11 workers, bounded recapture, rwlock indexing, cache-key guards and native tests. Original variants remain in local refs/merge-audit/20261017-worktree-*; no user worktree modified. Old command-generation prewarm trampolines are represented by current direct command wrappers; the poly side-effect alias is represented by the current boolean lowering API."
+      }
+    ]
   },
   "Whisky": {
     "main": "045f12636fd892f441c7c612df064dd2df9bce04",
