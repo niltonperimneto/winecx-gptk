@@ -11,7 +11,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "runtime/kosmickrisp"))
 from game import extract_archive, run_game
-from readiness import blockers
+from readiness import blockers, main as readiness_main
 from validate import dxvk_evidence, parse_capabilities, probe_passed, run_probe, verify_manifest
 
 
@@ -93,6 +93,26 @@ class ValidationTests(unittest.TestCase):
         self.assertFalse(blockers(report))
         report["migration"]["dxvk"]["known_missing"] = ["geometryShader"]
         self.assertTrue(blockers(report))
+
+    def test_readiness_reports_missing_results_as_blocker(self):
+        for content in (None, "{not json", "[]"):
+            report = self.root / "results.json"
+            report.unlink(missing_ok=True)
+            if content is not None:
+                report.write_text(content)
+            output = io.StringIO()
+            with patch("sys.stdout", output):
+                self.assertEqual(readiness_main([str(report), "--platform", "newer"]), 1)
+            self.assertIn("::error::newer: physical validation results are missing or invalid",
+                          output.getvalue())
+
+    def test_readiness_cli_fails_on_incomplete_report(self):
+        report = self.root / "results.json"
+        report.write_text(json.dumps({"schema": 1, "passed": True}))
+        output = io.StringIO()
+        with patch("sys.stdout", output):
+            self.assertEqual(readiness_main([str(report)]), 1)
+        self.assertIn("::error::macos26: missing or failed check: manifest", output.getvalue())
 
     def test_unconfigured_game_is_blocked_not_passed(self):
         config = self.root / "game.json"

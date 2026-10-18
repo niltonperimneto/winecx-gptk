@@ -42,9 +42,11 @@ The main workflow uses these independent jobs:
 
 The reusable `validate.yml` workflow is used by the main pipeline and can also
 be dispatched against saved artifacts. KosmicKrisp requires a Metal 4 device,
-not just a non-null Metal device. Set the repository variable
-`MACOS_GPU_RUNNER` to a suitable macOS 26 runner label for experimental
-assembly and GPU validation; compilation remains on the hosted builder. The
+not just a non-null Metal device. Set the repository variables
+`MACOS_GPU_RUNNER_26` and `MACOS_GPU_RUNNER_NEWER` to trusted physical runner
+labels for the two GPU validation lanes; compilation and assembly remain on the
+hosted builder. An unset lane fails its gate on a Linux runner without claiming
+a hosted macOS VM. The
 OCI driver integration test reports unsupported hardware as blocked and skips
 its device test, while experimental assembly still requires the strict probe.
 
