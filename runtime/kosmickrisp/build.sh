@@ -22,11 +22,28 @@ fi
 work=$(cd "$work" && pwd -P)
 output=$(cd "$output" && pwd -P)
 export MACOSX_DEPLOYMENT_TARGET=26.0
-# Homebrew Clang otherwise finds the CLT SDK even when xcrun selects a different
-# Xcode linker. Older linkers cannot read newer SDK text-based stubs. Meson's
-# cross compiler also inherits SDKROOT, keeping its configure probes consistent.
+# Homebrew's default Clang configuration explicitly selects the CLT SDK, which
+# can be newer than xcrun's Xcode linker. Override it for this build only; the
+# recipe invokes clang directly, so CMAKE_OSX_SYSROOT alone does not reach Meson.
 SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
 export SDKROOT
+KK_CLANG=$(command -v clang)
+KK_CLANGXX=$(command -v clang++)
+export KK_CLANG KK_CLANGXX
+compiler_dir="$work/sdk-toolchain"
+mkdir -p "$compiler_dir"
+cat > "$compiler_dir/clang" <<'SH'
+#!/bin/bash
+set -euo pipefail
+exec "${KK_CLANG:?}" --no-default-config -isysroot "${SDKROOT:?}" "$@"
+SH
+cat > "$compiler_dir/clang++" <<'SH'
+#!/bin/bash
+set -euo pipefail
+exec "${KK_CLANGXX:?}" --no-default-config -isysroot "${SDKROOT:?}" "$@"
+SH
+chmod +x "$compiler_dir/clang" "$compiler_dir/clang++"
+export PATH="$compiler_dir:$PATH"
 python3 -c 'import sys; assert sys.version_info >= (3, 10), "Mesa requires Python >= 3.10; activate the build venv first"'
 
 checkout() {
