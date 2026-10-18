@@ -11,8 +11,8 @@ worktrees remain preserved; snapshots and raw diffs are local build artifacts.
 | Repository | Result |
 | --- | --- |
 | WineCX | [PR 6](https://github.com/niltonperimneto/winecx/pull/6), merged as `c4fb531c`: bundled loader, empty override rejection, bounded diagnostics; current Steam startup guards preserved. PR and merged-main CI passed. |
-| Relay12 | Lazy initialization was already on main at `95c1703`. [PR 28](https://github.com/niltonperimneto/relay12/pull/28) merged the isolated upload-limit research tool as `fd35bce`. Its PR passed both semaphore and ring builds; merged-main CI passed; the roadmap follow-up fixes a required-workflow docs filter and awaits fresh PR checks. Dispatch builds passed but did not satisfy the PR policy. |
-| Whisky | [PR 12](https://github.com/niltonperimneto/Whisky/pull/12) integrates layout-v2 switching, retains PEAK routing, fixes an existing installed-Steam interface recognizer failure, and resolves formatting/lint failures. All required PR CI passed, including UI tests; merged as `6bac60ee`; the consumer pin now targets that merged revision. |
+| Relay12 | Lazy initialization was already on main at `95c1703`. [PR 28](https://github.com/niltonperimneto/relay12/pull/28) merged the isolated upload-limit research tool as `fd35bce`. Its PR passed both semaphore and ring builds; merged-main CI passed; [PR 29](https://github.com/niltonperimneto/relay12/pull/29) merged roadmap navigation and the required-workflow docs-trigger fix as `443e9d7`, after fresh PR builds passed. That follow-up changes only docs and CI; `fd35bce` contains all production runtime code. |
+| Whisky | [PR 12](https://github.com/niltonperimneto/Whisky/pull/12) integrates layout-v2 switching, retains PEAK routing, fixes an existing installed-Steam interface recognizer failure, and resolves formatting/lint failures. All required PR CI passed, including UI tests; merged as `6bac60ee`; the consumer pin targets that merged revision. Full merged-main CI also passed, including app builds and UI tests. |
 | Mesa | [PR 5](https://github.com/niltonperimneto/mesa/pull/5) ports the transform-feedback series as isolated research. Default GPL/shader-object capability coverage is preserved; capture is not enabled in production. All required PR checks passed; merged as `92b0a6e0`. |
 | Hub | Integration branch carries layout v2, protected catalog credentials, the GPTK 4 stub/idle-video changes already on main, merged Wine pin, verified Relay12 `fd35bce` artifact pin, merged Mesa and Whisky pins, the missing ARM64 i386 recipe change, and the expanded Metal-cache harness. |
 
@@ -61,7 +61,9 @@ as a new merge.
   and research capability contracts. Research CTS capture, triangle capture,
   and resume pass; two GPL cases report unsupported in this mode. Production
   compute, geometry, adjacency, and tessellation GPU readbacks also pass. Earlier
-  ungated GPL capture stalled and is not a successful result.
+  ungated GPL capture stalled and is not a successful result. The production
+  probe reports `VK_EXT_transform_feedback` absent and upstream DXVK requirements
+  unmet; focused readbacks do not establish full DXVK compatibility.
 
 Final component pins now target merged Wine `c4fb531c`, Mesa `92b0a6e0`,
 Relay12 artifact `fd35bce` (archive SHA-256 verified), and Whisky `6bac60ee`.
