@@ -19,3 +19,7 @@ __pycache__/
 /sysroot.env
 /closure-paths.txt
 xcuserdata/
+
+# Local-only plans
+docs/*-plan.md
+.local-docs-backup/

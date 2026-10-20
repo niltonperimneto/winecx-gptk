@@ -161,12 +161,10 @@ Anticipating Apple's eventual retirement of Rosetta 2 in future macOS versions, 
 ## 9. Consolidated Documentation Directory Map
 
 * **Architecture & Build System**:
-  - [docs/build-system-plan.md](file:///Users/niltonperimneto/Projects/winecx-gptk/docs/build-system-plan.md): 4-cycle build overhaul specification.
   - [docs/oci-build-system.md](file:///Users/niltonperimneto/Projects/winecx-gptk/docs/oci-build-system.md): OCI container layer caching guide.
   - [docs/oci-ci-results.md](file:///Users/niltonperimneto/Projects/winecx-gptk/docs/oci-ci-results.md): CI execution benchmarks and layer measurements.
   - [docs/HUB-ARCHITECTURE.md](file:///Users/niltonperimneto/Projects/winecx-gptk/docs/HUB-ARCHITECTURE.md): Integration hub, component pinning, and QA architecture.
 * **KosmicKrisp & Vulkan**:
-  - [docs/kosmickrisp-plan.md](file:///Users/niltonperimneto/Projects/winecx-gptk/docs/kosmickrisp-plan.md): Long-term migration gates and feasibility roadmap.
   - [docs/kosmickrisp-experimental.md](file:///Users/niltonperimneto/Projects/winecx-gptk/docs/kosmickrisp-experimental.md): Architecture of the experimental Vulkan runtime.
   - [docs/kosmickrisp-performance.md](file:///Users/niltonperimneto/Projects/winecx-gptk/docs/kosmickrisp-performance.md): Rosetta performance analysis and memory budget fix.
   - [docs/kosmickrisp-test-results.md](file:///Users/niltonperimneto/Projects/winecx-gptk/docs/kosmickrisp-test-results.md): Measured test results and Hades benchmark logs.
