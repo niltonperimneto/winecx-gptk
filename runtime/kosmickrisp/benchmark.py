@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan, run and summarize isolated GPL, compiler-thread and latency comparisons."""
+"""Plan, run and summarize isolated GPL, compiler-thread, latency and vertex-input comparisons."""
 import argparse
 import hashlib
 import json
@@ -20,7 +20,34 @@ def sha(path):
     return digest.hexdigest()
 
 
+# Vertex-fetch comparison for KosmicKrisp. GPL is off so every pipeline is
+# monolithic and compiled with its vertex-input state; MESA_KK_DEBUG then
+# selects the fetch path alone. dynamic_vi forces runtime format decoding;
+# no_msl_helpers inlines it, but also inlines texture helpers, so each dynamic
+# condition is paired with a static control using the same helper setting.
+# MESA_KK_DEBUG is set even when empty so an inherited value cannot leak in.
+VI_CONDITIONS = (
+    ('vi-static', 'False', ''),
+    ('vi-static-nohelpers', 'False', 'no_msl_helpers'),
+    ('vi-dynamic-helpers', 'False', 'dynamic_vi'),
+    ('vi-dynamic-inline', 'False', 'dynamic_vi,no_msl_helpers'),
+    ('vi-shipping-default', 'Auto', ''),
+)
+
+# (dynamic condition, matching static control) pairs reported by analyze().
+VI_EFFECTS = (('vi-dynamic-helpers', 'vi-static'),
+              ('vi-dynamic-inline', 'vi-static-nohelpers'))
+
+
 def conditions(stage, gpl='Auto'):
+    """Return (name, dxvk.conf settings, environment) triples for a stage."""
+    if stage == 'vi':
+        return [(name, {'dxvk.enableGraphicsPipelineLibrary': value}, {'MESA_KK_DEBUG': debug})
+                for name, value, debug in VI_CONDITIONS]
+    return [(name, settings, {}) for name, settings in _dxvk_conditions(stage, gpl)]
+
+
+def _dxvk_conditions(stage, gpl):
     if stage == 'gpl':
         return [(f'gpl-{value.lower()}', {'dxvk.enableGraphicsPipelineLibrary': value}) for value in ('Auto', 'True', 'False')]
     if stage == 'threads':
@@ -75,10 +102,10 @@ def make_plan(runtime, bundle, bottle, game, scene_path, output, stage, repeats=
     jobs = []
     for repetition in range(repeats):
         order = comparisons[repetition % len(comparisons):] + comparisons[:repetition % len(comparisons)]
-        for name, settings in order:
+        for name, settings, env in order:
             relative = f'{name}/repeat-{repetition + 1}'
             jobs.append({'condition': name, 'repetition': repetition + 1,
-                         'work': relative, 'settings': settings})
+                         'work': relative, 'settings': settings, 'env': env})
     plan = {'schema': 1, 'stage': stage, 'game': game, 'scene': str(scene_path),
             'runtime': str(runtime), 'bundle': str(bundle), 'bottle': str(bottle),
             'repetitions': repeats, 'seed': seed, 'seconds': seconds or game_spec['seconds'],
@@ -121,6 +148,8 @@ def run(plan_path):
                    '--seconds', str(plan['seconds']), '--runs', 'cold,warm,warm2', '--no-diagnostics',
                    '--env', 'DXVK_CONFIG_FILE=Z:' + str(work / 'dxvk.conf'), '--env', 'DXVK_CONFIG=',
                    '--env', 'DXVK_SHADER_CACHE=1']
+        for key, value in sorted(job.get('env', {}).items()):
+            command += ['--env', f'{key}={value}']
         with (work / 'runner.log').open('w') as log:
             result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT,
                                     timeout=3 * plan['seconds'] + 1800)
@@ -161,6 +190,9 @@ def analyze(plan_path):
             effective = data['dxvk'].get('effective_configuration', {})
             if any(effective.get(key) != value for key, value in job['settings'].items()):
                 reasons.append('requested DXVK configuration not verified in its log')
+            recorded = meta.get('env', {})
+            if any(recorded.get(key, '') != value for key, value in job.get('env', {}).items()):
+                reasons.append('requested environment not recorded for the run')
             if job['settings'].get('dxvk.enableGraphicsPipelineLibrary') != 'False' and data['dxvk'].get('gpl') is not True:
                 reasons.append('GPL condition is unsupported by this driver')
             if meta.get('driver_sha256') != plan['hashes'][driver]:
@@ -182,12 +214,33 @@ def analyze(plan_path):
         rows.append({'condition': condition, 'cache_state': label, 'samples': len(frames),
                      'metrics': {key: {'median': statistics.median(v), 'minimum': min(v), 'maximum': max(v)}
                                  for key, v in values.items()}})
+    expected_rows = 3 * len({job['condition'] for job in plan['jobs']})
     report = {'stage': plan['stage'], 'scene': plan['scene'], 'rows': rows, 'invalid': invalid,
-              'complete': not invalid and len(rows) == 9 and all(r['samples'] == plan['repetitions'] for r in rows),
+              'complete': not invalid and len(rows) == expected_rows
+              and all(r['samples'] == plan['repetitions'] for r in rows),
               'performance_claim_eligible': False,
               'limitation': 'Scene execution, window visibility and rendering correctness need review before selecting defaults.'}
+    if plan['stage'] == 'vi':
+        report['effects'] = vi_effects(rows)
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
+
+
+def vi_effects(rows):
+    """Median deltas between each dynamic fetch condition and its static control."""
+    medians = {(r['condition'], r['cache_state']): r['metrics'] for r in rows}
+    effects = []
+    for dynamic, control in VI_EFFECTS:
+        for label in ('cold', 'warm', 'warm2'):
+            if (dynamic, label) not in medians or (control, label) not in medians:
+                continue
+            delta = {}
+            for key in ('mean_fps', 'p99_ms', 'hitches', 'one_percent_low_fps'):
+                d = medians[(dynamic, label)][key]['median']
+                c = medians[(control, label)][key]['median']
+                delta[key] = {'difference': d - c, 'percent': 100.0 * (d - c) / c if c else None}
+            effects.append({'dynamic': dynamic, 'control': control, 'cache_state': label, 'delta': delta})
+    return effects
 
 
 def main():
@@ -197,7 +250,7 @@ def main():
     for name in ('runtime', 'bundle', 'bottle', 'scene', 'out'):
         create.add_argument('--' + name, type=Path, required=True)
     create.add_argument('--game', required=True)
-    create.add_argument('--stage', choices=('gpl', 'threads', 'latency', 'sleep'), default='gpl')
+    create.add_argument('--stage', choices=('gpl', 'threads', 'latency', 'sleep', 'vi'), default='gpl')
     create.add_argument('--gpl', choices=('Auto', 'True'), default='Auto')
     create.add_argument('--repeats', type=int, default=3)
     create.add_argument('--seed', type=int, default=0)

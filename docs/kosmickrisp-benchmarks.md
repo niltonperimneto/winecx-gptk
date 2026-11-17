@@ -56,3 +56,35 @@ variability, without an unacceptable mean-FPS, GPU-time or memory regression.
 The provisional plan thresholds are 10% lower p99 or 20% fewer hitches with
 mean FPS no more than 5% worse; establish actual repeatability before applying
 those thresholds.
+
+## Vertex-input fetch comparison
+
+`--stage vi` measures the cost of KosmicKrisp's runtime-decoded vertex fetch
+(`VK_EXT_vertex_input_dynamic_state`) against the static path that bakes each
+pipeline's vertex layout into its shader. It needs a driver that understands
+`MESA_KK_DEBUG=dynamic_vi` and `no_msl_helpers`.
+
+| condition | `dxvk.enableGraphicsPipelineLibrary` | `MESA_KK_DEBUG` |
+| --- | --- | --- |
+| `vi-static` | False | (empty) |
+| `vi-static-nohelpers` | False | `no_msl_helpers` |
+| `vi-dynamic-helpers` | False | `dynamic_vi` |
+| `vi-dynamic-inline` | False | `dynamic_vi,no_msl_helpers` |
+| `vi-shipping-default` | Auto | (empty) |
+
+GPL is off in the four controlled conditions so every pipeline is compiled
+with its vertex-input state, so only the debug flags change the fetch path.
+With GPL on, fast-linked pre-rasterization libraries are compiled without
+vertex-input state and already use the dynamic fetch until an optimized
+pipeline replaces them; `vi-shipping-default` shows that mix.
+
+`no_msl_helpers` also inlines texture helpers, so it is not a pure fetch
+change. `report.json` therefore lists `effects` only for matched pairs:
+`vi-dynamic-helpers` against `vi-static`, and `vi-dynamic-inline` against
+`vi-static-nohelpers`. `MESA_KK_DEBUG` is always passed explicitly, and a run
+whose recorded environment differs from its condition is invalid.
+
+Use the warm and warm2 rows for steady-state vertex-shader cost and the cold
+row for compile stutter. Before a campaign, make one diagnostic
+`stutter.py run --runs cold --env MESA_KK_DEBUG=dynamic_vi,msl` and check that
+the emitted vertex MSL reads `attrib_format`, which shows the dynamic path is active.
