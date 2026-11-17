@@ -14,6 +14,16 @@ spec.loader.exec_module(archive)
 
 
 class OCIArchiveTests(unittest.TestCase):
+    def test_stream_validation_consumes_tar_padding(self):
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode='w') as tar:
+            tar.addfile(tarfile.TarInfo('build-tools/fixture'))
+        stream.write(bytes(1024 * 1024))
+        expected_end = stream.tell()
+        stream.seek(0)
+        archive.check_tar(stream)
+        self.assertEqual(stream.tell(), expected_end)
+
     def test_envelope_accepts_matching_component_and_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

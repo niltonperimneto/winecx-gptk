@@ -3,6 +3,7 @@
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+import shutil
 import sys
 import tarfile
 
@@ -36,6 +37,11 @@ def check_tar(stream):
                         raise ValueError(f'escaping archive link: {entry.name}')
                 if target.is_absolute():
                     raise ValueError(f'absolute archive link: {entry.name}')
+
+    # tarfile stops at the end marker. Finish reading so zstd can consume
+    # trailing tar padding and report decompression failures under pipefail.
+    with open('/dev/null', 'wb') as sink:
+        shutil.copyfileobj(stream, sink)
 
 if __name__ == '__main__':
     if sys.argv[1] == 'check-tar':
