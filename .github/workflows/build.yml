@@ -21,6 +21,10 @@ on:
         description: Rebuild OCI foundation, tools and payload layers instead of restoring cached layers
         type: boolean
         default: false
+      validate_physical_gpu:
+        description: Require both physical Metal 4 validation lanes and game evidence
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -313,7 +317,14 @@ jobs:
   kosmickrisp-validation:
     name: KosmicKrisp / ${{ matrix.platform }} packaged runtime
     needs: build
-    if: needs.build.outputs.kosmickrisp == 'true'
+    # Keep review builds on hosted runners. Promotion and explicit hardware
+    # runs must still fail if either lane or its game fixtures are unavailable.
+    if: >-
+      needs.build.outputs.kosmickrisp == 'true' &&
+      (inputs.validate_physical_gpu == true ||
+      (github.ref == 'refs/heads/main' &&
+      (vars.WHISKY_LAYOUT_V2_AVAILABLE == 'true' ||
+      (vars.MACOS_GPU_RUNNER_26 != '' && vars.MACOS_GPU_RUNNER_NEWER != ''))))
     strategy:
       fail-fast: false
       matrix:
