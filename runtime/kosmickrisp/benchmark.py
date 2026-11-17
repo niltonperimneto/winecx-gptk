@@ -8,6 +8,7 @@ import random
 import statistics
 import subprocess
 import sys
+import time
 
 HERE = Path(__file__).resolve().parent
 
@@ -62,6 +63,17 @@ def _dxvk_conditions(stage, gpl):
     raise ValueError('unknown comparison stage')
 
 
+def dxvk_payload_version(runtime):
+    """DXVK_VERSION from the runtime's DXVK3/SOURCE.txt, or None when absent."""
+    source = runtime / 'DXVK3' / 'SOURCE.txt'
+    if not source.is_file():
+        return None
+    for line in source.read_text().splitlines():
+        if line.startswith('DXVK_VERSION='):
+            return line.split('=', 1)[1].strip() or None
+    return None
+
+
 def make_plan(runtime, bundle, bottle, game, scene_path, output, stage, repeats=3, seed=0, gpl='Auto', seconds=None):
     if repeats < 3:
         raise ValueError('at least three repetitions are required')
@@ -107,6 +119,7 @@ def make_plan(runtime, bundle, bottle, game, scene_path, output, stage, repeats=
             jobs.append({'condition': name, 'repetition': repetition + 1,
                          'work': relative, 'settings': settings, 'env': env})
     plan = {'schema': 1, 'stage': stage, 'game': game, 'scene': str(scene_path),
+            'dxvk_version': dxvk_payload_version(runtime),
             'runtime': str(runtime), 'bundle': str(bundle), 'bottle': str(bottle),
             'repetitions': repeats, 'seed': seed, 'seconds': seconds or game_spec['seconds'],
             'hashes': files, 'jobs': jobs, 'measurement': 'frame-times',
@@ -132,13 +145,60 @@ def verify(plan):
             raise ValueError(f'frozen benchmark input changed: {path}')
 
 
-def run(plan_path):
+THERMAL_STATES = ('nominal', 'fair', 'serious', 'critical')
+
+
+def _thermal_state():
+    """NSProcessInfo.thermalState through the Objective-C runtime, or 'unknown'."""
+    try:
+        import ctypes
+        objc = ctypes.cdll.LoadLibrary('/usr/lib/libobjc.A.dylib')
+        ctypes.cdll.LoadLibrary('/System/Library/Frameworks/Foundation.framework/Foundation')
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+        send = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(('objc_msgSend', objc))
+        send_long = ctypes.CFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p)(('objc_msgSend', objc))
+        info = send(objc.objc_getClass(b'NSProcessInfo'), objc.sel_registerName(b'processInfo'))
+        return THERMAL_STATES[send_long(info, objc.sel_registerName(b'thermalState'))]
+    except (OSError, AttributeError, IndexError):
+        return 'unknown'
+
+
+def host_conditions():
+    """Power source and thermal state; performance on a laptop depends on both."""
+    try:
+        source = subprocess.run(['pmset', '-g', 'ps'], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        source = ''
+    power = 'ac' if 'AC Power' in source else 'battery' if 'Battery Power' in source else 'unknown'
+    return {'power': power, 'thermal': _thermal_state()}
+
+
+def wait_for_host(host, sleep, cooldown, limit=600, poll=10):
+    """Sleep for the cooldown, then until the chassis is no hotter than 'fair'."""
+    if cooldown:
+        sleep(cooldown)
+    waited = 0
+    state = host()
+    while state['thermal'] in ('serious', 'critical') and waited < limit:
+        sleep(poll)
+        waited += poll
+        state = host()
+    return state
+
+
+def run(plan_path, allow_battery=False, cooldown=60, host=host_conditions, sleep=time.sleep):
     output = plan_path.parent.resolve()
     plan = json.loads(plan_path.read_text())
     verify(plan)
+    if host()['power'] == 'battery' and not allow_battery:
+        raise ValueError('running on battery power; connect AC power or pass --allow-battery')
     results = []
-    for job in plan['jobs']:
+    for index, job in enumerate(plan['jobs']):
         verify(plan)
+        before = wait_for_host(host, sleep, cooldown if index else 0)
         work = output / job['work']
         if list((work / 'runs').glob('*/summary.json')):
             raise ValueError(f'campaign already has results for {job["work"]}; analyze or create a new campaign')
@@ -153,7 +213,7 @@ def run(plan_path):
         with (work / 'runner.log').open('w') as log:
             result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT,
                                     timeout=3 * plan['seconds'] + 1800)
-        record = dict(job, returncode=result.returncode)
+        record = dict(job, returncode=result.returncode, host={'before': before, 'after': host()})
         results.append(record)
         (output / 'execution.json').write_text(json.dumps(results, indent=2) + '\n')
         if result.returncode:
@@ -171,7 +231,15 @@ def analyze(plan_path):
     groups = {}
     invalid = []
     driver = str(Path(plan['bundle']) / 'libvulkan_kosmickrisp.dylib')
+    execution = output / 'execution.json'
+    hosts = {r['work']: r.get('host') for r in json.loads(execution.read_text())} if execution.is_file() else {}
     for job in plan['jobs']:
+        host = hosts.get(job['work']) or {}
+        states = [host.get(k, {}) for k in ('before', 'after')]
+        if any(s.get('thermal') in ('serious', 'critical') for s in states):
+            invalid.append({'job': job['work'], 'reason': 'thermal pressure during the job'})
+        if any(s.get('power') == 'battery' for s in states):
+            invalid.append({'job': job['work'], 'reason': 'ran on battery power'})
         paths = list((output / job['work'] / 'runs').glob('*/summary.json'))
         seen = set()
         for path in paths:
@@ -185,6 +253,10 @@ def analyze(plan_path):
             reasons = []
             if data['frames'].get('error') or not data['dxvk'].get('backend_verified'):
                 reasons.append('missing frame or KosmicKrisp evidence')
+            expected = plan.get('dxvk_version')
+            if expected and (data['dxvk'].get('version') or '').lstrip('v') != expected:
+                # e.g. a game-bundled DXVK loaded instead of the runtime's payload
+                reasons.append(f"DXVK {data['dxvk'].get('version')} is not the runtime's {expected}")
             if data['dxvk'].get('errors') or data['dxvk'].get('rejections'):
                 reasons.append('DXVK errors or device rejection')
             effective = data['dxvk'].get('effective_configuration', {})
@@ -255,15 +327,21 @@ def main():
     create.add_argument('--repeats', type=int, default=3)
     create.add_argument('--seed', type=int, default=0)
     create.add_argument('--seconds', type=int)
-    for name in ('run', 'analyze'):
-        sub.add_parser(name).add_argument('plan', type=Path)
+    execute = sub.add_parser('run')
+    execute.add_argument('plan', type=Path)
+    execute.add_argument('--allow-battery', action='store_true',
+                         help='run on battery anyway; affected jobs are reported as invalid')
+    execute.add_argument('--cooldown', type=int, default=60, help='seconds to idle between jobs')
+    sub.add_parser('analyze').add_argument('plan', type=Path)
     args = parser.parse_args()
     if args.operation == 'plan':
         report = make_plan(args.runtime.resolve(), args.bundle.resolve(), args.bottle.resolve(), args.game,
                            args.scene.resolve(), args.out.resolve(), args.stage, args.repeats, args.seed, args.gpl, args.seconds)
         print(json.dumps({'plan': str(args.out / 'plan.json'), 'jobs': len(report['jobs'])}, indent=2))
+    elif args.operation == 'run':
+        print(json.dumps(run(args.plan.resolve(), args.allow_battery, args.cooldown), indent=2))
     else:
-        print(json.dumps({'run': run, 'analyze': analyze}[args.operation](args.plan.resolve()), indent=2))
+        print(json.dumps(analyze(args.plan.resolve()), indent=2))
 
 
 if __name__ == '__main__':

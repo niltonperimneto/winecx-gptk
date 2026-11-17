@@ -113,11 +113,72 @@ class BenchmarkTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0)
 
         with mock.patch.object(benchmark.subprocess, 'run', fake_run):
-            benchmark.run(self.output / 'plan.json')
+            benchmark.run(self.output / 'plan.json', host=self.cool_ac, sleep=lambda s: None)
         self.assertEqual(len(commands), len(plan['jobs']))
         for job, command in zip(plan['jobs'], commands):
             pairs = [command[i + 1] for i, arg in enumerate(command) if arg == '--env']
             self.assertIn('MESA_KK_DEBUG=' + job['env']['MESA_KK_DEBUG'], pairs)
+
+    @staticmethod
+    def cool_ac():
+        return {'power': 'ac', 'thermal': 'nominal'}
+
+    def run_with(self, host, **kwargs):
+        sleeps = []
+        with mock.patch.object(benchmark.subprocess, 'run',
+                               lambda command, **kw: subprocess.CompletedProcess(command, 0)):
+            benchmark.run(self.output / 'plan.json', host=host, sleep=sleeps.append, **kwargs)
+        return sleeps
+
+    def test_run_refuses_battery_unless_allowed(self):
+        self.create(stage='vi')
+        battery = lambda: {'power': 'battery', 'thermal': 'nominal'}
+        with self.assertRaisesRegex(ValueError, 'battery'):
+            self.run_with(battery)
+        self.assertFalse((self.output / 'execution.json').exists())
+        self.run_with(battery, allow_battery=True)
+        execution = json.loads((self.output / 'execution.json').read_text())
+        self.assertTrue(all(r['host']['before']['power'] == 'battery' for r in execution))
+
+    def test_run_cools_down_between_jobs_and_waits_out_thermal_pressure(self):
+        plan = self.create(stage='vi')
+        states = iter(['nominal', 'serious', 'serious', 'fair'] + ['nominal'] * 100)
+        sleeps = self.run_with(lambda: {'power': 'ac', 'thermal': next(states)}, cooldown=30)
+        # One cooldown before every job but the first, plus two thermal polls.
+        self.assertEqual(sleeps.count(30), len(plan['jobs']) - 1)
+        self.assertEqual(sleeps.count(10), 2)
+
+    def test_hot_or_battery_jobs_are_invalid(self):
+        plan = self.create(stage='vi')
+        self.make_results(plan)
+        records = [dict(job, returncode=0, host={'before': self.cool_ac(), 'after': self.cool_ac()})
+                   for job in plan['jobs']]
+        records[0]['host']['after'] = {'power': 'ac', 'thermal': 'serious'}
+        records[1]['host']['before'] = {'power': 'battery', 'thermal': 'nominal'}
+        (self.output / 'execution.json').write_text(json.dumps(records))
+        report = benchmark.analyze(self.output / 'plan.json')
+        self.assertFalse(report['complete'])
+        self.assertIn('thermal pressure', str(report['invalid']))
+        self.assertIn('battery', str(report['invalid']))
+        records[0]['host']['after'] = self.cool_ac()
+        records[1]['host']['before'] = self.cool_ac()
+        (self.output / 'execution.json').write_text(json.dumps(records))
+        self.assertTrue(benchmark.analyze(self.output / 'plan.json')['complete'])
+
+    def test_unexpected_dxvk_build_is_invalid(self):
+        (self.runtime / 'DXVK3/SOURCE.txt').write_text('DXVK_VERSION=3.1.1\n')
+        plan = self.create(stage='vi')
+        self.assertEqual(plan['dxvk_version'], '3.1.1')
+        self.make_results(plan)
+        self.assertTrue(benchmark.analyze(self.output / 'plan.json')['complete'])
+        job = plan['jobs'][0]
+        path = self.output / job['work'] / 'runs/warm/summary.json'
+        data = json.loads(path.read_text())
+        data['dxvk']['version'] = 'v2.3-valve'
+        path.write_text(json.dumps(data))
+        report = benchmark.analyze(self.output / 'plan.json')
+        self.assertFalse(report['complete'])
+        self.assertIn("not the runtime's 3.1.1", str(report['invalid']))
 
     def make_results(self, plan, fps=None):
         for job in plan['jobs']:
@@ -126,7 +187,7 @@ class BenchmarkTests(unittest.TestCase):
                 path.mkdir(parents=True)
                 mean_fps = (fps or {}).get(job['condition'], 60)
                 data = {'frames': {'mean_fps': mean_fps, 'p99_ms': 20, 'hitches': 1, 'one_percent_low_fps': 40},
-                        'dxvk': {'backend_verified': True, 'errors': 0, 'rejections': [],
+                        'dxvk': {'backend_verified': True, 'errors': 0, 'rejections': [], 'version': 'v3.1.1',
                                  'gpl': True, 'effective_configuration': job['settings']},
                         'meta': {'label': label, 'env': dict(job.get('env', {})),
                                  'driver_sha256': plan['hashes'][str(self.bundle / 'libvulkan_kosmickrisp.dylib')],
