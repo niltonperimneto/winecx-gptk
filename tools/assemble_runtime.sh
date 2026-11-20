@@ -420,6 +420,10 @@ sed -i '' "s/WINE_SOURCE_REV/$WINECX_COMMIT/; s/PATCHSET_REV/${GITHUB_SHA}/" Lib
 sed -i '' "s/VER_MAJOR/${rv%%.*}/; s/VER_MINOR/$(echo "$rv" | cut -d. -f2)/; s/VER_PATCH/${rv##*.}/" \
   Libraries/WhiskyWineVersion.plist
 grep -q VER_ Libraries/WhiskyWineVersion.plist && { echo "::error::version not substituted"; exit 1; }
+# Older cores ship the helper and schema 1 without exact-target Game Mode.
+if grep -aq 'WHISKY_GAME_MODE_TARGETS' Libraries/Wine/lib/wine/x86_64-unix/ntdll.so; then
+  /usr/libexec/PlistBuddy -c 'Add :capabilities:gameModeLaunchPolicyVersion integer 1' Libraries/WhiskyWineVersion.plist
+fi
 echo "runtime version stamped: $rv"
 # later steps name the release after it; recomputing the commit count
 # there would drift the moment someone passes runtime_version
