@@ -56,3 +56,27 @@ variability, without an unacceptable mean-FPS, GPU-time or memory regression.
 The provisional plan thresholds are 10% lower p99 or 20% fewer hitches with
 mean FPS no more than 5% worse; establish actual repeatability before applying
 those thresholds.
+
+## Rise of the Tomb Raider on DXMT
+
+Use `runtime/kosmickrisp/run-rottr.sh BOTTLE_ROOT dxmt OUT_DIR` with a
+disposable `/private/tmp/whisky-rottr-test.*` fixture. The fixture contains
+the Wine prefix in `prefix/`, a matching extracted runtime in `runtime/`,
+and a `stop-prefix.sh` helper that shuts down only the fixture prefix.
+Steam must be signed in, the game installed, and its DirectX 12 setting off.
+The runner expects the fixture's Steam client to have DXVK configured and
+expects the original DXVK DLLs in the game folder or its `.backend-orig`
+backup when switching between backends.
+
+The runner loads the fixture's DXMT DLLs for `ROTTR.exe` and uses Wine's
+builtin `winemetal` bridge. Start the benchmark from the menu if
+`-benchmark` lands there, then quit after the results screen. A completed
+run requires new results from Spine of the Mountain, Prophet's Tomb and
+Geothermal Valley. Verify the game process's DLLs with
+`EXTRA_ENV='WINEDEBUG=-all,+pid,trace+loaddll'`. Steam's DXVK output is
+separate from the game's benchmark results.
+
+All three scenes completed on an Apple A18 Pro with WineCX 11.19
+(Unix ntdll overlay from `6eb3386d7f97`) and DXMT `main-186a232`.
+The fixture already blocked the HBAO+ and VXGI DLLs, so this run does
+not establish whether those overrides are required for DXMT.
