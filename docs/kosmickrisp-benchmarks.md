@@ -56,3 +56,24 @@ variability, without an unacceptable mean-FPS, GPU-time or memory regression.
 The provisional plan thresholds are 10% lower p99 or 20% fewer hitches with
 mean FPS no more than 5% worse; establish actual repeatability before applying
 those thresholds.
+
+## Rise of the Tomb Raider startup
+
+A disposable Steam bottle with WineCX 11.19 at `6eb3386d7f97` (a rebuilt
+Unix `ntdll` over the existing runtime), DXVK and KosmicKrisp 26.2.99
+rendered the Square Enix sign-in screen and issued thousands of Vulkan
+presents. Steam was running in the same bottle and Game Mode was off.
+
+The run used `dxvk.enableGraphicsPipelineLibrary = False` and these Wine
+DLL overrides under `HKCU\Software\Wine\AppDefaults\ROTTR.exe\DllOverrides`:
+
+- Native, then builtin (`n,b`): `dxgi`, `d3d11`, `d3d10core`.
+- Disabled (empty string): `d3d12`, `d3d12core`, `nvapi64`,
+  `GFSDK_SSAO_D3D11.win64` (HBAO+) and `GFSDK_VXGI_x64` (VXGI).
+- Disabled during earlier input tests: `xinput1_1`, `xinput1_2`,
+  `xinput1_3`, `xinput1_4` and `xinput9_1_0`.
+
+The first visible run disabled HBAO+ and VXGI together. Their individual
+effects and the smallest required set of overrides remain unverified.
+This run verified startup through the sign-in screen. Gameplay and
+benchmark completion still need validation.
