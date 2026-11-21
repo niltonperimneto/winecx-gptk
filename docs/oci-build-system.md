@@ -45,8 +45,11 @@ be dispatched against saved artifacts. KosmicKrisp requires a Metal 4 device,
 not just a non-null Metal device. Set the repository variables
 `MACOS_GPU_RUNNER_26` and `MACOS_GPU_RUNNER_NEWER` to trusted physical runner
 labels for the two GPU validation lanes; compilation and assembly remain on the
-hosted builder. An unset lane fails its gate on a Linux runner without claiming
-a hosted macOS VM. The
+hosted builder. Pull requests run hosted build, artifact, and consumer checks.
+Main runs the physical lanes when both runner labels are set or publication is
+enabled. To require physical validation on a manual run, set
+`validate_physical_gpu=true`. When physical validation is required, an unset lane
+fails its gate on a Linux runner. The
 OCI driver integration test reports unsupported hardware as blocked and skips
 its device test, while experimental assembly still requires the strict probe.
 

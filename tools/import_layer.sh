@@ -5,7 +5,8 @@ component=${1:?usage: import_layer.sh COMPONENT EXPORTED_DIRECTORY}
 package=${2:?exported directory required}
 python3 tools/build/archive.py verify "$package" "$component"
 zstd -dc "$package/layer.tar.zst" | python3 tools/build/archive.py check-tar
-zstd -dc "$package/layer.tar.zst" | tar -xf -
+# tar can also stop at the end marker before zstd has written all the padding.
+zstd -dc "$package/layer.tar.zst" | { tar -xf - && cat >/dev/null; }
 if [ "$component" = sysroot ]; then
     nix-store --import < sysroot-closure.nar
     rm sysroot-closure.nar

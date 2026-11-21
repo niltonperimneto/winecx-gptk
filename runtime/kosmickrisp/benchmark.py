@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan, run and summarize isolated GPL, compiler-thread and latency comparisons."""
+"""Plan, run and summarize isolated GPL, compiler-thread, latency and vertex-input comparisons."""
 import argparse
 import hashlib
 import json
@@ -8,6 +8,7 @@ import random
 import statistics
 import subprocess
 import sys
+import time
 
 HERE = Path(__file__).resolve().parent
 
@@ -20,7 +21,34 @@ def sha(path):
     return digest.hexdigest()
 
 
+# Vertex-fetch comparison for KosmicKrisp. GPL is off so every pipeline is
+# monolithic and compiled with its vertex-input state; MESA_KK_DEBUG then
+# selects the fetch path alone. dynamic_vi forces runtime format decoding;
+# no_msl_helpers inlines it, but also inlines texture helpers, so each dynamic
+# condition is paired with a static control using the same helper setting.
+# MESA_KK_DEBUG is set even when empty so an inherited value cannot leak in.
+VI_CONDITIONS = (
+    ('vi-static', 'False', ''),
+    ('vi-static-nohelpers', 'False', 'no_msl_helpers'),
+    ('vi-dynamic-helpers', 'False', 'dynamic_vi'),
+    ('vi-dynamic-inline', 'False', 'dynamic_vi,no_msl_helpers'),
+    ('vi-shipping-default', 'Auto', ''),
+)
+
+# (dynamic condition, matching static control) pairs reported by analyze().
+VI_EFFECTS = (('vi-dynamic-helpers', 'vi-static'),
+              ('vi-dynamic-inline', 'vi-static-nohelpers'))
+
+
 def conditions(stage, gpl='Auto'):
+    """Return (name, dxvk.conf settings, environment) triples for a stage."""
+    if stage == 'vi':
+        return [(name, {'dxvk.enableGraphicsPipelineLibrary': value}, {'MESA_KK_DEBUG': debug})
+                for name, value, debug in VI_CONDITIONS]
+    return [(name, settings, {}) for name, settings in _dxvk_conditions(stage, gpl)]
+
+
+def _dxvk_conditions(stage, gpl):
     if stage == 'gpl':
         return [(f'gpl-{value.lower()}', {'dxvk.enableGraphicsPipelineLibrary': value}) for value in ('Auto', 'True', 'False')]
     if stage == 'threads':
@@ -33,6 +61,17 @@ def conditions(stage, gpl='Auto'):
         return [(f'sleep-{value.lower()}', {'dxvk.enableGraphicsPipelineLibrary': gpl,
                                            'dxvk.latencySleep': value}) for value in ('Auto', 'True', 'False')]
     raise ValueError('unknown comparison stage')
+
+
+def dxvk_payload_version(runtime):
+    """DXVK_VERSION from the runtime's DXVK3/SOURCE.txt, or None when absent."""
+    source = runtime / 'DXVK3' / 'SOURCE.txt'
+    if not source.is_file():
+        return None
+    for line in source.read_text().splitlines():
+        if line.startswith('DXVK_VERSION='):
+            return line.split('=', 1)[1].strip() or None
+    return None
 
 
 def make_plan(runtime, bundle, bottle, game, scene_path, output, stage, repeats=3, seed=0, gpl='Auto', seconds=None):
@@ -75,11 +114,12 @@ def make_plan(runtime, bundle, bottle, game, scene_path, output, stage, repeats=
     jobs = []
     for repetition in range(repeats):
         order = comparisons[repetition % len(comparisons):] + comparisons[:repetition % len(comparisons)]
-        for name, settings in order:
+        for name, settings, env in order:
             relative = f'{name}/repeat-{repetition + 1}'
             jobs.append({'condition': name, 'repetition': repetition + 1,
-                         'work': relative, 'settings': settings})
+                         'work': relative, 'settings': settings, 'env': env})
     plan = {'schema': 1, 'stage': stage, 'game': game, 'scene': str(scene_path),
+            'dxvk_version': dxvk_payload_version(runtime),
             'runtime': str(runtime), 'bundle': str(bundle), 'bottle': str(bottle),
             'repetitions': repeats, 'seed': seed, 'seconds': seconds or game_spec['seconds'],
             'hashes': files, 'jobs': jobs, 'measurement': 'frame-times',
@@ -105,13 +145,60 @@ def verify(plan):
             raise ValueError(f'frozen benchmark input changed: {path}')
 
 
-def run(plan_path):
+THERMAL_STATES = ('nominal', 'fair', 'serious', 'critical')
+
+
+def _thermal_state():
+    """NSProcessInfo.thermalState through the Objective-C runtime, or 'unknown'."""
+    try:
+        import ctypes
+        objc = ctypes.cdll.LoadLibrary('/usr/lib/libobjc.A.dylib')
+        ctypes.cdll.LoadLibrary('/System/Library/Frameworks/Foundation.framework/Foundation')
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+        send = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(('objc_msgSend', objc))
+        send_long = ctypes.CFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p)(('objc_msgSend', objc))
+        info = send(objc.objc_getClass(b'NSProcessInfo'), objc.sel_registerName(b'processInfo'))
+        return THERMAL_STATES[send_long(info, objc.sel_registerName(b'thermalState'))]
+    except (OSError, AttributeError, IndexError):
+        return 'unknown'
+
+
+def host_conditions():
+    """Power source and thermal state; performance on a laptop depends on both."""
+    try:
+        source = subprocess.run(['pmset', '-g', 'ps'], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        source = ''
+    power = 'ac' if 'AC Power' in source else 'battery' if 'Battery Power' in source else 'unknown'
+    return {'power': power, 'thermal': _thermal_state()}
+
+
+def wait_for_host(host, sleep, cooldown, limit=600, poll=10):
+    """Sleep for the cooldown, then until the chassis is no hotter than 'fair'."""
+    if cooldown:
+        sleep(cooldown)
+    waited = 0
+    state = host()
+    while state['thermal'] in ('serious', 'critical') and waited < limit:
+        sleep(poll)
+        waited += poll
+        state = host()
+    return state
+
+
+def run(plan_path, allow_battery=False, cooldown=60, host=host_conditions, sleep=time.sleep):
     output = plan_path.parent.resolve()
     plan = json.loads(plan_path.read_text())
     verify(plan)
+    if host()['power'] == 'battery' and not allow_battery:
+        raise ValueError('running on battery power; connect AC power or pass --allow-battery')
     results = []
-    for job in plan['jobs']:
+    for index, job in enumerate(plan['jobs']):
         verify(plan)
+        before = wait_for_host(host, sleep, cooldown if index else 0)
         work = output / job['work']
         if list((work / 'runs').glob('*/summary.json')):
             raise ValueError(f'campaign already has results for {job["work"]}; analyze or create a new campaign')
@@ -121,10 +208,12 @@ def run(plan_path):
                    '--seconds', str(plan['seconds']), '--runs', 'cold,warm,warm2', '--no-diagnostics',
                    '--env', 'DXVK_CONFIG_FILE=Z:' + str(work / 'dxvk.conf'), '--env', 'DXVK_CONFIG=',
                    '--env', 'DXVK_SHADER_CACHE=1']
+        for key, value in sorted(job.get('env', {}).items()):
+            command += ['--env', f'{key}={value}']
         with (work / 'runner.log').open('w') as log:
             result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT,
                                     timeout=3 * plan['seconds'] + 1800)
-        record = dict(job, returncode=result.returncode)
+        record = dict(job, returncode=result.returncode, host={'before': before, 'after': host()})
         results.append(record)
         (output / 'execution.json').write_text(json.dumps(results, indent=2) + '\n')
         if result.returncode:
@@ -142,7 +231,15 @@ def analyze(plan_path):
     groups = {}
     invalid = []
     driver = str(Path(plan['bundle']) / 'libvulkan_kosmickrisp.dylib')
+    execution = output / 'execution.json'
+    hosts = {r['work']: r.get('host') for r in json.loads(execution.read_text())} if execution.is_file() else {}
     for job in plan['jobs']:
+        host = hosts.get(job['work']) or {}
+        states = [host.get(k, {}) for k in ('before', 'after')]
+        if any(s.get('thermal') in ('serious', 'critical') for s in states):
+            invalid.append({'job': job['work'], 'reason': 'thermal pressure during the job'})
+        if any(s.get('power') == 'battery' for s in states):
+            invalid.append({'job': job['work'], 'reason': 'ran on battery power'})
         paths = list((output / job['work'] / 'runs').glob('*/summary.json'))
         seen = set()
         for path in paths:
@@ -156,11 +253,18 @@ def analyze(plan_path):
             reasons = []
             if data['frames'].get('error') or not data['dxvk'].get('backend_verified'):
                 reasons.append('missing frame or KosmicKrisp evidence')
+            expected = plan.get('dxvk_version')
+            if expected and (data['dxvk'].get('version') or '').lstrip('v') != expected:
+                # e.g. a game-bundled DXVK loaded instead of the runtime's payload
+                reasons.append(f"DXVK {data['dxvk'].get('version')} is not the runtime's {expected}")
             if data['dxvk'].get('errors') or data['dxvk'].get('rejections'):
                 reasons.append('DXVK errors or device rejection')
             effective = data['dxvk'].get('effective_configuration', {})
             if any(effective.get(key) != value for key, value in job['settings'].items()):
                 reasons.append('requested DXVK configuration not verified in its log')
+            recorded = meta.get('env', {})
+            if any(recorded.get(key, '') != value for key, value in job.get('env', {}).items()):
+                reasons.append('requested environment not recorded for the run')
             if job['settings'].get('dxvk.enableGraphicsPipelineLibrary') != 'False' and data['dxvk'].get('gpl') is not True:
                 reasons.append('GPL condition is unsupported by this driver')
             if meta.get('driver_sha256') != plan['hashes'][driver]:
@@ -182,12 +286,33 @@ def analyze(plan_path):
         rows.append({'condition': condition, 'cache_state': label, 'samples': len(frames),
                      'metrics': {key: {'median': statistics.median(v), 'minimum': min(v), 'maximum': max(v)}
                                  for key, v in values.items()}})
+    expected_rows = 3 * len({job['condition'] for job in plan['jobs']})
     report = {'stage': plan['stage'], 'scene': plan['scene'], 'rows': rows, 'invalid': invalid,
-              'complete': not invalid and len(rows) == 9 and all(r['samples'] == plan['repetitions'] for r in rows),
+              'complete': not invalid and len(rows) == expected_rows
+              and all(r['samples'] == plan['repetitions'] for r in rows),
               'performance_claim_eligible': False,
               'limitation': 'Scene execution, window visibility and rendering correctness need review before selecting defaults.'}
+    if plan['stage'] == 'vi':
+        report['effects'] = vi_effects(rows)
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
+
+
+def vi_effects(rows):
+    """Median deltas between each dynamic fetch condition and its static control."""
+    medians = {(r['condition'], r['cache_state']): r['metrics'] for r in rows}
+    effects = []
+    for dynamic, control in VI_EFFECTS:
+        for label in ('cold', 'warm', 'warm2'):
+            if (dynamic, label) not in medians or (control, label) not in medians:
+                continue
+            delta = {}
+            for key in ('mean_fps', 'p99_ms', 'hitches', 'one_percent_low_fps'):
+                d = medians[(dynamic, label)][key]['median']
+                c = medians[(control, label)][key]['median']
+                delta[key] = {'difference': d - c, 'percent': 100.0 * (d - c) / c if c else None}
+            effects.append({'dynamic': dynamic, 'control': control, 'cache_state': label, 'delta': delta})
+    return effects
 
 
 def main():
@@ -197,20 +322,26 @@ def main():
     for name in ('runtime', 'bundle', 'bottle', 'scene', 'out'):
         create.add_argument('--' + name, type=Path, required=True)
     create.add_argument('--game', required=True)
-    create.add_argument('--stage', choices=('gpl', 'threads', 'latency', 'sleep'), default='gpl')
+    create.add_argument('--stage', choices=('gpl', 'threads', 'latency', 'sleep', 'vi'), default='gpl')
     create.add_argument('--gpl', choices=('Auto', 'True'), default='Auto')
     create.add_argument('--repeats', type=int, default=3)
     create.add_argument('--seed', type=int, default=0)
     create.add_argument('--seconds', type=int)
-    for name in ('run', 'analyze'):
-        sub.add_parser(name).add_argument('plan', type=Path)
+    execute = sub.add_parser('run')
+    execute.add_argument('plan', type=Path)
+    execute.add_argument('--allow-battery', action='store_true',
+                         help='run on battery anyway; affected jobs are reported as invalid')
+    execute.add_argument('--cooldown', type=int, default=60, help='seconds to idle between jobs')
+    sub.add_parser('analyze').add_argument('plan', type=Path)
     args = parser.parse_args()
     if args.operation == 'plan':
         report = make_plan(args.runtime.resolve(), args.bundle.resolve(), args.bottle.resolve(), args.game,
                            args.scene.resolve(), args.out.resolve(), args.stage, args.repeats, args.seed, args.gpl, args.seconds)
         print(json.dumps({'plan': str(args.out / 'plan.json'), 'jobs': len(report['jobs'])}, indent=2))
+    elif args.operation == 'run':
+        print(json.dumps(run(args.plan.resolve(), args.allow_battery, args.cooldown), indent=2))
     else:
-        print(json.dumps({'run': run, 'analyze': analyze}[args.operation](args.plan.resolve()), indent=2))
+        print(json.dumps(analyze(args.plan.resolve()), indent=2))
 
 
 if __name__ == '__main__':
