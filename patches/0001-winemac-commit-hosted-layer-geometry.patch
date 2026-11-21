@@ -1,0 +1,30 @@
+fix(winemac): commit hosted layer geometry from the presenting thread
+
+Upstream: https://github.com/dappermint/winecx/commit/d711b81ddb852cd5a17d53f856d83e3884afd80d
+
+
+diff --git a/dlls/winemac.drv/cocoa_window.m b/dlls/winemac.drv/cocoa_window.m
+index afd7510..ff10944 100644
+--- a/dlls/winemac.drv/cocoa_window.m
++++ b/dlls/winemac.drv/cocoa_window.m
+@@ -3884,6 +3884,10 @@ - (void) setContainer:(CGRect)container frame:(CGRect)frame
+     CALayer* c = container_layer;
+     CAMetalLayer* o = offscreen_layer;
+
++    /* win32 rects are backing pixels in retina mode, layer geometry is points */
++    container = cgrect_mac_from_win(container);
++    frame = cgrect_mac_from_win(frame);
++
+     /* no implicit animation, a resize must land in one frame */
+     [CATransaction begin];
+     [CATransaction setDisableActions:YES];
+@@ -3892,6 +3896,9 @@ - (void) setContainer:(CGRect)container frame:(CGRect)frame
+     o.bounds = CGRectMake(0, 0, CGRectGetWidth(frame), CGRectGetHeight(frame));
+     o.position = CGPointMake(CGRectGetMinX(frame), CGRectGetMinY(frame));
+     [CATransaction commit];
++    /* the presenting thread has no run loop, so nothing commits the implicit
++     * transaction this nests in unless it is flushed */
++    [CATransaction flush];
+ }
+
+ - (CAMetalLayer*) layer
