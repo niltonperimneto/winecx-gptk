@@ -418,23 +418,44 @@ def find_processes(pattern):
     return [int(pid) for pid in result.stdout.split()]
 
 
-def wait_processes(pattern, present, timeout):
+def find_executables(pattern):
+    """PIDs whose executable path (not arguments) matches pattern.
+
+    A launcher's command line can name the game executable it is about to
+    start, so matching full command lines reports a game that never ran.
+    Wine processes show their Windows image path as the command name.
+    """
+    result = subprocess.run(["ps", "-axo", "pid=,comm="], capture_output=True, text=True)
+    pids = []
+    for line in result.stdout.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        if pid.isdigit() and re.search(pattern, command.strip()):
+            pids.append(int(pid))
+    return pids
+
+
+def executable_pattern(executable):
+    """Match a Windows or Unix path ending in the executable's file name."""
+    return r"(^|[\\/])" + re.escape(Path(executable).name) + r"$"
+
+
+def wait_processes(pattern, present, timeout, finder=find_processes):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if bool(find_processes(pattern)) == present:
+        if bool(finder(pattern)) == present:
             return True
         time.sleep(1)
     return False
 
 
-def signal_processes(pattern):
+def signal_processes(pattern, finder=find_processes):
     for sig in (signal.SIGTERM, signal.SIGKILL):
-        for pid in find_processes(pattern):
+        for pid in finder(pattern):
             try:
                 os.kill(pid, sig)
             except ProcessLookupError:
                 pass
-        if wait_processes(pattern, False, 15):
+        if wait_processes(pattern, False, 15, finder):
             return
 
 
@@ -478,22 +499,22 @@ def restore_install(placed):
 
 
 def run_via_steam(args, game, base_env, run_env, run_dir, seconds):
-    exe_pattern = re.escape(Path(game["executable"]).name)
+    exe_pattern = executable_pattern(game["executable"])
     steam_shutdown(args.runtime, base_env)
     with open(run_dir / "wine.log", "w") as log:
         steam_start(args.runtime, run_env,
                     ["-applaunch", str(game["steam_appid"]), *game.get("arguments", [])], log)
-        if not wait_processes(exe_pattern, True, 180):
-            print("  game did not start within 180 s")
+        if not wait_processes(exe_pattern, True, game.get("start_timeout", 180), find_executables):
+            print(f"  game did not start within {game.get('start_timeout', 180)} s")
             steam_shutdown(args.runtime, base_env)
             return
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            if not find_processes(exe_pattern):
+            if not find_executables(exe_pattern):
                 print("  game exited early")
                 break
             time.sleep(1)
-        signal_processes(exe_pattern)
+        signal_processes(exe_pattern, find_executables)
     steam_shutdown(args.runtime, base_env)
 
 

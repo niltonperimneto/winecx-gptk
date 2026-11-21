@@ -81,5 +81,23 @@
     "write_files": {
       "steam_appid.txt": "920210\n"
     }
+  },
+  "rottr-dx11": {
+    "name": "Rise of the Tomb Raider",
+    "bottle_path": "Program Files (x86)/Steam/steamapps/common/Rise of the Tomb Raider",
+    "executable": "ROTTR.exe",
+    "seconds": 420,
+    "skip_seconds": 0,
+    "steam": true,
+    "steam_appid": 391220,
+    "dxvk_arch": "x64",
+    "dxvk_dlls": [
+      "d3d11.dll",
+      "dxgi.dll"
+    ],
+    "dll_overrides": "d3d11,dxgi=n,b",
+    "write_files": {
+      "steam_appid.txt": "391220\n"
+    }
   }
 }
