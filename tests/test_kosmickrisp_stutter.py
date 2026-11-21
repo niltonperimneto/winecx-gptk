@@ -161,5 +161,17 @@ class StutterTests(unittest.TestCase):
             self.assertFalse(stutter.parse_dxvk_logs(path)["backend_verified"])
 
 
+
+class LauncherIsolationTests(unittest.TestCase):
+    def test_executable_match_ignores_command_lines_naming_the_game(self):
+        ps = ("  101 C:\\Program Files\\Rockstar Games\\Launcher\\Launcher.exe\n"
+              "  102 C:\\Steam\\steamapps\\common\\Grand Theft Auto V\\PlayGTAV.exe\n"
+              "  103 C:\\Steam\\steamapps\\common\\Grand Theft Auto V\\GTA5.exe\n"
+              "  104 /usr/bin/NotGTA5.exe\n")
+        result = stutter.subprocess.CompletedProcess([], 0, stdout=ps, stderr="")
+        with patch.object(stutter.subprocess, "run", return_value=result):
+            self.assertEqual(stutter.find_executables(stutter.executable_pattern("GTA5.exe")), [103])
+
+
 if __name__ == "__main__":
     unittest.main()
